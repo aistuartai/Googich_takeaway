@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.heic binary
+*.mp4 binary
+*.mov binary
+*.zip binary
+*.tgz binary
+*.gz binary

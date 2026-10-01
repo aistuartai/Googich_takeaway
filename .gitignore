@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data: database, logs, staging downloads
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+logs/
+*.log
+/staging/
+
+# Secrets and credentials: never commit
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+master_key*
+secrets/
+*service-account*.json
+*service_account*.json
+client_secret*.json
+*credentials*.json
+token*.json
+
+# Real Google Takeout samples: keep outside the repository
+/samples/
+takeout-*.zip
+takeout-*.tgz
+/Takeout/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

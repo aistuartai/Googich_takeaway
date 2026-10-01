@@ -1,0 +1,28 @@
+[project]
+name = "googich-takeaway"
+version = "0.1.0.dev0"
+description = "Self-hosted tool that moves Google Photos into Immich using Google Takeout archives."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "aistuartai" }]
+requires-python = ">=3.13"
+dependencies = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[project.urls]
+Homepage = "https://github.com/aistuartai/Googich_takeaway"
+Issues = "https://github.com/aistuartai/Googich_takeaway/issues"
+Changelog = "https://github.com/aistuartai/Googich_takeaway/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/googich_takeaway"]
