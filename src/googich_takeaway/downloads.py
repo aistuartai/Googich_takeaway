@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.sources.base import (
     RemoteFile,
     Source,
@@ -59,6 +60,7 @@ class Downloader:
     sleep: Callable[[float], None]
     free_margin: int = DEFAULT_FREE_MARGIN
     progress: Callable[[int], None] | None = None
+    tracker: Tracker | None = None
 
     def fetch_new(self, source: Source, ignore_history: bool = False) -> FetchResult:
         """Download every archive at the source not downloaded before."""
@@ -68,20 +70,32 @@ class Downloader:
         result.removed_from_source = self.state.mark_removed_from_source(
             source.name, (f.file_id for f in files), self.clock()
         )
-        for file in files:
-            if not ignore_history and self.state.was_downloaded(
-                source.name, file.file_id, file.fingerprint
-            ):
-                result.skipped.append(file)
-                continue
+        wanted = [
+            f
+            for f in files
+            if ignore_history
+            or not self.state.was_downloaded(source.name, f.file_id, f.fingerprint)
+        ]
+        result.skipped = [f for f in files if f not in wanted]
+        if self.tracker:
+            self.tracker.plan(Stage.DOWNLOAD, [(f.name, f.size) for f in wanted])
+        for file in wanted:
+            if self.tracker:
+                self.tracker.begin(Stage.DOWNLOAD, file.name, file.size)
             try:
                 path = self.download(source, file)
-            except NotEnoughSpaceError:
+            except NotEnoughSpaceError as error:
+                if self.tracker:
+                    self.tracker.end(Stage.DOWNLOAD, file.name, ItemState.FAILED, str(error))
                 raise  # nothing later will fit either
             except SourceError as error:
                 result.failed.append((file, str(error)))
+                if self.tracker:
+                    self.tracker.end(Stage.DOWNLOAD, file.name, ItemState.FAILED, str(error))
                 continue
             result.downloaded.append((file, path))
+            if self.tracker:
+                self.tracker.end(Stage.DOWNLOAD, file.name)
         return result
 
     def download(self, source: Source, file: RemoteFile) -> Path:
@@ -111,6 +125,8 @@ class Downloader:
                         have += len(chunk)
                         if self.progress:
                             self.progress(len(chunk))
+                        if self.tracker:
+                            self.tracker.advance(len(chunk))
                         if have > file.size:
                             raise SourceError(f"{file.name}: larger than the source reported")
                     handle.flush()

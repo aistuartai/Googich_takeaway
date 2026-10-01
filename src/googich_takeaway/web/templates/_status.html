@@ -1,4 +1,4 @@
-<section class="card" id="status"{% if status.running %} hx-get="/status" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+<section class="card" id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="split">
     <div>
       <h2>Status</h2>
@@ -29,4 +29,35 @@
       {% endif %}
     </div>
   </div>
+  {% if status.running and progress.stages %}
+  <div class="progress-view">
+    <p class="eta">Time left: <strong>{{ progress.eta_seconds|duration }}</strong>{% if progress.eta_is_estimate %} <span class="muted">(estimate based on earlier runs)</span>{% endif %}</p>
+    {% for view in progress.stages %}
+    <div class="stage{{ ' current' if view.stage == progress.stage }}">
+      <div class="stage-head">
+        <strong>{{ view.label }}</strong>
+        <span>{{ view.done|size }} of {{ view.total|size }}{% if view.rate %} · {{ view.rate|size }}/s{% endif %}{% if view.eta_seconds %} · {{ view.eta_seconds|duration }} left{% endif %}</span>
+      </div>
+      <progress value="{{ view.done }}" max="{{ view.total or 1 }}"></progress>
+      {% set open_items = view.items|rejectattr('state', 'equalto', 'done')|list %}
+      {% set done_items = view.items|selectattr('state', 'equalto', 'done')|list %}
+      {% if open_items %}
+      <table class="queue">
+        <tbody>
+        {% for item in open_items[:25] %}
+          <tr class="item-{{ item.state.value }}">
+            <td>{{ item.name.rsplit('/', 1)[-1] }}</td>
+            <td class="num">{{ item.size|size }}</td>
+            <td>{% if item.state.value == 'active' %}<progress value="{{ item.done }}" max="{{ item.size or 1 }}"></progress>{% else %}{{ item.state.value }}{% if item.detail %}: {{ item.detail }}{% endif %}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if open_items|length > 25 %}<p class="muted">…and {{ open_items|length - 25 }} more waiting.</p>{% endif %}
+      {% endif %}
+      {% if done_items %}<p class="muted">{{ done_items|length }} done.</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 </section>

@@ -26,6 +26,7 @@ from googich_takeaway.destinations.immich import (
     ImmichError,
 )
 from googich_takeaway.destinations.xmp import build_xmp
+from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.state import State, UploadRecord, UploadStatus
 from googich_takeaway.takeout.archives import iter_entries
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem
@@ -114,10 +115,11 @@ def run_import(
     clock: Callable[[], datetime],
     sleep: Callable[[float], None],
     progress: Callable[[int], None] | None = None,
+    tracker: Tracker | None = None,
 ) -> ImportResult:
     result = ImportResult()
     _record_known(plan, state, destination, clock)
-    _upload(plan, client, state, destination, clock, result, progress)
+    _upload(plan, client, state, destination, clock, result, progress, tracker)
     _verify(result.uploaded, client, state, destination, clock, sleep, result)
     return result
 
@@ -148,8 +150,18 @@ def _upload(
     clock: Callable[[], datetime],
     result: ImportResult,
     progress: Callable[[int], None] | None,
+    tracker: Tracker | None = None,
 ) -> None:
     wanted = {p.item.path: p.item for p in plan.with_decision(Decision.UPLOAD)}
+    if tracker:
+        tracker.plan(Stage.UPLOAD, [(p, i.size) for p, i in sorted(wanted.items())])
+
+    def advance(amount: int) -> None:
+        if progress:
+            progress(amount)
+        if tracker:
+            tracker.advance(amount)
+
     archives: dict[Path, set[str]] = {}
     for item in wanted.values():
         archives.setdefault(item.archive, set()).add(item.path)
@@ -164,6 +176,8 @@ def _upload(
             if item.date is None:
                 raise RuntimeError(f"planned upload without a date: {item.path}")
             sidecar = build_xmp(item.date, item.gps, item.description)
+            if tracker:
+                tracker.begin(Stage.UPLOAD, item.path, item.size)
             try:
                 sent = client.upload(
                     entry.stream,
@@ -173,16 +187,20 @@ def _upload(
                     item.date.utc,
                     sidecar=sidecar,
                     favorite=item.favorited,
-                    progress=progress,
+                    progress=advance,
                 )
             except ImmichError as error:
                 result.failed.append((item, str(error)))
+                if tracker:
+                    tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, str(error))
                 consecutive_failures += 1
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     result.aborted = f"stopped after {consecutive_failures} failures in a row"
                     return
                 continue
             consecutive_failures = 0
+            if tracker:
+                tracker.end(Stage.UPLOAD, item.path)
             status = UploadStatus.ADOPTED if sent.duplicate else UploadStatus.UPLOADED
             state.record_upload(_record(destination, plan, item, sent.asset_id, status, clock()))
             (result.adopted if sent.duplicate else result.uploaded).append(item)

@@ -67,5 +67,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saving aware). One run at a time; runs interrupted by a restart are closed and resume next time.
   After a set number of failed scheduled runs in a row (default 3) the schedule pauses itself,
   notifies, and waits for Resume.
+- Live progress on the dashboard: download, archive reading and upload queues with sizes,
+  per-file progress bars, smoothed transfer rates and time left per stage and for the whole run.
+  Before a stage starts its time is estimated from rates measured on earlier runs.
 - Dashboard with status, next run, Run now, recent runs with details, and the pause banner.
   Settings for the schedule and notifications, with a test notification button.

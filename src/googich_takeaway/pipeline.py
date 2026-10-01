@@ -23,6 +23,7 @@ from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
 from googich_takeaway.importer import Decision, plan_import, run_import
 from googich_takeaway.notify import Message, Outcome
+from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.sources.local import ARCHIVE_SUFFIXES
@@ -130,6 +131,7 @@ class Pipeline:
     destination: str = "immich"
     progress: Callable[[int], None] | None = None
     options: RunOptions = RunOptions()
+    tracker: Tracker | None = None
 
     def run(self) -> RunReport:
         report = RunReport()
@@ -157,7 +159,12 @@ class Pipeline:
         failed_names: set[str] = set()
         newest: dict[str, datetime] = {}
         downloader = Downloader(
-            general.staging, self.state, self.clock, self.sleep, progress=self.progress
+            general.staging,
+            self.state,
+            self.clock,
+            self.sleep,
+            progress=self.progress,
+            tracker=self.tracker,
         )
         for source in sources:
             if source.kind != "gdrive":
@@ -193,15 +200,26 @@ class Pipeline:
         # A part that failed to download is absent (only its .part file exists), so the export
         # would otherwise look complete without it. Block by export ID, from the failed names.
         blocked = set(group_exports([Path(name) for name in failed_names]))
+        exports = group_exports(archives)
+        if self.tracker:
+            pending = [
+                (export_id, sum(p.stat().st_size for p in parts))
+                for export_id, parts in exports.items()
+                if self.options.reimport
+                or not self.state.is_export_complete(_export_key(export_id, parts))
+            ]
+            self.tracker.plan(Stage.SCAN, pending)
         with self.immich_factory(immich.url, key) as client:
-            for export_id, parts in group_exports(archives).items():
+            for export_id, parts in exports.items():
                 if export_id in blocked:
                     report.problems.append(
                         f"Export {export_id} not imported: a part failed to download."
                     )
+                    self._skip(export_id, "a part failed to download")
                     continue
                 if export_id in newest and self.clock() - newest[export_id] < SETTLE_TIME:
                     report.waiting.append(export_id)
+                    self._skip(export_id, "Takeout is still writing it")
                     continue
                 export_key = _export_key(export_id, parts)
                 if self.state.is_export_complete(export_key) and not self.options.reimport:
@@ -218,13 +236,24 @@ class Pipeline:
         report: RunReport,
     ) -> None:
         log.info("Importing export %s (%d parts)", export_id, len(parts))
-        scan = scan_export(parts, resolver, self.clock(), progress=self.progress)
+        if self.tracker:
+            self.tracker.begin(Stage.SCAN, export_id, sum(p.stat().st_size for p in parts))
+        scan = scan_export(parts, resolver, self.clock(), progress=self._scan_progress)
+        if self.tracker:
+            self.tracker.end(Stage.SCAN, export_id)
         checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
         plan = plan_import(
             export_id, scan, checks, self.state, self.destination, self.options.reimport
         )
         result = run_import(
-            plan, client, self.state, self.destination, self.clock, self.sleep, self.progress
+            plan,
+            client,
+            self.state,
+            self.destination,
+            self.clock,
+            self.sleep,
+            self.progress,
+            tracker=self.tracker,
         )
         report.exports_imported += 1
         report.uploaded += len(result.uploaded)
@@ -248,6 +277,16 @@ class Pipeline:
             self.state.mark_export_complete(
                 export_key, export_id, json.dumps(summary), self.clock()
             )
+
+    def _scan_progress(self, amount: int) -> None:
+        if self.progress:
+            self.progress(amount)
+        if self.tracker:
+            self.tracker.advance(amount)
+
+    def _skip(self, export_id: str, why: str) -> None:
+        if self.tracker:
+            self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
 
 
 def _archives_in(folder: Path) -> list[Path]:

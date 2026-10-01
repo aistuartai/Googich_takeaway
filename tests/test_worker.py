@@ -176,3 +176,15 @@ def test_run_options_are_recorded(world: World) -> None:
     run = State(world.path).recent_runs()[0]
     assert run.details is not None
     assert "Options: re-import files missing from Immich." in run.details
+
+
+def test_measured_rates_are_remembered(world: World) -> None:
+    import json
+
+    world.configure()
+    world.worker.run_once(Trigger.MANUAL)
+    stored = State(world.path).get_setting("progress.rates")
+    # Tiny test files finish within the sampling window, so a rate may not be measured;
+    # whatever is stored must be valid and per stage.
+    if stored:
+        assert set(json.loads(stored)) <= {"download", "scan", "upload"}

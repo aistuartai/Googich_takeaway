@@ -219,3 +219,19 @@ def test_download_again_option_refetches_archives(world: World) -> None:
     pipeline = world.pipeline()
     again = Pipeline(**{**pipeline.__dict__, "options": RunOptions(download_again=True)})
     assert again.run().downloaded == 2
+
+
+def test_tracker_sees_every_stage(world: World) -> None:
+    from googich_takeaway.progress import ItemState, Stage, Tracker
+
+    world.configure()
+    tracker = Tracker()
+    tracker.start_run()
+    pipeline = world.pipeline()
+    Pipeline(**{**pipeline.__dict__, "tracker": tracker}).run()
+    stages = {v.stage: v for v in tracker.snapshot().stages}
+    assert {i.state for i in stages[Stage.DOWNLOAD].items} == {ItemState.DONE}
+    assert len(stages[Stage.DOWNLOAD].items) == 2
+    assert [i.state for i in stages[Stage.SCAN].items] == [ItemState.DONE]
+    assert len(stages[Stage.UPLOAD].items) == 13
+    assert stages[Stage.UPLOAD].done == stages[Stage.UPLOAD].total

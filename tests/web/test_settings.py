@@ -257,3 +257,19 @@ def test_run_with_options_reaches_the_worker(world: World) -> None:
     world.post("/runs", data={"reimport": "1"})
     worker = world.client.app.state.worker  # type: ignore[attr-defined]
     assert worker._manual_requested == RunOptions(reimport=True, download_again=False)
+
+
+def test_status_fragment_shows_live_progress(world: World) -> None:
+    from googich_takeaway.progress import Stage
+
+    worker = world.client.app.state.worker  # type: ignore[attr-defined]
+    worker.tracker.start_run()
+    worker.tracker.plan(Stage.DOWNLOAD, [("takeout-x-001.zip", 2_000_000_000)])
+    worker.tracker.begin(Stage.DOWNLOAD, "takeout-x-001.zip")
+    worker._run_started = datetime.now(UTC)
+    fragment = world.client.get("/status").text
+    assert "Downloading" in fragment
+    assert "takeout-x-001.zip" in fragment
+    assert "2.0 GB" in fragment
+    assert "estimate based on earlier runs" in fragment
+    assert 'hx-trigger="every 2s"' in fragment

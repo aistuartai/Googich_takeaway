@@ -27,6 +27,7 @@ from googich_takeaway.credentials import SecretBox, load_master_key, master_key_
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import RunOptions
+from googich_takeaway.progress import format_duration, format_size
 from googich_takeaway.schedule import WEEKDAYS
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
@@ -125,6 +126,7 @@ def create_app(
     app.state.worker = worker
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(version=__version__)
+    templates.env.filters.update(duration=format_duration, size=format_size)
     login_throttle = throttle or auth.LoginThrottle()
 
     with State(settings.state_path) as state:
@@ -263,6 +265,7 @@ def create_app(
             sources=config.sources(),
             schedule=config.schedule(),
             status=worker.status(),
+            progress=worker.progress(),
             failures=config.scheduled_failures(),
             runs=state.recent_runs(15),
             zone=_zone(config.general().timezone),
@@ -278,6 +281,7 @@ def create_app(
             request,
             "_status.html",
             {
+                "progress": worker.progress(),
                 "status": current,
                 "schedule": config.schedule(),
                 "general": config.general(),

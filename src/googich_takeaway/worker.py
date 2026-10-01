@@ -8,6 +8,7 @@
 - Every run's outcome is recorded and notified (if that outcome is switched on).
 """
 
+import json
 import logging
 import threading
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import DriveFactory, ImmichFactory, Pipeline, RunOptions
+from googich_takeaway.progress import Snapshot, Stage, Tracker
 from googich_takeaway.schedule import next_run
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
@@ -67,10 +69,21 @@ class Worker:
         self._manual_requested: RunOptions | None = None
         self._run_started: datetime | None = None
         self._thread: threading.Thread | None = None
+        self.tracker = Tracker(self._load_rates())
 
     def _interruptible_sleep(self, seconds: float) -> None:
         """Retry backoff that ends early when the app is stopping."""
         self._stop.wait(seconds)
+
+    def _load_rates(self) -> dict[Stage, float]:
+        with State(self._state_path) as state:
+            stored = state.get_setting("progress.rates")
+        if not stored:
+            return {}
+        return {Stage(k): float(v) for k, v in json.loads(stored).items() if k in Stage}
+
+    def progress(self) -> Snapshot:
+        return self.tracker.snapshot()
 
     # --- control -------------------------------------------------------------------------------
 
@@ -144,6 +157,7 @@ class Worker:
         now = self._clock()
         with self._lock:
             self._run_started = now
+        self.tracker.start_run()
         try:
             with State(self._state_path) as state:
                 config = self._config(state)
@@ -157,6 +171,7 @@ class Worker:
                     immich_factory=self._immich_factory,
                     drive_factory=self._drive_factory,
                     options=options or RunOptions(),
+                    tracker=self.tracker,
                 )
                 message = pipeline.run().message()
                 chosen = (options or RunOptions()).describe()
@@ -171,6 +186,12 @@ class Worker:
                 self._count_failures(config, trigger, message, notifier.send)
                 return message
         finally:
+            measured = self.tracker.finish_run()
+            if measured:
+                with State(self._state_path) as state:
+                    stored = json.loads(state.get_setting("progress.rates") or "{}")
+                    stored.update({stage.value: rate for stage, rate in measured.items()})
+                    state.set_setting("progress.rates", json.dumps(stored), self._clock())
             with self._lock:
                 self._run_started = None
 
