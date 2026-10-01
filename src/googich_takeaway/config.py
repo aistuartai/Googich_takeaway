@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.notify import DEFAULT_OUTCOMES, Notifier, Outcome, invalid_urls
+from googich_takeaway.schedule import Mode, Schedule, parse_time
 from googich_takeaway.state import SourceRecord, State, StateError
 
 MAX_KEY_FILE_BYTES = 64 * 1024
@@ -114,6 +115,66 @@ class Config:
         now = self._clock()
         self._state.set_setting("staging.path", str(path), now)
         self._state.set_setting("timezone", timezone.strip(), now)
+
+    # --- schedule --------------------------------------------------------------------------------
+
+    def schedule(self) -> Schedule:
+        stored = self._state.get_setting("schedule")
+        if not stored:
+            return Schedule()
+        data = json.loads(stored)
+        return Schedule(
+            mode=Mode(data["mode"]),
+            at=parse_time(data["at"]),
+            weekday=int(data["weekday"]),
+            every_hours=int(data["every_hours"]),
+            pause_after=int(data["pause_after"]),
+        )
+
+    def save_schedule(
+        self, mode: str, at: str, weekday: str, every_hours: str, pause_after: str
+    ) -> None:
+        try:
+            chosen = Mode(mode)
+        except ValueError:
+            raise ConfigError("Choose how often to run.") from None
+        try:
+            local_time = parse_time(at)
+        except ValueError as error:
+            raise ConfigError(str(error)) from None
+        try:
+            day, hours, pause = int(weekday), int(every_hours), int(pause_after)
+        except ValueError:
+            raise ConfigError("Use whole numbers for the day, hours and failures.") from None
+        if not 0 <= day <= 6:
+            raise ConfigError("Choose a day of the week.")
+        if not 1 <= hours <= 168:
+            raise ConfigError("Run every 1 to 168 hours.")
+        if not 1 <= pause <= 20:
+            raise ConfigError("Pause after 1 to 20 failed runs in a row.")
+        value = {
+            "mode": chosen.value,
+            "at": f"{local_time:%H:%M}",
+            "weekday": day,
+            "every_hours": hours,
+            "pause_after": pause,
+        }
+        self._state.set_setting("schedule", json.dumps(value), self._clock())
+
+    def schedule_paused(self) -> bool:
+        return self._state.get_setting("schedule.paused") is not None
+
+    def set_schedule_paused(self, paused: bool) -> None:
+        now = self._clock()
+        self._state.set_setting("schedule.paused", now.isoformat() if paused else None, now)
+        if not paused:
+            self._state.set_setting("schedule.failures", None, now)
+
+    def scheduled_failures(self) -> int:
+        return int(self._state.get_setting("schedule.failures") or 0)
+
+    def set_scheduled_failures(self, count: int) -> None:
+        self._state.set_setting("schedule.failures", str(count) if count else None, self._clock())
 
     # --- notifications ---------------------------------------------------------------------------
 

@@ -1,18 +1,66 @@
 {% extends "base.html" %}
 {% block content %}
+<h1>Dashboard</h1>
+{% set ready = immich.url and immich.has_key and general.staging and sources %}
+{% if not ready %}
 <section class="card">
-  <h1>Dashboard</h1>
-  {% set ready = immich.url and immich.has_key and general.staging and sources %}
-  {% if not ready %}
   <h2>Getting started</h2>
   <ol class="checklist">
     <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/settings">Connect Immich</a>: its address and an API key.</li>
     <li class="{{ 'done' if general.staging }}"><a href="/settings">Choose the download folder</a> for Takeout archives.</li>
     <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder.</li>
   </ol>
+</section>
+{% else %}
+{% if status.paused %}
+<section class="card warn" role="alert">
+  <h2>Schedule paused</h2>
+  <p>Scheduled runs stopped after {{ failures }} failed run{{ '' if failures == 1 else 's' }} in a row. Check the latest run below, fix the problem, then resume.</p>
+  <form method="post" action="/schedule/resume">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <button type="submit">Resume schedule</button>
+  </form>
+</section>
+{% endif %}
+<section class="card">
+  <div class="split">
+    <div>
+      <h2>Status</h2>
+      {% if status.running %}
+      <p><strong>Running</strong> since {{ status.run_started.astimezone(zone).strftime('%H:%M') }}.</p>
+      {% else %}
+      <p>Idle. Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}; next run {{ status.next_run.astimezone(zone).strftime('%a %d %b %H:%M') }}{% endif %}.</p>
+      {% endif %}
+      <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.staging }}</code>.</p>
+    </div>
+    <form method="post" action="/runs">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" {{ 'disabled' if status.running }}>Run now</button>
+    </form>
+  </div>
+</section>
+<section class="card">
+  <h2>Recent runs</h2>
+  {% if runs %}
+  <table>
+    <thead><tr><th>Started</th><th>How</th><th>Result</th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+      <tr>
+        <td>{{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}</td>
+        <td>{{ run.trigger }}</td>
+        <td class="run-{{ run.status or 'running' }}">
+          {% if run.details and run.details != run.title %}
+          <details><summary>{{ run.title }}</summary><pre>{{ run.details }}</pre></details>
+          {% else %}{{ run.title or 'Running…' }}{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
   {% else %}
-  <p>{{ sources|length }} source{{ '' if sources|length == 1 else 's' }} set up. Downloads go to <code>{{ general.staging }}</code>.</p>
-  <p class="muted">The schedule, download queue and logs will appear here.</p>
+  <p>No runs yet. Press <strong>Run now</strong>, or set a schedule in <a href="/settings">Settings</a>.</p>
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}

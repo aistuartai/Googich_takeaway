@@ -7,12 +7,14 @@ load only from this server, and the pages contain no inline script.
 """
 
 import logging
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -23,11 +25,14 @@ from googich_takeaway import __version__
 from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
+from googich_takeaway.notify import Message, Outcome
+from googich_takeaway.schedule import WEEKDAYS
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.sources.local import LocalSource
 from googich_takeaway.state import State
 from googich_takeaway.web import auth
+from googich_takeaway.worker import Worker
 
 log = logging.getLogger("googich.web")
 
@@ -72,6 +77,7 @@ def create_app(
     throttle: auth.LoginThrottle | None = None,
     immich_factory: ImmichFactory = ImmichClient,
     drive_factory: DriveFactory = GoogleDriveSource,
+    start_worker: bool = True,
 ) -> FastAPI:
     async def csrf_guard(request: Request) -> None:
         # A dependency, not middleware: it shares FastAPI's parsed form with the route. Reading
@@ -82,19 +88,37 @@ def create_app(
         if expected is None or not await _csrf_ok(request, expected):
             raise HTTPException(status_code=403, detail="Missing or wrong CSRF token.")
 
+    box = SecretBox(
+        load_master_key(settings.master_key_path or master_key_path(settings.state_path))
+    )
+    worker = Worker(
+        settings.state_path,
+        box,
+        clock=clock,
+        immich_factory=immich_factory,
+        drive_factory=drive_factory,
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if start_worker:
+            worker.start()
+        yield
+        if start_worker:
+            worker.stop()
+
     app = FastAPI(
         title="Googich Takeaway",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         dependencies=[Depends(csrf_guard)],
+        lifespan=lifespan,
     )
+    app.state.worker = worker
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(version=__version__)
     login_throttle = throttle or auth.LoginThrottle()
-    box = SecretBox(
-        load_master_key(settings.master_key_path or master_key_path(settings.state_path))
-    )
 
     with State(settings.state_path) as state:
         needs_setup = state.password_hash() is None
@@ -222,7 +246,7 @@ def create_app(
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def dashboard(request: Request, config: ConfigDep) -> Response:
+    def dashboard(request: Request, config: ConfigDep, state: StateDep) -> Response:
         return page(
             request,
             config,
@@ -230,7 +254,22 @@ def create_app(
             immich=config.immich(),
             general=config.general(),
             sources=config.sources(),
+            schedule=config.schedule(),
+            status=worker.status(),
+            failures=config.scheduled_failures(),
+            runs=state.recent_runs(15),
+            zone=_zone(config.general().timezone),
         )
+
+    @app.post("/runs")
+    def run_now() -> Response:
+        worker.request_run()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/schedule/resume")
+    def resume(config: ConfigDep) -> Response:
+        config.set_schedule_paused(False)
+        return RedirectResponse("/", status_code=303)
 
     # --- settings ------------------------------------------------------------------------------
 
@@ -243,6 +282,10 @@ def create_app(
             "settings.html",
             immich=config.immich(),
             general=config.general(),
+            schedule=config.schedule(),
+            weekdays=WEEKDAYS,
+            outcomes=config.notification_outcomes(),
+            has_urls=config.has_notification_urls(),
             error=error,
             saved=saved,
             status_code=400 if error else 200,
@@ -301,6 +344,50 @@ def create_app(
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=general", status_code=303)
+
+    @app.post("/settings/schedule")
+    def save_schedule(
+        request: Request,
+        config: ConfigDep,
+        mode: Annotated[str, Form()],
+        at: Annotated[str, Form()] = "03:00",
+        weekday: Annotated[str, Form()] = "6",
+        every_hours: Annotated[str, Form()] = "24",
+        pause_after: Annotated[str, Form()] = "3",
+    ) -> Response:
+        try:
+            config.save_schedule(mode, at, weekday, every_hours, pause_after)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=schedule", status_code=303)
+
+    @app.post("/settings/notifications")
+    def save_notifications(
+        request: Request,
+        config: ConfigDep,
+        urls: Annotated[str, Form()] = "",
+        remove: Annotated[str, Form()] = "",
+        outcomes: Annotated[list[str] | None, Form()] = None,
+    ) -> Response:
+        new_urls: str | None = "" if remove else (urls if urls.strip() else None)
+        try:
+            config.save_notifications(new_urls, outcomes or [])
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=notifications", status_code=303)
+
+    @app.post("/settings/notifications/test", response_class=HTMLResponse)
+    def test_notifications(request: Request, config: ConfigDep) -> Response:
+        notifier = config.notifier()
+        if not notifier.configured:
+            return result(request, False, "Save at least one notification URL first.")
+        sent = notifier.send(
+            Message(Outcome.SUCCESS, "Test notification", ["Notifications are working."]),
+            force=True,
+        )
+        if sent:
+            return result(request, True, "Test notification sent.")
+        return result(request, False, "Could not deliver to every service. Check the URLs.")
 
     # --- sources -------------------------------------------------------------------------------
 
@@ -396,6 +483,13 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     return app
+
+
+def _zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
 
 
 def _start_session(request: Request, state: State, now: datetime) -> Response:

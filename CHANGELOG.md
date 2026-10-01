@@ -63,3 +63,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Notifications through Apprise (ntfy, email, Home Assistant, Discord and many more) for success,
   no new data, failure and pause, each switchable. URLs are stored encrypted and never logged.
 - State database schema 5: run history and completed exports.
+- Background worker and schedule: off, every few hours, daily or weekly at a local time (daylight
+  saving aware). One run at a time; runs interrupted by a restart are closed and resume next time.
+  After a set number of failed scheduled runs in a row (default 3) the schedule pauses itself,
+  notifies, and waits for Resume.
+- Dashboard with status, next run, Run now, recent runs with details, and the pause banner.
+  Settings for the schedule and notifications, with a test notification button.

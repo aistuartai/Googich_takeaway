@@ -44,4 +44,54 @@
     <div class="actions"><button type="submit">Save</button></div>
   </form>
 </section>
+<section class="card">
+  <h2>Schedule</h2>
+  <form method="post" action="/settings/schedule">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Run
+      <select name="mode">
+        {% for value, label in [('off', 'Off (manual runs only)'), ('hourly', 'Every few hours'), ('daily', 'Daily'), ('weekly', 'Weekly')] %}
+        <option value="{{ value }}" {{ 'selected' if schedule.mode.value == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="row">
+      <label>At (24-hour time) <input name="at" value="{{ schedule.at.strftime('%H:%M') }}" pattern="[0-2]?[0-9]:[0-5][0-9]"></label>
+      <label>On (weekly)
+        <select name="weekday">
+          {% for day in weekdays %}<option value="{{ loop.index0 }}" {{ 'selected' if schedule.weekday == loop.index0 }}>{{ day }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Every … hours <input name="every_hours" type="number" min="1" max="168" value="{{ schedule.every_hours }}"></label>
+    </div>
+    <label>Pause after this many failed runs in a row
+      <input name="pause_after" type="number" min="1" max="20" value="{{ schedule.pause_after }}">
+      <small>Scheduled runs never retry endlessly: a failed run ends and notifies, and after this many failures in a row the schedule pauses until you resume it.</small>
+    </label>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Notifications</h2>
+  <form method="post" action="/settings/notifications">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Apprise URLs, one per line
+      <textarea name="urls" rows="3" autocomplete="off" spellcheck="false" placeholder="{{ 'Saved. Leave blank to keep them.' if has_urls else 'ntfys://ntfy.sh/your-topic' }}"></textarea>
+      <small>Any service Apprise supports: ntfy, email (<code>mailtos://</code>), Home Assistant (<code>hassio://</code>), Discord, Pushover and more. URLs often contain passwords, so they are stored encrypted and never shown again.</small>
+    </label>
+    {% if has_urls %}<label class="check"><input type="checkbox" name="remove" value="1"> Remove the saved URLs</label>{% endif %}
+    <fieldset>
+      <legend>Send a notification when a run…</legend>
+      {% for value, label in [('success', 'imports new files'), ('no-new-data', 'finds nothing new'), ('failed', 'fails'), ('paused', 'pauses the schedule')] %}
+      <label class="check"><input type="checkbox" name="outcomes" value="{{ value }}" {{ 'checked' if value in outcomes }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/settings/notifications/test" hx-target="#notify-test">Send a test</button>
+    </div>
+    <div id="notify-test" aria-live="polite"></div>
+  </form>
+</section>
 {% endblock %}

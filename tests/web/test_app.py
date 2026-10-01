@@ -36,6 +36,7 @@ def make(tmp_path: Path, clock: Clock) -> TestClient:
         WebSettings(tmp_path / "state.db"),
         clock=clock,
         throttle=LoginThrottle(clock=clock.monotonic),
+        start_worker=False,
     )
     return TestClient(app, follow_redirects=False)
 

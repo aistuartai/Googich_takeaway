@@ -1,13 +1,17 @@
 import json
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from googich_takeaway.config import Config
+from googich_takeaway.credentials import SecretBox, load_master_key
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.sources.gdrive import GoogleDriveSource
+from googich_takeaway.state import State
 from googich_takeaway.web.app import WebSettings, create_app
 from tests.fake_drive import ACCOUNT, FOLDER, FakeDrive, service_account_info
 from tests.fake_immich import KEY, FakeImmichServer
@@ -27,6 +31,7 @@ class World:
             drive_factory=lambda folder, info: GoogleDriveSource(
                 FOLDER, info, self.drive.transport()
             ),
+            start_worker=False,
         )
         self.client = TestClient(app, follow_redirects=False)
         token = app.state.setup_token
@@ -44,7 +49,7 @@ class World:
     def post(
         self,
         url: str,
-        data: dict[str, str] | None = None,
+        data: dict[str, str | list[str]] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
     ) -> httpx.Response:
         form = {**(data or {}), "csrf_token": self.csrf}
@@ -169,4 +174,66 @@ def test_dashboard_when_ready(world: World) -> None:
     world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
     page = world.client.get("/").text
     assert "Getting started" not in page
-    assert "1 source set up" in page
+    assert "1 source." in page
+    assert "Run now" in page
+    assert "No runs yet." in page
+
+
+def test_schedule_saved_and_shown(world: World) -> None:
+    response = world.post(
+        "/settings/schedule",
+        data={
+            "mode": "weekly",
+            "at": "02:30",
+            "weekday": "0",
+            "every_hours": "24",
+            "pause_after": "3",
+        },
+    )
+    assert response.status_code == 303
+    page = world.client.get("/settings").text
+    assert 'value="weekly" selected' in page
+    bad = world.post("/settings/schedule", data={"mode": "daily", "at": "3pm"})
+    assert bad.status_code == 400
+    assert "24-hour" in bad.text
+
+
+def test_notifications_saved_sealed_and_tested(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.notify import Message, Notifier
+
+    sent: list[Message] = []
+
+    def capture(self: Notifier, message: Message, force: bool = False) -> bool:
+        sent.append(message)
+        return True
+
+    monkeypatch.setattr(Notifier, "send", capture)
+    secret = "ntfys://tok3n@ntfy.example/photos"  # noqa: S105 - test value
+    response = world.post(
+        "/settings/notifications", data={"urls": secret, "outcomes": ["failed", "paused"]}
+    )
+    assert response.status_code == 303
+    page = world.client.get("/settings").text
+    assert "tok3n" not in page
+    assert "Saved. Leave blank to keep them." in page
+    assert "Test notification sent." in world.htmx("/settings/notifications/test")
+    assert sent[0].title == "Test notification"
+
+
+def test_run_now_and_resume(world: World) -> None:
+    world.post("/settings/immich", data={"url": "http://immich.test", "api_key": KEY})
+    world.post("/settings/general", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
+    assert world.post("/runs").status_code == 303
+    worker = world.client.app.state.worker  # type: ignore[attr-defined]
+    assert worker._manual_requested  # queued for the background worker
+    box = SecretBox(load_master_key(world.tmp / "master.key"))
+    config = Config(State(world.tmp / "state.db"), box, lambda: datetime.now(UTC))
+    config.set_schedule_paused(True)
+    assert "Schedule paused" in world.client.get("/").text
+    assert world.post("/schedule/resume").status_code == 303
+    assert "Schedule paused" not in world.client.get("/").text

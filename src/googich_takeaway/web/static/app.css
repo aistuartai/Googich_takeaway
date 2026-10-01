@@ -46,3 +46,16 @@ th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--
 .checklist li.done { color: var(--muted); text-decoration: line-through; }
 details summary { cursor: pointer; color: var(--accent); }
 input[type=file] { padding: .35rem; }
+select, textarea { display: block; width: 100%; margin-top: .3rem; padding: .55rem .65rem; font: inherit;
+                   color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: .35rem; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; }
+label.check { display: flex; gap: .5rem; align-items: center; color: var(--fg); }
+label.check input { width: auto; margin: 0; }
+fieldset { border: 1px solid var(--line); border-radius: .35rem; margin: 0 0 1rem; padding: .75rem 1rem; }
+legend { color: var(--muted); font-size: .9rem; padding: 0 .3rem; }
+.split { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.warn { border-color: #b26a00; }
+pre { white-space: pre-wrap; font: inherit; margin: .5rem 0 0; color: var(--muted); }
+.run-failed summary, .run-failed { color: var(--error); }
+.run-interrupted { color: var(--muted); }
+button[disabled] { opacity: .5; cursor: default; }
