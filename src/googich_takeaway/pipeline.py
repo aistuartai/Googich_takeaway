@@ -21,7 +21,7 @@ from googich_takeaway.cleanup import export_key
 from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
-from googich_takeaway.importer import Decision, plan_import, run_import
+from googich_takeaway.importer import Decision, plan_import, run_import, verify_pending
 from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
@@ -69,6 +69,9 @@ class RunReport:
     needs_review: int = 0
     date_mismatches: int = 0
     unverified: int = 0
+    """Uploads Immich has not processed yet, across all exports."""
+    verified_later: int = 0
+    """Earlier uploads confirmed in this run."""
     already_imported: list[tuple[str, datetime]] = field(default_factory=list)
     """Exports skipped because they were imported completely before."""
     waiting: list[str] = field(default_factory=list)
@@ -117,8 +120,13 @@ class RunReport:
             lines.append(f"{self.needs_review} files have no date and need review.")
         if self.date_mismatches:
             lines.append(f"{self.date_mismatches} files show a different date in Immich.")
+        if self.verified_later:
+            lines.append(f"Confirmed {self.verified_later} earlier uploads in Immich.")
         if self.unverified:
-            lines.append(f"{self.unverified} files are still being processed by Immich.")
+            lines.append(
+                f"{self.unverified} uploads are still being processed by Immich; "
+                "they are checked on the next runs."
+            )
         for export_id in self.waiting:
             lines.append(f"Export {export_id} is still being written by Takeout; next run.")
         for export_id, when in self.already_imported:
@@ -250,6 +258,11 @@ class Pipeline:
                     )
                     continue
                 self._import(export_id, export_key, parts, client, resolver, report)
+            # Immich processes large imports in the background; catch up on earlier uploads.
+            checked = verify_pending(self.state, client, self.destination, self.clock)
+            report.verified_later += checked.verified
+            report.date_mismatches += len(checked.mismatched)
+            report.unverified = checked.remaining
 
     def _import(
         self,
@@ -279,20 +292,23 @@ class Pipeline:
             self.sleep,
             self.progress,
             tracker=self.tracker,
+            verify_attempts=1,  # one quick pass; verify_pending catches up on later runs
         )
         report.exports_imported += 1
         report.uploaded += len(result.uploaded)
         report.already_present += len(plan.with_decision(Decision.IN_IMMICH)) + len(result.adopted)
         report.needs_review += len(plan.with_decision(Decision.NO_DATE))
         report.date_mismatches += len(result.date_mismatch)
-        report.unverified += len(result.unverified)
+
         for item, detail in result.failed[:5]:
             report.problems.append(f"{item.name}: {detail}")
         if len(result.failed) > 5:
             report.problems.append(f"…and {len(result.failed) - 5} more files failed.")
         if result.aborted:
             report.problems.append(f"Export {export_id}: {result.aborted}.")
-        clean = not (result.failed or result.aborted or result.date_mismatch or result.unverified)
+        # Complete once everything is uploaded: checking dates in Immich can take hours after a
+        # big import and continues on later runs without rescanning. Cleanup waits for it.
+        clean = not (result.failed or result.aborted)
         if clean:
             summary = {
                 "uploaded": len(result.uploaded),

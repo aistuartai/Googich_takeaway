@@ -231,11 +231,12 @@ def test_tracker_sees_every_stage(world: World) -> None:
     pipeline = world.pipeline()
     Pipeline(**{**pipeline.__dict__, "tracker": tracker}).run()
     stages = {v.stage: v for v in tracker.snapshot().stages}
-    assert {i.state for i in stages[Stage.DOWNLOAD].items} == {ItemState.DONE}
-    assert len(stages[Stage.DOWNLOAD].items) == 2
-    assert [i.state for i in stages[Stage.SCAN].items] == [ItemState.DONE]
-    assert len(stages[Stage.UPLOAD].items) == 13
+    assert (stages[Stage.DOWNLOAD].files_total, stages[Stage.DOWNLOAD].files_done) == (2, 2)
+    assert stages[Stage.SCAN].files_done == 1
+    assert (stages[Stage.UPLOAD].files_total, stages[Stage.UPLOAD].files_done) == (13, 13)
     assert stages[Stage.UPLOAD].done == stages[Stage.UPLOAD].total
+    assert stages[Stage.UPLOAD].items == []  # nothing left to show: all finished
+    assert {i.state for i in stages[Stage.UPLOAD].recent} == {ItemState.DONE}
 
 
 def test_redownloaded_export_already_imported_is_explained(world: World) -> None:
@@ -333,3 +334,38 @@ def test_smb_settings_are_tested_before_saving(
     with pytest.raises(ConfigError, match="LOGON_FAILURE"):
         world.config.save_smb("nas.local", "Photos", "x", "photos", "wrong", "UTC")
     assert world.config.general().storage == "local"  # nothing saved
+
+
+def test_slow_immich_does_not_force_a_rescan(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    world.configure()
+    world.immich.metadata_delay_reads = 10**6  # Immich has not processed anything yet
+    first = world.pipeline().run()
+    assert first.problems == []
+    assert first.uploaded == 13
+    assert first.unverified == 13
+    assert "still being processed by Immich" in first.message().body
+    copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
+    assert copy.completed_at is not None  # imported: will not be rescanned
+    assert not copy.ready  # but not safe to delete yet
+    assert "still processing 13 files" in copy.reason
+
+    world.immich.metadata_delay_reads = 0  # Immich has caught up
+    second = world.pipeline().run()
+    assert second.exports_imported == 0  # no rescan of the archives
+    assert second.verified_later == 13
+    assert second.unverified == 0
+    assert cleanup.staged_exports(world.tmp / "staging", world.state)[0].ready
+
+
+def test_wrong_date_in_immich_blocks_cleanup(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    world.configure()
+    world.immich.shift_hours = 1
+    report = world.pipeline().run()
+    assert report.date_mismatches == 13
+    copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
+    assert not copy.ready
+    assert "different date" in copy.reason

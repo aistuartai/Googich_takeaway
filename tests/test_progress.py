@@ -67,7 +67,9 @@ def test_done_and_skipped_items() -> None:
     assert view.total == 100  # skipped items do not count
     assert view.done == 100
     assert view.eta_seconds is None
-    assert [i.state for i in view.items] == [ItemState.DONE, ItemState.SKIPPED]
+    assert (view.files_done, view.files_skipped, view.files_waiting) == (1, 1, 0)
+    assert [i.state for i in view.items] == [ItemState.SKIPPED]  # shown with its reason
+    assert [i.state for i in view.recent] == [ItemState.DONE]
 
 
 def test_finish_returns_measured_rates_for_next_time() -> None:
@@ -91,3 +93,43 @@ def test_formatting() -> None:
     assert format_duration(3 * 3600 + 120) == "3 h 02 min"
     assert format_size(999) == "999 B"
     assert format_size(345_500_000) == "345.5 MB"
+
+
+def test_snapshot_of_a_full_library_is_small_and_fast() -> None:
+    import time as real_time
+
+    tracker = Tracker(clock=Clock())
+    tracker.start_run()
+    tracker.plan(Stage.UPLOAD, [(f"photo-{n:05d}.jpg", 3_000_000) for n in range(30_000)])
+    for n in range(12_000):
+        tracker.begin(Stage.UPLOAD, f"photo-{n:05d}.jpg")
+        tracker.advance(3_000_000)
+        tracker.end(Stage.UPLOAD, f"photo-{n:05d}.jpg")
+    tracker.begin(Stage.UPLOAD, "photo-12000.jpg")
+    tracker.end(Stage.UPLOAD, "photo-12001.jpg", ItemState.FAILED, "Immich answered 500")
+    started = real_time.perf_counter()
+    for _ in range(50):
+        view = tracker.snapshot().stages[0]
+    per_snapshot = (real_time.perf_counter() - started) / 50
+    assert per_snapshot < 0.01  # well under the dashboard's two-second refresh
+    assert (view.files_total, view.files_done, view.files_failed) == (30_000, 12_000, 1)
+    assert view.files_waiting == 17_999
+    assert len(view.items) <= 27  # active, the failure, and the next 25 waiting
+    assert view.items[0].name == "photo-12000.jpg"
+    assert view.items[1].detail == "Immich answered 500"
+
+
+def test_eta_counts_files_when_overhead_dominates() -> None:
+    clock = Clock()
+    tracker = Tracker(clock=clock)
+    tracker.start_run()
+    tracker.plan(Stage.UPLOAD, [(f"p{n}", 1000) for n in range(100)])
+    for n in range(10):  # ten tiny files take ten seconds: one file a second
+        tracker.begin(Stage.UPLOAD, f"p{n}")
+        clock.now += 1.0
+        tracker.advance(1000)
+        tracker.end(Stage.UPLOAD, f"p{n}")
+    view = tracker.snapshot().stages[0]
+    assert view.eta_seconds == pytest.approx(
+        90, rel=0.01
+    )  # 90 files left, not 90 kB at a fast rate

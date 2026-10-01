@@ -48,8 +48,8 @@
         <span>{{ view.done|size }} of {{ view.total|size }}{% if view.rate %}, {{ view.rate|size }} a second{% endif %}{% if view.eta_seconds %}, {{ view.eta_seconds|duration }} left{% endif %}</span>
       </div>
       {{ meter(view.done, view.total, view.label, active=(view.stage == progress.stage)) }}
-      {% set open_items = view.items|rejectattr('state', 'equalto', 'done')|list %}
-      {% set done_items = view.items|selectattr('state', 'equalto', 'done')|list %}
+      <p class="muted">{{ '{:,}'.format(view.files_done) }} of {{ '{:,}'.format(view.files_total) }} files done{% if view.files_failed %}, {{ view.files_failed }} failed{% endif %}{% if view.files_skipped %}, {{ view.files_skipped }} skipped{% endif %}{% if view.recent %}. Last finished: {{ view.recent[-1].name.rsplit('/', 1)[-1] }}{% endif %}.</p>
+      {% set open_items = view.items %}
       {% if open_items %}
       <table class="queue">
         <tbody>
@@ -62,9 +62,9 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if open_items|length > 12 %}<p class="muted">{{ open_items|length - 12 }} more waiting.</p>{% endif %}
+      {% set shown_waiting = open_items[:12]|selectattr('state', 'equalto', 'waiting')|list|length %}
+      {% if view.files_waiting > shown_waiting %}<p class="muted">{{ '{:,}'.format(view.files_waiting - shown_waiting) }} more waiting.</p>{% endif %}
       {% endif %}
-      {% if done_items %}<p class="muted">{{ done_items|length }} finished.</p>{% endif %}
     </div>
     {% endfor %}
     {% endif %}

@@ -298,6 +298,25 @@ class State:
         ).fetchone()
         return int(row[0]), int(row[1])
 
+    def unverified_uploads(self, destination: str, limit: int) -> list[UploadRecord]:
+        """Uploads Immich has not confirmed yet, oldest first."""
+        rows = self._db.execute(
+            "SELECT * FROM uploads WHERE destination = ? AND status = ? "
+            "ORDER BY uploaded_at, sha1 LIMIT ?",
+            (destination, UploadStatus.UPLOADED.value, limit),
+        )
+        return [_record(row) for row in rows]
+
+    def verification_counts(self, destination: str, export_id: str | None = None) -> dict[str, int]:
+        """Upload counts by status, for one export or all of them."""
+        query = "SELECT status, count(*) FROM uploads WHERE destination = ?"
+        args: tuple[str, ...] = (destination,)
+        if export_id is not None:
+            query += " AND export_id = ?"
+            args = (destination, export_id)
+        rows = self._db.execute(query + " GROUP BY status", args)
+        return {str(row[0]): int(row[1]) for row in rows}
+
     def uploads(self, destination: str) -> list[UploadRecord]:
         rows = self._db.execute(
             "SELECT * FROM uploads WHERE destination = ? ORDER BY uploaded_at, sha1",

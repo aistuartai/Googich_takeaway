@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Large imports no longer leave exports half-finished. Immich reads metadata in the background,
+  and after thousands of uploads that can take hours; files it had not processed within a few
+  seconds were treated as unfinished, so every later run rescanned the whole export. An export
+  now counts as imported once everything is uploaded, and dates are checked on later runs from
+  the database, without reading the archives again. Cleanup still waits until every file is
+  confirmed, and also waits when a date in Immich differs from the one sent.
+- The dashboard stays fast during large imports. Progress is kept as running totals, so a
+  refresh costs the same for 50 files or 50,000, and the queue shows file counts, the active file,
+  failures and the next files waiting instead of every file.
+- Time left for thousands of small files now accounts for the per-file overhead, using the slower
+  of the files-per-second and bytes-per-second estimates.
+
 ## [0.1.0] - 2026-10-02
 
 First release. Googich Takeaway fetches Google Takeout archives from Google Drive or a local

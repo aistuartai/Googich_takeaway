@@ -21,7 +21,7 @@ from pathlib import Path
 
 from googich_takeaway.destinations.immich import CheckAction, ImmichClient
 from googich_takeaway.locations import LocalLocation, Location, LocationError, archives
-from googich_takeaway.state import State
+from googich_takeaway.state import State, UploadStatus
 from googich_takeaway.takeout.archives import group_exports
 
 
@@ -47,9 +47,14 @@ class ExportCopy:
     def size(self) -> int:
         return sum(p.size for p in self.parts)
 
+    awaiting_check: int = 0
+    """Uploads Immich has not processed yet, so their dates are not confirmed."""
+    mismatched: int = 0
+    """Uploads whose date in Immich differs from the one sent."""
+
     @property
     def ready(self) -> bool:
-        return self.completed_at is not None
+        return self.completed_at is not None and not self.awaiting_check and not self.mismatched
 
     @property
     def needs_confirmation(self) -> bool:
@@ -70,12 +75,25 @@ def export_key(export_id: str, parts: list[tuple[str, int]]) -> str:
     return f"{export_id}:{digest[:16]}"
 
 
-def _describe(copy: ExportCopy, state: State) -> ExportCopy:
+def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> ExportCopy:
     key = export_key(copy.export_id, [(p.name, p.size) for p in copy.parts])
     copy.completed_at = state.export_completed_at(key)
     if copy.completed_at is None:
         copy.reason = "Not imported completely yet."
         return copy
+    counts = state.verification_counts(destination, copy.export_id)
+    copy.awaiting_check = counts.get(UploadStatus.UPLOADED.value, 0)
+    copy.mismatched = counts.get(UploadStatus.DATE_MISMATCH.value, 0)
+    if copy.mismatched:
+        copy.reason = (
+            f"{copy.mismatched} files show a different date in Immich than the one sent. "
+            "Check them in the logs before removing anything."
+        )
+    elif copy.awaiting_check:
+        copy.reason = (
+            f"Imported. Immich is still processing {copy.awaiting_check} files; their dates are "
+            "checked on the next runs, and the archive is safe to remove after that."
+        )
     summary = state.export_summary(key) or {}
     copy.not_imported = _count(summary.get("no_date")) + _count(summary.get("unsupported"))
     return copy
@@ -174,7 +192,9 @@ def delete_staged_export(
     if copy is None:
         raise CleanupError("That export is no longer in the download folder.")
     if not copy.ready:
-        raise CleanupError("That export has not been imported completely; nothing deleted.")
+        if copy.completed_at is None:
+            raise CleanupError("That export has not been imported completely; nothing deleted.")
+        raise CleanupError(f"Not yet: {copy.reason} Nothing deleted.")
     if copy.needs_confirmation and not confirmed_not_imported:
         raise CleanupError(
             f"{copy.not_imported} files from this export were not imported (no date, or rejected "

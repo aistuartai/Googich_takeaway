@@ -15,10 +15,11 @@ files already sent are found by Immich's duplicate check and adopted, never sent
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from googich_takeaway.destinations.immich import (
+    AssetDates,
     CheckAction,
     CheckResult,
     ImmichClient,
@@ -115,12 +116,86 @@ def run_import(
     sleep: Callable[[float], None],
     progress: Callable[[int], None] | None = None,
     tracker: Tracker | None = None,
+    verify_attempts: int = VERIFY_ATTEMPTS,
 ) -> ImportResult:
+    """Upload, then check what Immich has processed so far.
+
+    Immich reads metadata in the background, and after a large import that can take hours, so
+    files it has not processed yet stay ``uploaded`` and are checked by ``verify_pending`` on
+    later runs. ``verify_attempts`` 1 makes a single quick pass.
+    """
     result = ImportResult()
     _record_known(plan, state, destination, clock)
     _upload(plan, client, state, destination, clock, result, progress, tracker)
-    _verify(result.uploaded, client, state, destination, clock, sleep, result)
+    _verify(result.uploaded, client, state, destination, clock, sleep, result, verify_attempts)
     return result
+
+
+@dataclass
+class PendingCheck:
+    verified: int = 0
+    mismatched: list[tuple[str, str]] = field(default_factory=list)
+    """(path, detail) for uploads whose date in Immich differs from the one sent."""
+    still_pending: int = 0
+    """Checked now but not processed by Immich yet."""
+    remaining: int = 0
+    """Uploads still waiting to be checked after this pass, including ones not reached."""
+
+
+def verify_pending(
+    state: State,
+    client: ImmichClient,
+    destination: str,
+    clock: Callable[[], datetime],
+    limit: int = 2000,
+    budget: timedelta = timedelta(minutes=5),
+) -> PendingCheck:
+    """Check earlier uploads that Immich had not processed yet, oldest first.
+
+    Uses the capture date recorded at upload, so archives are not read again. Stops after
+    ``limit`` files or ``budget`` time, whichever comes first; the rest wait for the next run.
+    """
+    check = PendingCheck()
+    deadline = clock() + budget
+    for record in state.unverified_uploads(destination, limit):
+        if clock() >= deadline:
+            break
+        if not record.capture_date:
+            continue
+        expected = datetime.fromisoformat(record.capture_date)
+        try:
+            dates = client.asset_dates(record.asset_id)
+        except ImmichError:
+            check.still_pending += 1
+            continue
+        if dates.date_time_original is None:
+            check.still_pending += 1
+            continue
+        if _dates_match(dates, expected):
+            state.mark_verified(destination, record.sha1, UploadStatus.VERIFIED, clock())
+            check.verified += 1
+        else:
+            detail = _mismatch_detail(record.capture_date, dates)
+            state.mark_verified(
+                destination, record.sha1, UploadStatus.DATE_MISMATCH, clock(), detail
+            )
+            check.mismatched.append((record.path, detail))
+    check.remaining = state.verification_counts(destination).get(UploadStatus.UPLOADED.value, 0)
+    return check
+
+
+def _dates_match(dates: AssetDates, expected: datetime) -> bool:
+    return dates.date_time_original == expected.astimezone(
+        UTC
+    ) and dates.local_date_time == expected.replace(tzinfo=None)
+
+
+def _mismatch_detail(expected: str, dates: AssetDates) -> str:
+    found = dates.date_time_original.isoformat() if dates.date_time_original else "no date"
+    return (
+        f"expected {expected}, Immich has {found} "
+        f"(shown as {dates.local_date_time}, zone {dates.time_zone})"
+    )
 
 
 def _record_known(
@@ -213,10 +288,11 @@ def _verify(
     clock: Callable[[], datetime],
     sleep: Callable[[float], None],
     result: ImportResult,
+    attempts: int = VERIFY_ATTEMPTS,
 ) -> None:
     """Read each upload back; Immich extracts metadata asynchronously, so retry briefly."""
     pending = list(items)
-    for attempt in range(VERIFY_ATTEMPTS):
+    for attempt in range(attempts):
         still_pending = []
         for item in pending:
             record = state.get_upload(destination, item.sha1)
@@ -230,16 +306,11 @@ def _verify(
             if dates.date_time_original is None:
                 still_pending.append(item)
                 continue
-            expected_utc, expected_local = item.date.utc, item.date.local
-            if dates.date_time_original == expected_utc and dates.local_date_time == expected_local:
+            if _dates_match(dates, item.date.aware):
                 state.mark_verified(destination, item.sha1, UploadStatus.VERIFIED, clock())
                 result.verified.append(item)
             else:
-                detail = (
-                    f"expected {item.date.xmp_value()}, Immich has "
-                    f"{dates.date_time_original.isoformat()} "
-                    f"(shown as {dates.local_date_time}, zone {dates.time_zone})"
-                )
+                detail = _mismatch_detail(item.date.xmp_value(), dates)
                 state.mark_verified(
                     destination, item.sha1, UploadStatus.DATE_MISMATCH, clock(), detail
                 )
@@ -247,7 +318,7 @@ def _verify(
         pending = still_pending
         if not pending:
             return
-        if attempt < VERIFY_ATTEMPTS - 1:
+        if attempt < attempts - 1:
             sleep(VERIFY_DELAY_SECONDS)
     result.unverified.extend(pending)
 
