@@ -1,0 +1,93 @@
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import httpx
+import pytest
+
+from googich_takeaway import updates
+from googich_takeaway.state import State
+
+NOW = datetime(2026, 10, 2, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("latest", "current", "newer"),
+    [
+        ("0.2.0", "0.1.0", True),
+        ("v0.1.1", "0.1.0", True),
+        ("0.1.0", "0.1.0", False),
+        ("0.1.0", "0.1.0.dev0", True),  # the release is newer than its development build
+        ("0.0.9", "0.1.0.dev0", False),
+        ("1.0.0-rc1", "0.9.0", False),  # not a plain release
+    ],
+)
+def test_is_newer(latest: str, current: str, newer: bool) -> None:
+    assert updates.is_newer(latest, current) is newer
+
+
+class FakeGitHub:
+    def __init__(self, body: dict[str, object] | None = None, status: int = 200) -> None:
+        self.body = body or {
+            "tag_name": "v9.9.9",
+            "html_url": "https://github.com/aistuartai/Googich_takeaway/releases/tag/v9.9.9",
+            "prerelease": False,
+            "draft": False,
+        }
+        self.status = status
+        self.calls = 0
+
+    def transport(self) -> httpx.MockTransport:
+        def handle(request: httpx.Request) -> httpx.Response:
+            self.calls += 1
+            assert "authorization" not in request.headers
+            assert request.headers["user-agent"].startswith("googich-takeaway/")
+            return httpx.Response(self.status, json=self.body)
+
+        return httpx.MockTransport(handle)
+
+
+@pytest.fixture
+def state(tmp_path: Path) -> State:
+    return State(tmp_path / "state.db")
+
+
+def test_new_release_is_cached_and_checked_once_a_day(state: State) -> None:
+    github = FakeGitHub()
+    info = updates.check_if_due(state, lambda: NOW, github.transport())
+    assert info is not None
+    assert info.latest == "9.9.9"
+    assert info.newer
+    updates.check_if_due(state, lambda: NOW + timedelta(hours=5), github.transport())
+    assert github.calls == 1
+    updates.check_if_due(state, lambda: NOW + timedelta(hours=25), github.transport())
+    assert github.calls == 2
+
+
+def test_prerelease_and_drafts_are_ignored(state: State) -> None:
+    github = FakeGitHub({"tag_name": "v9.9.9", "prerelease": True})
+    assert updates.check_if_due(state, lambda: NOW, github.transport()) is None
+
+
+def test_no_release_yet_and_errors_are_quiet_and_backed_off(state: State) -> None:
+    missing = FakeGitHub(status=404)
+    assert updates.check_if_due(state, lambda: NOW, missing.transport()) is None
+    broken = FakeGitHub(status=500)
+    later = NOW + timedelta(minutes=30)
+    assert updates.check_if_due(state, lambda: later, broken.transport()) is None
+    assert broken.calls == 0  # tried less than an hour ago: wait
+
+
+def test_disabled_makes_no_request(state: State) -> None:
+    updates.set_enabled(state, False, NOW)
+    github = FakeGitHub()
+    assert updates.check_if_due(state, lambda: NOW, github.transport()) is None
+    assert github.calls == 0
+
+
+def test_links_only_ever_point_at_this_project(state: State) -> None:
+    github = FakeGitHub(
+        {"tag_name": "v9.9.9", "html_url": "https://evil.example/download", "prerelease": False}
+    )
+    info = updates.check_if_due(state, lambda: NOW, github.transport())
+    assert info is not None
+    assert info.url == "https://github.com/aistuartai/Googich_takeaway/releases"

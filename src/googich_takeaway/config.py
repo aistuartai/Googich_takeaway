@@ -83,6 +83,7 @@ class GeneralSettings:
 
 class Config:
     def __init__(self, state: State, box: SecretBox, clock: Callable[[], datetime]) -> None:
+        self.state = state
         self._state = state
         self._box = box
         self._clock = clock

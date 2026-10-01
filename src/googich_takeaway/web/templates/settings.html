@@ -123,4 +123,13 @@
     <div id="notify-test" aria-live="polite"></div>
   </form>
 </section>
+<section class="card">
+  <h2>Updates</h2>
+  <form method="post" action="/settings/updates">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
+    <small>Only shows a notice; nothing is downloaded or installed automatically. The check asks GitHub anonymously for the latest release of this project. You are running version {{ version }}.{% if update_known %} Latest release seen: {{ update_known.latest }}, checked {{ update_known.checked_at.strftime('%d %b %H:%M') }} UTC.{% endif %}</small>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+</section>
 {% endblock %}

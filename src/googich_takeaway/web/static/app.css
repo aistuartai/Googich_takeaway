@@ -93,3 +93,4 @@ ul.parts { margin: .5rem 0 .75rem; padding-left: 1.25rem; }
 form:has(input[name="storage"][value="local"]:checked) .storage-smb { display: none; }
 form:has(input[name="storage"][value="smb"]:checked) .storage-local { display: none; }
 .storage-smb, .storage-local { margin-bottom: 1rem; }
+.update-banner { background: var(--card); border-bottom: 1px solid var(--accent); padding: .6rem 1rem; text-align: center; font-size: .9rem; }

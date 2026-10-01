@@ -26,6 +26,13 @@
     </nav>
     {% endif %}
   </header>
+  {% if update %}
+  <div class="update-banner" role="status">
+    Version {{ update.latest }} is available (you have {{ version }}).
+    <a href="{{ update.url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
+    · Update with <code>docker compose pull &amp;&amp; docker compose up -d</code>
+  </div>
+  {% endif %}
   <main>
     {% block content %}{% endblock %}
   </main>

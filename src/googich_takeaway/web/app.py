@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from googich_takeaway import __version__, cleanup
+from googich_takeaway import __version__, cleanup, updates
 from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
@@ -164,6 +164,8 @@ def create_app(
         **context: object,
     ) -> Response:
         context.setdefault("immich_link", config.immich().link)
+        known = updates.cached(config.state) if updates.enabled(config.state) else None
+        context.setdefault("update", known if known and known.newer else None)
         return templates.TemplateResponse(request, name, context, status_code=status_code)
 
     @app.middleware("http")
@@ -488,6 +490,8 @@ def create_app(
             weekdays=WEEKDAYS,
             timezones=TIMEZONES,
             has_smb_password=config.has_smb_password(),
+            updates_enabled=updates.enabled(config.state),
+            update_known=updates.cached(config.state),
             outcomes=config.notification_outcomes(),
             has_urls=config.has_notification_urls(),
             error=error,
@@ -585,6 +589,11 @@ def create_app(
             return result(request, False, f"Unexpected error ({type(error).__name__}); see Logs.")
         space = f" {format_size(free)} free." if free is not None else ""
         return result(request, True, f"Can write to {location.describe()}.{space}")
+
+    @app.post("/settings/updates")
+    def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:
+        updates.set_enabled(state, bool(check), clock())
+        return RedirectResponse("/settings?saved=updates", status_code=303)
 
     @app.post("/settings/schedule")
     def save_schedule(

@@ -338,3 +338,25 @@ def test_smb_download_folder_saved_through_the_form(
     bad = world.post("/settings/general", data={**form, "smb_password": "wrong"})
     assert bad.status_code == 400
     assert "LOGON_FAILURE" in bad.text
+
+
+def test_update_banner_and_setting(world: World) -> None:
+    import json
+
+    from googich_takeaway.state import State
+
+    with State(world.tmp / "state.db") as state:
+        state.set_setting(
+            "updates.latest",
+            json.dumps(
+                {
+                    "latest": "9.9.9",
+                    "url": "https://github.com/aistuartai/Googich_takeaway/releases",
+                    "checked_at": datetime.now(UTC).isoformat(),
+                }
+            ),
+            datetime.now(UTC),
+        )
+    assert "Version 9.9.9 is available" in world.client.get("/").text
+    world.post("/settings/updates", data={})  # switch the check off
+    assert "Version 9.9.9 is available" not in world.client.get("/").text

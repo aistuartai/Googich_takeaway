@@ -18,6 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from googich_takeaway import updates
 from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
@@ -129,6 +130,7 @@ class Worker:
                 except Exception:
                     log.exception("Run crashed")
                 continue
+            self._check_updates()
             self._wake.wait(IDLE_CHECK_SECONDS)
             self._wake.clear()
 
@@ -145,6 +147,13 @@ class Worker:
         if due is not None and due <= self._clock():
             return Trigger.SCHEDULE, RunOptions()
         return None
+
+    def _check_updates(self) -> None:
+        try:
+            with State(self._state_path) as state:
+                updates.check_if_due(state, self._clock)
+        except Exception:  # an update check must never stop the worker
+            log.exception("Update check failed")
 
     def _next_due(self, state: State, config: Config) -> datetime | None:
         schedule = config.schedule()
