@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -30,6 +30,21 @@ _MIGRATIONS: dict[int, str] = {
             verified_at  TEXT,
             detail       TEXT,
             PRIMARY KEY (destination, sha1)
+        ) STRICT;
+    """,
+    2: """
+        CREATE TABLE downloads (
+            source        TEXT NOT NULL,
+            file_id       TEXT NOT NULL,
+            fingerprint   TEXT NOT NULL,
+            name          TEXT NOT NULL,
+            size          INTEGER NOT NULL,
+            link          TEXT,
+            local_path    TEXT NOT NULL,
+            downloaded_at TEXT NOT NULL,
+            forgotten_at  TEXT,
+            removed_at    TEXT,
+            PRIMARY KEY (source, file_id, fingerprint)
         ) STRICT;
     """,
 }
@@ -59,6 +74,21 @@ class UploadRecord:
     uploaded_at: datetime
     verified_at: datetime | None
     detail: str | None
+
+
+@dataclass(frozen=True)
+class DownloadRecord:
+    source: str
+    file_id: str
+    fingerprint: str
+    name: str
+    size: int
+    link: str | None
+    local_path: str
+    downloaded_at: datetime
+    forgotten_at: datetime | None
+    removed_at: datetime | None
+    """When the file was found to be gone from the source (deleted by the user)."""
 
 
 class StateError(Exception):
@@ -183,6 +213,91 @@ class State:
             (destination,),
         )
         return [_record(row) for row in rows]
+
+    # --- download history ---------------------------------------------------------------------
+
+    def record_download(self, record: DownloadRecord) -> None:
+        self._db.execute(
+            """
+            INSERT INTO downloads (source, file_id, fingerprint, name, size, link, local_path,
+                                   downloaded_at, forgotten_at, removed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+            ON CONFLICT (source, file_id, fingerprint) DO UPDATE SET
+                name = excluded.name,
+                size = excluded.size,
+                link = excluded.link,
+                local_path = excluded.local_path,
+                downloaded_at = excluded.downloaded_at,
+                forgotten_at = NULL,
+                removed_at = NULL
+            """,
+            (
+                record.source,
+                record.file_id,
+                record.fingerprint,
+                record.name,
+                record.size,
+                record.link,
+                record.local_path,
+                _to_text(record.downloaded_at),
+            ),
+        )
+
+    def was_downloaded(self, source: str, file_id: str, fingerprint: str) -> bool:
+        """True if this exact file content was downloaded before and not forgotten."""
+        row = self._db.execute(
+            "SELECT 1 FROM downloads WHERE source = ? AND file_id = ? AND fingerprint = ? "
+            "AND forgotten_at IS NULL",
+            (source, file_id, fingerprint),
+        ).fetchone()
+        return row is not None
+
+    def forget_download(self, source: str, file_id: str, at: datetime) -> int:
+        """Make the next fetch download ``file_id`` again. Returns rows changed."""
+        cursor = self._db.execute(
+            "UPDATE downloads SET forgotten_at = ? "
+            "WHERE source = ? AND file_id = ? AND forgotten_at IS NULL",
+            (_to_text(at), source, file_id),
+        )
+        return cursor.rowcount
+
+    def mark_removed_from_source(
+        self, source: str, present_ids: Iterable[str], at: datetime
+    ) -> int:
+        """Record that downloaded files not in ``present_ids`` are gone from the source."""
+        present = set(present_ids)
+        rows = self._db.execute(
+            "SELECT file_id FROM downloads WHERE source = ? AND removed_at IS NULL", (source,)
+        ).fetchall()
+        gone = {row[0] for row in rows} - present
+        for file_id in sorted(gone):
+            self._db.execute(
+                "UPDATE downloads SET removed_at = ? WHERE source = ? AND file_id = ? "
+                "AND removed_at IS NULL",
+                (_to_text(at), source, file_id),
+            )
+        return len(gone)
+
+    def downloads(self, source: str) -> list[DownloadRecord]:
+        rows = self._db.execute(
+            "SELECT * FROM downloads WHERE source = ? ORDER BY downloaded_at, name", (source,)
+        )
+        return [_download(row) for row in rows]
+
+
+def _download(row: sqlite3.Row) -> DownloadRecord:
+    return DownloadRecord(
+        source=row["source"],
+        file_id=row["file_id"],
+        fingerprint=row["fingerprint"],
+        name=row["name"],
+        size=row["size"],
+        link=row["link"],
+        local_path=row["local_path"],
+        downloaded_at=_from_text(row["downloaded_at"]),
+        forgotten_at=_from_text(row["forgotten_at"]) if row["forgotten_at"] else None,
+        removed_at=_from_text(row["removed_at"]) if row["removed_at"] else None,
+    )
 
 
 def _statements(script: str) -> list[str]:

@@ -95,3 +95,23 @@ def test_database_file_is_owner_only(tmp_path: Path) -> None:
     path = tmp_path / "state.db"
     State(path).close()
     assert path.stat().st_mode & 0o077 == 0
+
+
+def test_version_1_database_is_upgraded_keeping_uploads(tmp_path: Path) -> None:
+    from googich_takeaway import state as state_module
+
+    path = tmp_path / "state.db"
+    with sqlite3.connect(path) as raw:
+        for statement in state_module._statements(state_module._MIGRATIONS[1]):
+            raw.execute(statement)
+        raw.execute("PRAGMA user_version = 1")
+    with State(path) as state:
+        state.record_upload(record())
+    # Reopen as v1 with an upload, then upgrade.
+    with sqlite3.connect(path) as raw:
+        raw.execute("DROP TABLE downloads")
+        raw.execute("PRAGMA user_version = 1")
+    with State(path) as state:
+        assert state.schema_version == SCHEMA_VERSION
+        assert state.get_upload("immich", "a" * 40) == record()
+        assert state.downloads("anything") == []

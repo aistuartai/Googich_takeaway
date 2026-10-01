@@ -9,6 +9,7 @@ import pytest
 from googich_takeaway.cli import main
 from googich_takeaway.destinations.immich import ImmichClient
 from tests.destinations.test_immich import KEY, FakeImmich
+from tests.fake_drive import ACCOUNT, FOLDER, FakeDrive, service_account_info
 from tests.fake_immich import FakeImmichServer
 from tests.fixtures.takeout import ROOT, quirks_export
 
@@ -209,3 +210,62 @@ def test_import_requires_immich(export_dir: Path) -> None:
     code, _, err, _ = run_import_cli(FakeImmichServer(), str(export_dir))
     assert code == 2
     assert "needs --immich-url" in err
+
+
+# --- googich fetch ----------------------------------------------------------------------------
+
+
+def run_fetch_cli(drive: FakeDrive, tmp_path: Path, *extra: str) -> tuple[int, str, str]:
+    from googich_takeaway.sources.gdrive import GoogleDriveSource
+
+    key = tmp_path / "sa.json"
+    if not key.exists():
+        key.write_text(json.dumps(service_account_info()))
+        key.chmod(0o600)
+    out, err = io.StringIO(), io.StringIO()
+
+    def factory(folder: str, info: dict[str, object]) -> GoogleDriveSource:
+        return GoogleDriveSource(folder, info, transport=drive.transport())
+
+    argv = [
+        "fetch", "--drive-folder", FOLDER, "--service-account", str(key),
+        "--staging", str(tmp_path / "staging"), "--state", str(tmp_path / "state.db"), *extra,
+    ]  # fmt: skip
+    code = main(argv, out, err, drive_factory=factory)
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_fetch_downloads_then_skips(tmp_path: Path) -> None:
+    drive = FakeDrive()
+    drive.add("a", "takeout-20261001T010203Z-001.zip", b"x" * 5000)
+    code, out, err = run_fetch_cli(drive, tmp_path)
+    assert code == 0, err
+    assert "Downloaded 1, skipped 0" in out
+    assert (tmp_path / "staging" / "takeout-20261001T010203Z-001.zip").exists()
+    code, out, _ = run_fetch_cli(drive, tmp_path)
+    assert "Downloaded 0, skipped 1" in out
+
+
+def test_fetch_list_only_downloads_nothing(tmp_path: Path) -> None:
+    drive = FakeDrive()
+    drive.add("a", "takeout-20261001T010203Z-001.zip", b"x" * 5000)
+    code, out, _ = run_fetch_cli(drive, tmp_path, "--list-only")
+    assert code == 0
+    assert "new" in out
+    assert not (tmp_path / "staging").exists()
+
+
+def test_fetch_empty_folder_names_the_account_to_share_with(tmp_path: Path) -> None:
+    code, out, _ = run_fetch_cli(FakeDrive(shared=False), tmp_path)
+    assert code == 0
+    assert ACCOUNT in out
+
+
+def test_fetch_refuses_readable_key_file(tmp_path: Path) -> None:
+    key = tmp_path / "sa.json"
+    key.write_text(json.dumps(service_account_info()))
+    key.chmod(0o644)
+    code, _, err = run_fetch_cli(FakeDrive(), tmp_path)
+    assert code == 1
+    assert "chmod 600" in err
+    assert "PRIVATE KEY" not in err

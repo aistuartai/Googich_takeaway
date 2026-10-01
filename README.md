@@ -39,6 +39,36 @@ To also see which files your Immich server already has, create an Immich API key
 Add `--list` for every file, or `--json` for machine-readable output. The key is read from the
 file, so it never appears in your shell history or the process list.
 
+## Fetching from Google Drive
+
+Google Takeout can write its exports to a Google Drive folder on a schedule. `googich fetch`
+downloads new archives from that folder. It uses a Google Cloud service account that can only
+**read** the one folder you share with it, so it can never change or delete anything in your
+Google account.
+
+One-time setup:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable
+   the **Google Drive API** for it.
+2. Under **IAM & Admin → Service Accounts**, create a service account. It needs no roles.
+3. On the service account's **Keys** tab, add a JSON key. Save the downloaded file somewhere only
+   you can read, then run `chmod 600` on it. Treat it like a password.
+4. In Google Drive, open the folder Takeout writes to, choose **Share**, and share it with the
+   service account's email address (it ends in `iam.gserviceaccount.com`) as **Viewer**.
+5. Copy the folder ID: the last part of the folder's URL in your browser.
+
+Then:
+
+```bash
+uv run googich fetch --drive-folder FOLDER_ID --service-account /path/to/key.json \
+  --staging /path/to/downloads
+```
+
+Downloads resume if interrupted, are checked against the checksum Drive reports, and are only
+renamed into place once complete. Archives downloaded before are skipped, even after you delete
+the local copy; use `--ignore-history` to download everything again, or `--list-only` to see what
+would be downloaded. A download that would not fit in the free space is refused before it starts.
+
 ## Importing
 
 ```bash

@@ -5,6 +5,9 @@ and key file it also asks Immich which files it already has. It never uploads or
 
 ``googich import`` does the import: it shows the same plan, asks for confirmation, uploads new
 files with their capture dates and checks each one in Immich afterwards.
+
+``googich fetch`` downloads new Takeout archives from a Google Drive folder into a staging folder,
+resuming interrupted downloads and skipping archives downloaded before.
 """
 
 import argparse
@@ -28,13 +31,17 @@ from googich_takeaway.destinations.immich import (
     ImmichError,
     read_api_key,
 )
+from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
 from googich_takeaway.importer import Decision, ImportPlan, ImportResult, plan_import, run_import
+from googich_takeaway.sources.base import SourceError
+from googich_takeaway.sources.gdrive import GoogleDriveSource, load_service_account
 from googich_takeaway.state import State, StateError
 from googich_takeaway.takeout.archives import ArchiveError, archive_format, group_exports
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem, scan_export
 
 ClientFactory = Callable[[str, str], ImmichClient]
+DriveFactory = Callable[[str, dict[str, object]], GoogleDriveSource]
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,7 @@ def main(
     err: TextIO = sys.stderr,
     client_factory: ClientFactory = ImmichClient,
     confirm: Callable[[str], bool] | None = None,
+    drive_factory: DriveFactory = GoogleDriveSource,
 ) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -66,6 +74,8 @@ def main(
         return _scan(args, out, err, client_factory)
     if args.command == "import":
         return _import(args, out, err, client_factory, confirm or _ask)
+    if args.command == "fetch":
+        return _fetch(args, out, err, drive_factory)
     parser.print_help(err)
     return 2
 
@@ -106,6 +116,35 @@ def _parser() -> argparse.ArgumentParser:
         help="also upload files this app uploaded before that are no longer in Immich",
     )
     imp.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+
+    fetch = commands.add_parser(
+        "fetch",
+        help="download new Takeout archives from Google Drive",
+        description="Download new Takeout archives from a Google Drive folder. Read-only in Drive.",
+    )
+    fetch.add_argument(
+        "--drive-folder",
+        required=True,
+        help="ID of the Drive folder Takeout writes to (the last part of its URL)",
+    )
+    fetch.add_argument(
+        "--service-account",
+        type=Path,
+        required=True,
+        help="service account key file (JSON), mode 600",
+    )
+    fetch.add_argument(
+        "--staging", type=Path, required=True, help="folder to download archives into"
+    )
+    fetch.add_argument("--state", type=Path, default=_default_state(), help="state database")
+    fetch.add_argument(
+        "--ignore-history",
+        action="store_true",
+        help="download every archive again, even ones downloaded before",
+    )
+    fetch.add_argument(
+        "--list-only", action="store_true", help="only list what would be downloaded"
+    )
     return parser
 
 
@@ -251,6 +290,42 @@ def _import(
         err.write(f"error: {error}\n")
         return 1
     return _print_results(results, out)
+
+
+def _fetch(args: argparse.Namespace, out: TextIO, err: TextIO, drive_factory: DriveFactory) -> int:
+    try:
+        info = load_service_account(args.service_account)
+        with State(args.state) as state, drive_factory(args.drive_folder, info) as source:
+            files = source.list_archives()
+            if not files:
+                out.write(
+                    "No Takeout archives found. If the folder is not empty, share it with "
+                    f"{source.account} as Viewer.\n"
+                )
+                return 0
+            if args.list_only:
+                for file in files:
+                    seen = state.was_downloaded(source.name, file.file_id, file.fingerprint)
+                    label = "downloaded before" if seen and not args.ignore_history else "new"
+                    out.write(f"  {label:<18} {_size(file.size):>9}  {file.name}\n")
+                return 0
+            downloader = Downloader(args.staging, state, lambda: datetime.now(UTC), time.sleep)
+            result = downloader.fetch_new(source, ignore_history=args.ignore_history)
+    except NotEnoughSpaceError as error:
+        err.write(f"error: {error}\n")
+        return 1
+    except (SourceError, StateError, OSError) as error:
+        err.write(f"error: {error}\n")
+        return 1
+    for file, path in result.downloaded:
+        out.write(f"  downloaded  {_size(file.size):>9}  {path}\n")
+    out.write(
+        f"Downloaded {len(result.downloaded)}, skipped {len(result.skipped)} downloaded before"
+    )
+    out.write(f", {len(result.failed)} failed\n" if result.failed else "\n")
+    for file, detail in result.failed:
+        out.write(f"  failed: {file.name}: {detail}; run again to resume\n")
+    return 1 if result.failed else 0
 
 
 def _print_plans(plans: list[ImportPlan], version: str, out: TextIO) -> None:

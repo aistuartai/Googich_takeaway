@@ -37,3 +37,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   verify its date. Files deleted in Immich since an earlier upload, files in Immich's trash and
   files with no capture date are skipped and reported. Interrupted runs resume without
   duplicates.
+- Google Drive source using a service account with read-only access to one shared folder.
+- `googich fetch` command: downloads new archives into a staging folder with resume, retries,
+  checksum verification and atomic completion, refuses downloads that would not fit, and
+  remembers what was downloaded (with `--ignore-history` to override).
+- Local folder source.
+- State database schema 2: download history. Version 1 databases are upgraded in place.
