@@ -23,6 +23,7 @@ dev = [
     "hypothesis>=6",
     "ruff>=0.13",
     "mypy>=1.18",
+    "pillow>=11",
 ]
 
 [project.urls]

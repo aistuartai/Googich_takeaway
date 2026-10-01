@@ -16,3 +16,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Capture date resolver: combines Takeout sidecar, EXIF, video and filename dates into one local
   time with an explicit UTC offset, handling time zones and dates edited in Google Photos.
 - Filename date parsing for common camera, Pixel, WhatsApp and screenshot names.
+- Test fixture builder that generates small synthetic Takeout exports (zip and tgz, multi-part)
+  covering known naming quirks. No real photos are stored in the repository.
