@@ -295,3 +295,15 @@ def test_log_viewer_tail_and_download(world: World) -> None:
 def test_pages_disable_htmx_eval(world: World) -> None:
     page = world.client.get("/").text
     assert '"allowEval": false' in page
+
+
+def test_cleanup_page(world: World) -> None:
+    world.post("/settings/general", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
+    (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").write_bytes(b"zip")
+    page = world.client.get("/cleanup").text
+    assert "Not imported completely yet." in page
+    assert "This app never deletes anything in Google Drive." in page
+    refused = world.post("/cleanup/staged/20261001T010203Z")
+    assert refused.status_code == 303
+    assert "not+been+imported" in refused.headers["location"].replace("%20", "+")
+    assert (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").exists()

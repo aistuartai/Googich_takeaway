@@ -17,7 +17,7 @@ from tests.fixtures.takeout import quirks_export
 from tests.test_config import key_file
 
 NOW = datetime(2026, 10, 1, tzinfo=UTC)
-FOLDER_ID = FOLDER + "-abcdefghij"
+FOLDER_ID = FOLDER  # the fake Drive serves this folder
 
 
 class World:
@@ -47,7 +47,7 @@ class World:
             self.sleeps.append,
             immich_factory=lambda url, key: ImmichClient(url, key, self.immich.transport()),
             drive_factory=lambda folder, info: GoogleDriveSource(
-                FOLDER, info, self.drive.transport()
+                folder, info, self.drive.transport()
             ),
         )
 

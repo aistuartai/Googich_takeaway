@@ -71,6 +71,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-file progress bars, smoothed transfer rates and time left per stage and for the whole run.
   Before a stage starts its time is estimated from rates measured on earlier runs.
 - Dashboard with status, next run, Run now, recent runs with details, and the pause banner.
+- Cleanup page. Download folder: delete archives of exports imported completely, re-checked
+  against the files on disk at the time of deletion; partial downloads listed with their age.
+  Google Drive: the app never deletes there; it lists downloaded exports ready to remove, with
+  links, a Check Immich now button and instructions, and shows archives already removed. Files
+  that were never imported (no date, or rejected by Immich) are called out and need confirmation.
 - Logs: JSON lines in rotating owner-only files beside the database, and a web viewer with
   level and text filters, a live tail, per-run views linked from the dashboard and a download.
   A redaction filter removes authorization headers, API keys, private keys and credentials in

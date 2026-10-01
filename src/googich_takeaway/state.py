@@ -5,6 +5,7 @@ every upgrade step runs in a transaction. Times are stored as UTC ISO 8601 strin
 passed in by the caller, so behaviour is reproducible in tests.
 """
 
+import json
 import os
 import sqlite3
 from collections.abc import Iterable
@@ -507,6 +508,22 @@ class State:
             "SELECT completed_at FROM completed_exports WHERE export_key = ?", (export_key,)
         ).fetchone()
         return _from_text(row[0]) if row else None
+
+    def export_summary(self, export_key: str) -> dict[str, object] | None:
+        row = self._db.execute(
+            "SELECT summary FROM completed_exports WHERE export_key = ?", (export_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        data = json.loads(row[0])
+        return data if isinstance(data, dict) else {}
+
+    def uploaded_hashes_for_export(self, destination: str, export_id: str) -> list[str]:
+        rows = self._db.execute(
+            "SELECT sha1 FROM uploads WHERE destination = ? AND export_id = ? ORDER BY sha1",
+            (destination, export_id),
+        )
+        return [row[0] for row in rows]
 
     def mark_export_complete(
         self, export_key: str, export_id: str, summary: str, at: datetime

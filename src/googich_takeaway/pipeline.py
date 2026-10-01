@@ -9,7 +9,6 @@ run, because a photo's sidecar can sit in another part. An export that imported 
 remembered, so later runs do not rescan it.
 """
 
-import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -18,6 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from googich_takeaway.cleanup import export_key
 from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
@@ -288,6 +288,8 @@ class Pipeline:
                 "uploaded": len(result.uploaded),
                 "verified": len(result.verified),
                 "no_date": len(plan.with_decision(Decision.NO_DATE)),
+                "unsupported": len(plan.with_decision(Decision.UNSUPPORTED)),
+                "parts": sorted(p.name for p in parts),
             }
             self.state.mark_export_complete(
                 export_key, export_id, json.dumps(summary), self.clock()
@@ -314,6 +316,4 @@ def _archives_in(folder: Path) -> list[Path]:
 
 def _export_key(export_id: str, parts: list[Path]) -> str:
     """Identifies an export by its parts' names and sizes, so a newly added part re-imports."""
-    listing = sorted((p.name, p.stat().st_size) for p in parts)
-    digest = hashlib.sha256(json.dumps([export_id, listing]).encode()).hexdigest()
-    return f"{export_id}:{digest[:16]}"
+    return export_key(export_id, [(p.name, p.stat().st_size) for p in parts])

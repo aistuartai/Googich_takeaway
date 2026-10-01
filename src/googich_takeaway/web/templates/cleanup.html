@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Cleanup · Googich Takeaway{% endblock %}
+{% block content %}
+<h1>Cleanup</h1>
+{% if message %}<p class="result ok" role="status">{{ message }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if running %}<p class="muted">A run is going; deleting is paused until it finishes.</p>{% endif %}
+
+<section class="card">
+  <h2>Download folder</h2>
+  <p class="muted">Archives here are copies. Once an export is imported completely they can be deleted to free space; the app remembers them and will not download them again.</p>
+  {% if staged %}
+  <table>
+    <thead><tr><th>Export</th><th>Archives</th><th class="num">Size</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for copy in staged %}
+      <tr>
+        <td><code>{{ copy.export_id }}</code></td>
+        <td>{{ copy.parts|length }}</td>
+        <td class="num">{{ copy.size|size }}</td>
+        <td>
+          {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
+            {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, or rejected by Immich) and exist only in this archive and in Google Photos.</span>{% endif %}
+          {% else %}<span class="muted">{{ copy.reason }}</span>{% endif %}
+        </td>
+        <td>
+          {% if copy.ready %}
+          <form method="post" action="/cleanup/staged/{{ copy.export_id }}">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            {% if copy.needs_confirmation %}<label class="check"><input type="checkbox" name="confirm" value="1" required> Delete anyway</label>{% endif %}
+            <button type="submit" class="danger" {{ 'disabled' if running }}>Delete {{ copy.size|size }}</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No archives in the download folder.</p>{% endif %}
+
+  {% if partials %}
+  <h3>Partial downloads</h3>
+  <p class="muted">Interrupted downloads resume from these on the next run. Delete one only if you do not want it to resume.</p>
+  <table>
+    <tbody>
+    {% for part in partials %}
+      <tr>
+        <td>{{ part.name }}</td><td class="num">{{ part.size|size }}</td>
+        <td class="muted">last written {{ part.modified.astimezone(zone).strftime('%d %b %H:%M') }}</td>
+        <td>
+          <form method="post" action="/cleanup/partial/{{ part.name }}">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <button type="submit" class="danger" {{ 'disabled' if running }}>Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Google Drive</h2>
+  <p>This app never deletes anything in Google Drive. Below are the Takeout archives it downloaded, and whether each export is safe to remove. To remove one: press <strong>Check Immich now</strong>, open each archive's link, delete it in Drive, then <strong>empty Drive's trash</strong>, because trashed files still count against your storage.</p>
+  <p class="warn-text">Removing archives from Drive does not touch Google Photos. Once removed, your copies are Google Photos and Immich's storage: make sure Immich's storage is backed up.</p>
+  {% if drive %}
+  {% for copy in drive %}
+  <div class="drive-export">
+    <div class="stage-head">
+      <strong><code>{{ copy.export_id }}</code> · {{ copy.size|size }}{% if copy.sources %} · {{ copy.sources|join(', ') }}{% endif %}</strong>
+      <span>
+        {% if copy.ready %}<span class="ok-text">Ready to remove</span> · imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
+        {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% endif %}
+      </span>
+    </div>
+    {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, or rejected by Immich). Removing the archive leaves them only in Google Photos.</p>{% endif %}
+    <ul class="parts">
+      {% for part in copy.parts %}
+      <li>{% if part.removed_at %}<s>{{ part.name }}</s> <span class="muted">removed from Drive {{ part.removed_at.astimezone(zone).strftime('%d %b') }}</span>
+          {% elif copy.ready and part.link %}<a href="{{ part.link }}" target="_blank" rel="noopener noreferrer">{{ part.name }} ↗</a> <span class="muted">{{ part.size|size }}</span>
+          {% else %}{{ part.name }} <span class="muted">{{ part.size|size }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% if copy.ready %}
+    <button type="button" class="secondary" hx-post="/cleanup/drive/{{ copy.export_id }}/recheck" hx-target="#recheck-{{ loop.index }}">Check Immich now</button>
+    <div id="recheck-{{ loop.index }}" aria-live="polite"></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}<p>Nothing downloaded from Google Drive yet.</p>{% endif %}
+</section>
+{% endblock %}

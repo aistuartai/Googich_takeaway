@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from googich_takeaway import __version__
+from googich_takeaway import __version__, cleanup
 from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
@@ -354,6 +354,102 @@ def create_app(
             path,
             media_type="application/x-ndjson",
             filename=f"googich-{datetime.now(UTC):%Y%m%d-%H%M%S}.log",
+        )
+
+    # --- cleanup -------------------------------------------------------------------------------
+
+    def drive_labels(config: Config) -> dict[str, str]:
+        return {f"gdrive:{s.location}": s.name for s in config.sources() if s.kind == "gdrive"}
+
+    @app.get("/cleanup", response_class=HTMLResponse)
+    def cleanup_page(
+        request: Request,
+        config: ConfigDep,
+        state: StateDep,
+        message: str | None = None,
+        error: str | None = None,
+    ) -> Response:
+        staging = config.general().staging
+        return page(
+            request,
+            config,
+            "cleanup.html",
+            staged=cleanup.staged_exports(staging, state),
+            partials=cleanup.partial_downloads(staging),
+            drive=cleanup.drive_exports(state, drive_labels(config)),
+            running=worker.status().running,
+            message=message,
+            error=error,
+            zone=_zone(config.general().timezone),
+        )
+
+    @app.post("/cleanup/staged/{export_id}")
+    def delete_staged(
+        config: ConfigDep,
+        state: StateDep,
+        export_id: str,
+        confirm: Annotated[str, Form()] = "",
+    ) -> Response:
+        staging = config.general().staging
+        if staging is None:
+            return RedirectResponse("/cleanup?error=No+download+folder+is+set.", status_code=303)
+        if worker.status().running:
+            return RedirectResponse(
+                "/cleanup?error=Wait+for+the+current+run+to+finish.", status_code=303
+            )
+        try:
+            freed = cleanup.delete_staged_export(
+                staging, state, export_id, bool(confirm), log=log.warning
+            )
+        except cleanup.CleanupError as error:
+            return RedirectResponse(f"/cleanup?error={quote(str(error))}", status_code=303)
+        note = f"Deleted export {export_id} from the download folder, freeing {format_size(freed)}."
+        return RedirectResponse(f"/cleanup?message={quote(note)}", status_code=303)
+
+    @app.post("/cleanup/partial/{name}")
+    def delete_partial(config: ConfigDep, name: str) -> Response:
+        staging = config.general().staging
+        if staging is None or worker.status().running:
+            return RedirectResponse(
+                "/cleanup?error=Not+possible+while+a+run+is+going.", status_code=303
+            )
+        try:
+            freed = cleanup.delete_partial(staging, name)
+        except cleanup.CleanupError as error:
+            return RedirectResponse(f"/cleanup?error={quote(str(error))}", status_code=303)
+        log.warning("Deleted partial download %s", name)
+        note = f"Deleted the partial download of {name}, freeing {format_size(freed)}."
+        return RedirectResponse(f"/cleanup?message={quote(note)}", status_code=303)
+
+    @app.post("/cleanup/drive/{export_id}/recheck", response_class=HTMLResponse)
+    def recheck_drive(
+        request: Request, config: ConfigDep, state: StateDep, export_id: str
+    ) -> Response:
+        immich = config.immich()
+        key = config.immich_key()
+        if not immich.url or not key:
+            return result(request, False, "Set up Immich first.")
+        try:
+            with immich_factory(immich.url, key) as client:
+                found = cleanup.recheck(state, client, "immich", export_id)
+        except ImmichError as error:
+            return result(request, False, str(error))
+        if found.checked == 0:
+            return result(request, False, "No uploads are recorded for this export.")
+        if found.ok:
+            return result(
+                request, True, f"All {found.checked} files are in Immich now. Safe to remove."
+            )
+        problems = []
+        if found.missing:
+            problems.append(f"{found.missing} are no longer in Immich")
+        if found.trashed:
+            problems.append(f"{found.trashed} are in Immich's trash")
+        return result(
+            request,
+            False,
+            f"Of {found.checked} files, {' and '.join(problems)}. Keep this archive in Drive, "
+            "and run a Re-import (or restore them in Immich) first.",
         )
 
     @app.post("/runs")

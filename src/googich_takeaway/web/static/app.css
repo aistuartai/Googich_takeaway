@@ -82,3 +82,10 @@ table.logs pre { margin: 0; color: var(--fg); font-family: ui-monospace, monospa
 .log-warning td.lvl { color: #b26a00; }
 .log-error td.lvl, .log-critical td.lvl, .log-error pre { color: var(--error); }
 .tail-marker td { padding: 0; border: 0; }
+h3 { font-size: 1rem; margin: 1.5rem 0 .5rem; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+.drive-export { border-top: 1px solid var(--line); padding: 1rem 0; }
+ul.parts { margin: .5rem 0 .75rem; padding-left: 1.25rem; }
+.warn-text { color: #b26a00; }
+.ok-text { color: #2e7d32; }
+@media (prefers-color-scheme: dark) { .ok-text { color: #81c784; } .warn-text { color: #ffb74d; } }
