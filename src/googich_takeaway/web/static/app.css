@@ -89,3 +89,7 @@ ul.parts { margin: .5rem 0 .75rem; padding-left: 1.25rem; }
 .warn-text { color: #b26a00; }
 .ok-text { color: #2e7d32; }
 @media (prefers-color-scheme: dark) { .ok-text { color: #81c784; } .warn-text { color: #ffb74d; } }
+/* Show only the fields for the storage option chosen; no script needed. */
+form:has(input[name="storage"][value="local"]:checked) .storage-smb { display: none; }
+form:has(input[name="storage"][value="smb"]:checked) .storage-local { display: none; }
+.storage-smb, .storage-local { margin-bottom: 1rem; }

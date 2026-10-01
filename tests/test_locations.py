@@ -74,3 +74,31 @@ def test_smb_client_is_imported_only_when_needed(monkeypatch: pytest.MonkeyPatch
     location = SmbLocation(SETTINGS)
     location.prepare()
     assert fake.folders
+
+
+def test_fake_matches_the_real_library_shapes() -> None:
+    """Every attribute the SMB location reads must exist on smbclient's real result types."""
+    import smbclient
+
+    assert {"caller_available_size"} <= set(smbclient.SMBStatVolumeResult._fields)
+    assert {"st_size", "st_mtime"} <= set(smbclient.SMBStatResult._fields)
+    for name in ("name", "is_file", "stat"):
+        assert hasattr(smbclient.SMBDirEntry, name)
+    for function in (
+        "makedirs",
+        "open_file",
+        "remove",
+        "replace",
+        "stat",
+        "scandir",
+        "stat_volume",
+    ):
+        assert callable(getattr(smbclient, function))
+
+
+def test_free_space_never_raises() -> None:
+    class Broken(FakeSmb):
+        def stat_volume(self, path: str, **kwargs: object) -> object:
+            return object()  # missing every field
+
+    assert smb(Broken()).free_space() is None

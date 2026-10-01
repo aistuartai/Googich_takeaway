@@ -148,6 +148,11 @@ class Pipeline:
             self._run(report)
         except (ConfigError, SourceError, ImmichError, ArchiveError, OSError) as error:
             report.problems.append(str(error))
+        except Exception as error:  # a bug: fail the run cleanly, never leave it half-recorded
+            log.exception("Unexpected error during the run")
+            report.problems.append(
+                f"Unexpected error ({type(error).__name__}); details are in the log."
+            )
         for problem in report.problems:
             log.warning("Run problem: %s", problem)
         return report

@@ -38,12 +38,13 @@
       <label class="check"><input type="radio" name="storage" value="local" {{ 'checked' if general.storage == 'local' }}> A folder on this server</label>
       <label class="check"><input type="radio" name="storage" value="smb" {{ 'checked' if general.storage == 'smb' }}> A folder on an SMB share (NAS or file server)</label>
     </fieldset>
-    <label>Local folder
-      <input name="staging" value="{{ general.staging or '' }}" placeholder="/data/staging">
-      <small>Used when "a folder on this server" is chosen. It needs room for one complete export.</small>
-    </label>
-    <details {{ 'open' if general.storage == 'smb' }}>
-      <summary>SMB share</summary>
+    <div class="storage-local">
+      <label>Local folder
+        <input name="staging" value="{{ general.staging or '' }}" placeholder="/data/staging">
+        <small>A folder on the server running this app. It needs room for one complete export.</small>
+      </label>
+    </div>
+    <div class="storage-smb">
       <div class="row">
         <label>Server <input name="smb_server" value="{{ general.smb.server if general.smb else '' }}" placeholder="nas.local"></label>
         <label>Share <input name="smb_share" value="{{ general.smb.share if general.smb else '' }}" placeholder="Photos"></label>
@@ -58,7 +59,7 @@
         <label>Port <input name="smb_port" type="number" min="1" max="65535" value="{{ general.smb.port if general.smb else 445 }}"></label>
       </div>
       <small>The app connects to the share itself; nothing needs mounting. The folder is created if missing, and a test file is written and removed before the settings are saved. The password is stored encrypted and never shown again. Use an account that can reach only this folder.</small>
-    </details>
+    </div>
     <label>Default time zone
       <select name="timezone" required>
         {% for zone in timezones %}<option value="{{ zone }}" {{ 'selected' if zone == general.timezone }}>{{ zone.replace('_', ' ') }}</option>{% endfor %}

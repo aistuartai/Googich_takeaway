@@ -286,12 +286,12 @@ class SmbLocation:
             raise LocationError(f"SMB share: cannot delete {name} ({reason}).") from None
 
     def free_space(self) -> int | None:
+        """Space available to this user, or None if the server does not say."""
         try:
             volume = self._smb.stat_volume(self._settings.unc(), **self._auth)
-        except Exception:  # some servers do not report it
+            return int(volume.caller_available_size)
+        except Exception:  # not every server reports it; never fail a download over it
             return None
-        units = volume.caller_available_units * volume.sectors_per_unit * volume.bytes_per_sector
-        return int(units)
 
     def close(self) -> None:
         for connection in list(self._cache.values()):

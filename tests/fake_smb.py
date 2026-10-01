@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from smbclient import SMBStatVolumeResult
+
 # Built at runtime so nothing in the source looks like a real credential.
 SMB_LOGIN = "test" + "-smb-" + "pass"
 
@@ -33,13 +35,6 @@ class _Entry:
 
     def stat(self) -> _Stat:
         return self._stat
-
-
-@dataclass
-class _Volume:
-    caller_available_units: int
-    sectors_per_unit: int = 1
-    bytes_per_sector: int = 1
 
 
 class _Writer(io.BytesIO):
@@ -126,6 +121,11 @@ class FakeSmb:
             if name.startswith(prefix) and "\\" not in name[len(prefix) :]
         ]
 
-    def stat_volume(self, path: str, **kwargs: Any) -> _Volume:
+    def stat_volume(self, path: str, **kwargs: Any) -> SMBStatVolumeResult:
         self._auth(kwargs)
-        return _Volume(self.free)
+        # The library's own result type, so the fake cannot drift from the real field names.
+        return SMBStatVolumeResult(
+            total_size=self.free * 2,
+            caller_available_size=self.free,
+            actual_available_size=self.free,
+        )

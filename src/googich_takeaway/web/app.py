@@ -580,6 +580,9 @@ def create_app(
             free = location.free_space()
         except LocationError as error:
             return result(request, False, str(error))
+        except Exception as error:
+            log.exception("Download folder test failed")
+            return result(request, False, f"Unexpected error ({type(error).__name__}); see Logs.")
         space = f" {format_size(free)} free." if free is not None else ""
         return result(request, True, f"Can write to {location.describe()}.{space}")
 

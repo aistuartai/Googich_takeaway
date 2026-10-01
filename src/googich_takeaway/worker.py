@@ -173,7 +173,15 @@ class Worker:
                     options=options or RunOptions(),
                     tracker=self.tracker,
                 )
-                message = pipeline.run().message()
+                try:
+                    message = pipeline.run().message()
+                except Exception as error:  # last resort: still record and notify the run
+                    log.exception("Run %d crashed", run_id)
+                    message = Message(
+                        Outcome.FAILED,
+                        f"Run failed: unexpected error ({type(error).__name__})",
+                        ["Details are in the log."],
+                    )
                 chosen = (options or RunOptions()).describe()
                 if chosen:
                     message.lines.append(f"Options: {', '.join(chosen)}.")

@@ -188,3 +188,23 @@ def test_measured_rates_are_remembered(world: World) -> None:
     # whatever is stored must be valid and per stage.
     if stored:
         assert set(json.loads(stored)) <= {"download", "scan", "upload"}
+
+
+def test_unexpected_error_still_records_and_notifies(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.pipeline import Pipeline
+
+    world.configure()
+
+    def boom(self: Pipeline, report: object) -> None:
+        raise AttributeError("a bug")
+
+    monkeypatch.setattr(Pipeline, "_run", boom)
+    message = world.worker.run_once(Trigger.MANUAL)
+    assert message.outcome is Outcome.FAILED
+    assert "Unexpected error (AttributeError)" in message.title
+    run = State(world.path).recent_runs()[0]
+    assert run.finished_at is not None
+    assert run.status == "failed"
+    assert [m.outcome for m in world.sent] == [Outcome.FAILED]
