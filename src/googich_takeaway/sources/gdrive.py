@@ -200,9 +200,36 @@ def _raise_for_status(response: httpx.Response, what: str) -> None:
             f"{what}: not found (404). Check the folder ID and that the folder is shared "
             "with the service account."
         )
+    reasons = _error_reasons(response)
+    if "accessNotConfigured" in reasons or "SERVICE_DISABLED" in reasons:
+        raise SourceError(
+            "the Google Drive API is not enabled in the service account's Google Cloud project. "
+            "Enable it under APIs & Services > Library > Google Drive API, wait a few minutes, "
+            "then try again."
+        )
+    if reasons & {"rateLimitExceeded", "userRateLimitExceeded"}:
+        raise TransientSourceError(f"{what}: Google Drive rate limit; will retry")
     if code in (401, 403):
-        raise SourceError(f"{what}: access denied ({code}). Is the folder shared with the account?")
+        detail = f" ({', '.join(sorted(reasons))})" if reasons else ""
+        raise SourceError(
+            f"{what}: access denied ({code}){detail}. Check the folder is shared with the "
+            "service account as Viewer."
+        )
     raise SourceError(f"{what}: Google Drive answered {code}")
+
+
+def _error_reasons(response: httpx.Response) -> set[str]:
+    """Machine-readable reasons from a Google API error body; never its free text."""
+    try:
+        response.read()
+        error = response.json().get("error", {})
+    except (ValueError, AttributeError, httpx.HTTPError):
+        return set()
+    if not isinstance(error, dict):
+        return set()
+    found = {str(e.get("reason")) for e in error.get("errors", []) if isinstance(e, dict)}
+    found |= {str(d.get("reason")) for d in error.get("details", []) if isinstance(d, dict)}
+    return {r for r in found if r and r != "None"}
 
 
 def _quote(value: str) -> str:

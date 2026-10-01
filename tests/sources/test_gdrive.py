@@ -88,3 +88,19 @@ def test_errors_never_include_the_private_key(tmp_path: Path) -> None:
     with pytest.raises(SourceError) as caught:
         GoogleDriveSource(FOLDER, info, transport=FakeDrive().transport())
     assert "not-a-key" not in str(caught.value)
+
+
+def test_disabled_drive_api_is_explained() -> None:
+    drive = FakeDrive(api_enabled=False)
+    with source(drive) as s, pytest.raises(SourceError, match="Drive API is not enabled"):
+        s.list_archives()
+
+
+def test_disabled_drive_api_is_explained_on_download_too() -> None:
+    drive = FakeDrive()
+    drive.add("a", "takeout-x-001.zip", b"x")
+    with source(drive) as s:
+        file = s.list_archives()[0]
+        drive.api_enabled = False
+        with pytest.raises(SourceError, match="Drive API is not enabled"):
+            b"".join(s.read(file))

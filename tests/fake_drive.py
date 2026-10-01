@@ -81,6 +81,7 @@ class FakeDrive:
     drop_after: dict[str, list[int]] = field(default_factory=dict)
     """file id -> byte counts at which successive downloads are cut off."""
     shared: bool = True
+    api_enabled: bool = True
     tokens_issued: int = 0
     requests: list[str] = field(default_factory=list)
     ranges: list[str | None] = field(default_factory=list)
@@ -99,6 +100,18 @@ class FakeDrive:
             return self._token(request)
         if request.headers.get("authorization") != "Bearer fake-token":
             return httpx.Response(401)
+        if not self.api_enabled:
+            return httpx.Response(
+                403,
+                json={
+                    "error": {
+                        "code": 403,
+                        "message": "Google Drive API has not been used in project 123 before",
+                        "errors": [{"reason": "accessNotConfigured"}],
+                        "details": [{"reason": "SERVICE_DISABLED"}],
+                    }
+                },
+            )
         if request.url.path == "/drive/v3/files":
             return self._list(request)
         found = re.fullmatch(r"/drive/v3/files/([^/]+)", request.url.path)
