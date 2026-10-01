@@ -95,6 +95,21 @@ Try it on a test Immich user first, and back up your Immich database before the 
 - Free disk space for one full Takeout export
 - Your own Google Cloud project with a service account (setup steps will be documented here)
 
+## Where credentials are kept
+
+Credentials entered in the web interface (the Immich API key and Google service account keys)
+are encrypted before they are stored, and the interface never shows them again. They are
+encrypted with a master key kept outside the database:
+
+- Set `GOOGICH_MASTER_KEY_FILE` to a file holding a base64-encoded 32-byte key, for example a
+  Docker secret. Create one with `head -c 32 /dev/urandom | base64 > master.key`.
+- If it is not set, `master.key` is created next to the database on first start, readable only
+  by its owner.
+
+The second option protects a copy of the database on its own, such as a backup, but not someone
+who can read the whole data folder. Keep the master key out of the same backup as the database if
+you can. If the master key is lost, enter the credentials again.
+
 ## Licence
 
 [MIT](LICENSE)

@@ -29,3 +29,20 @@ button.link { background: none; color: var(--accent); padding: 0; }
 form.inline { display: inline; margin: 0; }
 a { color: var(--accent); }
 .error { color: var(--error); }
+h2 { font-size: 1.1rem; margin: 0 0 1rem; }
+section.card + section.card { margin-top: 1.25rem; }
+small { display: block; color: var(--muted); margin-top: .25rem; }
+code { font-size: .9em; }
+.actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+button.secondary { background: none; color: var(--accent); border: 1px solid var(--accent); }
+button.danger { background: none; color: var(--error); border: 1px solid var(--error); }
+.result { padding: .5rem .75rem; border-radius: .35rem; border: 1px solid var(--line); }
+.result.ok { border-color: #2e7d32; }
+.muted { color: var(--muted); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.row-actions { display: flex; flex-direction: column; gap: .5rem; align-items: flex-start; }
+.checklist li { margin: .4rem 0; }
+.checklist li.done { color: var(--muted); text-decoration: line-through; }
+details summary { cursor: pointer; color: var(--accent); }
+input[type=file] { padding: .35rem; }

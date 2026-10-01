@@ -159,11 +159,6 @@ def _parser() -> argparse.ArgumentParser:
         "--port", type=int, default=int(os.environ.get("GOOGICH_PORT", "8080")), help="port"
     )
     serve.add_argument("--state", type=Path, default=_default_state(), help="state database")
-    serve.add_argument(
-        "--immich-public-url",
-        default=os.environ.get("GOOGICH_IMMICH_PUBLIC_URL"),
-        help="Immich address for links in the web interface",
-    )
     return parser
 
 
@@ -353,7 +348,7 @@ def _serve(args: argparse.Namespace) -> int:
     from googich_takeaway.web.app import WebSettings, create_app
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    app = create_app(WebSettings(args.state, immich_public_url=args.immich_public_url))
+    app = create_app(WebSettings(args.state))
     uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False, server_header=False)
     return 0
 

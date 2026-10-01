@@ -12,7 +12,10 @@
     <a class="brand" href="/">Googich Takeaway</a>
     {% if request.state.csrf is defined %}
     <nav>
-      {% if immich_url %}<a href="{{ immich_url }}" target="_blank" rel="noopener noreferrer">Open Immich</a>{% endif %}
+      <a href="/">Dashboard</a>
+      <a href="/sources">Sources</a>
+      <a href="/settings">Settings</a>
+      {% if immich_link %}<a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Open Immich ↗</a>{% endif %}
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
         <button type="submit" class="link">Log out</button>

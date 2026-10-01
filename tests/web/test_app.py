@@ -33,7 +33,7 @@ def clock() -> Clock:
 
 def make(tmp_path: Path, clock: Clock) -> TestClient:
     app = create_app(
-        WebSettings(tmp_path / "state.db", immich_public_url="https://immich.example"),
+        WebSettings(tmp_path / "state.db"),
         clock=clock,
         throttle=LoginThrottle(clock=clock.monotonic),
     )
@@ -111,7 +111,7 @@ def test_setup_logs_in_and_then_closes(tmp_path: Path, clock: Clock) -> None:
     assert cookie
     page = client.get("/")
     assert page.status_code == 200
-    assert "Open Immich" in page.text
+    assert "Getting started" in page.text
     assert client.get("/setup").headers["location"] == "/login"
     assert client.app.state.setup_token is None  # type: ignore[attr-defined]
 

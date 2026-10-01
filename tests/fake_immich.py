@@ -38,6 +38,9 @@ class FakeImmichServer:
     store_failed_uploads: bool = True
     shift_hours: int = 0
     """Report capture times shifted by this much, to simulate a date mismatch."""
+    permissions: list[str] = field(
+        default_factory=lambda: ["asset.upload", "asset.read", "stack.create"]
+    )
     assets: dict[str, Asset] = field(default_factory=dict)
     requests: list[str] = field(default_factory=list)
 
@@ -65,6 +68,8 @@ class FakeImmichServer:
         path = request.url.path
         if path == "/api/server/version":
             return httpx.Response(200, json={"major": 2, "minor": 7, "patch": 5})
+        if path == "/api/api-keys/me":
+            return httpx.Response(200, json={"name": "test", "permissions": self.permissions})
         if path == "/api/assets/bulk-upload-check":
             return self._check(json.loads(request.read()))
         if path == "/api/assets" and request.method == "POST":

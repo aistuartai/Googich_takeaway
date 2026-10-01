@@ -14,12 +14,18 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from fastapi import Depends, FastAPI, Form, Request, Response
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from googich_takeaway import __version__
+from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
+from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
+from googich_takeaway.destinations.immich import ImmichClient, ImmichError
+from googich_takeaway.sources.base import SourceError
+from googich_takeaway.sources.gdrive import GoogleDriveSource
+from googich_takeaway.sources.local import LocalSource
 from googich_takeaway.state import State
 from googich_takeaway.web import auth
 
@@ -30,6 +36,8 @@ COOKIE = "googich_session"
 SESSION_LIFETIME = timedelta(days=7)
 OPEN_PATHS = ("/login", "/setup", "/healthz", "/static/")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+REQUIRED_PERMISSIONS = ("asset.upload", "asset.read")
+OPTIONAL_PERMISSIONS = ("stack.create",)
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
@@ -50,18 +58,43 @@ SECURITY_HEADERS = {
 @dataclass(frozen=True)
 class WebSettings:
     state_path: Path
-    immich_public_url: str | None = None
+    master_key_path: Path | None = None
+    """Defaults to $GOOGICH_MASTER_KEY_FILE, or master.key next to the state database."""
+
+
+ImmichFactory = Callable[[str, str], ImmichClient]
+DriveFactory = Callable[[str, dict[str, object]], GoogleDriveSource]
 
 
 def create_app(
     settings: WebSettings,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     throttle: auth.LoginThrottle | None = None,
+    immich_factory: ImmichFactory = ImmichClient,
+    drive_factory: DriveFactory = GoogleDriveSource,
 ) -> FastAPI:
-    app = FastAPI(title="Googich Takeaway", docs_url=None, redoc_url=None, openapi_url=None)
+    async def csrf_guard(request: Request) -> None:
+        # A dependency, not middleware: it shares FastAPI's parsed form with the route. Reading
+        # the body in middleware would consume it before the route sees its form fields.
+        if request.method not in UNSAFE_METHODS or request.url.path.startswith(OPEN_PATHS):
+            return
+        expected = getattr(request.state, "csrf", None)
+        if expected is None or not await _csrf_ok(request, expected):
+            raise HTTPException(status_code=403, detail="Missing or wrong CSRF token.")
+
+    app = FastAPI(
+        title="Googich Takeaway",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        dependencies=[Depends(csrf_guard)],
+    )
     templates = Jinja2Templates(directory=HERE / "templates")
-    templates.env.globals.update(version=__version__, immich_url=settings.immich_public_url)
+    templates.env.globals.update(version=__version__)
     login_throttle = throttle or auth.LoginThrottle()
+    box = SecretBox(
+        load_master_key(settings.master_key_path or master_key_path(settings.state_path))
+    )
 
     with State(settings.state_path) as state:
         needs_setup = state.password_hash() is None
@@ -76,6 +109,21 @@ def create_app(
             yield state
 
     StateDep = Annotated[State, Depends(open_state)]
+
+    def open_config(state: StateDep) -> Config:
+        return Config(state, box, clock)
+
+    ConfigDep = Annotated[Config, Depends(open_config)]
+
+    def page(
+        request: Request,
+        config: Config,
+        name: str,
+        status_code: int = 200,
+        **context: object,
+    ) -> Response:
+        context.setdefault("immich_link", config.immich().link)
+        return templates.TemplateResponse(request, name, context, status_code=status_code)
 
     @app.middleware("http")
     async def guard(
@@ -95,8 +143,6 @@ def create_app(
                     response = RedirectResponse("/login", status_code=303)
                 return _with_headers(response)
             request.state.csrf = csrf
-            if request.method in UNSAFE_METHODS and not await _csrf_ok(request, csrf):
-                return _with_headers(Response("Missing or wrong CSRF token.", status_code=403))
         return _with_headers(await call_next(request))
 
     @app.get("/healthz", include_in_schema=False)
@@ -176,8 +222,177 @@ def create_app(
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def dashboard(request: Request) -> Response:
-        return templates.TemplateResponse(request, "dashboard.html", {})
+    def dashboard(request: Request, config: ConfigDep) -> Response:
+        return page(
+            request,
+            config,
+            "dashboard.html",
+            immich=config.immich(),
+            general=config.general(),
+            sources=config.sources(),
+        )
+
+    # --- settings ------------------------------------------------------------------------------
+
+    def settings_page(
+        request: Request, config: Config, error: str | None = None, saved: str | None = None
+    ) -> Response:
+        return page(
+            request,
+            config,
+            "settings.html",
+            immich=config.immich(),
+            general=config.general(),
+            error=error,
+            saved=saved,
+            status_code=400 if error else 200,
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_view(request: Request, config: ConfigDep, saved: str | None = None) -> Response:
+        return settings_page(request, config, saved=saved)
+
+    @app.post("/settings/immich")
+    def save_immich(
+        request: Request,
+        config: ConfigDep,
+        url: Annotated[str, Form()],
+        public_url: Annotated[str, Form()] = "",
+        api_key: Annotated[str, Form()] = "",
+    ) -> Response:
+        try:
+            config.save_immich(url, public_url, api_key or None)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=immich", status_code=303)
+
+    @app.post("/settings/immich/test", response_class=HTMLResponse)
+    def test_immich(request: Request, config: ConfigDep) -> Response:
+        immich = config.immich()
+        key = config.immich_key()
+        if not immich.url or not key:
+            return result(request, False, "Save the Immich address and API key first.")
+        try:
+            with immich_factory(immich.url, key) as client:
+                version = client.server_version()
+                granted = set(client.key_permissions())
+        except ImmichError as error:
+            return result(request, False, str(error))
+        missing = [p for p in REQUIRED_PERMISSIONS if p not in granted and "all" not in granted]
+        optional = [p for p in OPTIONAL_PERMISSIONS if p not in granted and "all" not in granted]
+        if missing:
+            return result(
+                request,
+                False,
+                f"Connected to Immich {version}, but the API key lacks: {', '.join(missing)}.",
+            )
+        note = f" Optional, for stacking edited copies: {', '.join(optional)}." if optional else ""
+        return result(request, True, f"Connected to Immich {version}. The API key is fine.{note}")
+
+    @app.post("/settings/general")
+    def save_general(
+        request: Request,
+        config: ConfigDep,
+        staging: Annotated[str, Form()],
+        timezone: Annotated[str, Form()],
+    ) -> Response:
+        try:
+            config.save_general(staging, timezone)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=general", status_code=303)
+
+    # --- sources -------------------------------------------------------------------------------
+
+    def sources_page(request: Request, config: Config, error: str | None = None) -> Response:
+        accounts = {
+            s.id: config.drive_account(s.id) for s in config.sources() if s.kind == "gdrive"
+        }
+        return page(
+            request,
+            config,
+            "sources.html",
+            sources=config.sources(),
+            accounts=accounts,
+            error=error,
+            status_code=400 if error else 200,
+        )
+
+    @app.get("/sources", response_class=HTMLResponse)
+    def sources_view(request: Request, config: ConfigDep) -> Response:
+        return sources_page(request, config)
+
+    @app.post("/sources/drive")
+    async def add_drive(
+        request: Request,
+        config: ConfigDep,
+        name: Annotated[str, Form()],
+        folder_id: Annotated[str, Form()],
+        key_file: Annotated[UploadFile, File()],
+    ) -> Response:
+        data = await key_file.read(MAX_KEY_FILE_BYTES + 1)
+        try:
+            config.add_drive_source(name, folder_id, data)
+        except ConfigError as error:
+            return sources_page(request, config, error=str(error))
+        return RedirectResponse("/sources", status_code=303)
+
+    @app.post("/sources/local")
+    def add_local(
+        request: Request,
+        config: ConfigDep,
+        name: Annotated[str, Form()],
+        path: Annotated[str, Form()],
+    ) -> Response:
+        try:
+            config.add_local_source(name, path)
+        except ConfigError as error:
+            return sources_page(request, config, error=str(error))
+        return RedirectResponse("/sources", status_code=303)
+
+    @app.post("/sources/{source_id}/key")
+    async def replace_key(
+        request: Request,
+        config: ConfigDep,
+        source_id: int,
+        key_file: Annotated[UploadFile, File()],
+    ) -> Response:
+        if not any(s.id == source_id and s.kind == "gdrive" for s in config.sources()):
+            return Response(status_code=404)
+        data = await key_file.read(MAX_KEY_FILE_BYTES + 1)
+        try:
+            config.replace_drive_key(source_id, data)
+        except ConfigError as error:
+            return sources_page(request, config, error=str(error))
+        return RedirectResponse("/sources", status_code=303)
+
+    @app.post("/sources/{source_id}/delete")
+    def delete_source(config: ConfigDep, source_id: int) -> Response:
+        config.delete_source(source_id)
+        return RedirectResponse("/sources", status_code=303)
+
+    @app.post("/sources/{source_id}/test", response_class=HTMLResponse)
+    def test_source(request: Request, config: ConfigDep, source_id: int) -> Response:
+        source = next((s for s in config.sources() if s.id == source_id), None)
+        if source is None:
+            return result(request, False, "No such source.")
+        try:
+            if source.kind == "local":
+                files = LocalSource(Path(source.location)).list_archives()
+            else:
+                with drive_factory(source.location, config.drive_key(source_id)) as drive:
+                    files = drive.list_archives()
+        except (SourceError, ConfigError) as error:
+            return result(request, False, str(error))
+        if not files:
+            return result(request, True, "Connected. No Takeout archives in the folder yet.")
+        total = sum(f.size for f in files) / 1000**3
+        return result(
+            request, True, f"Connected. {len(files)} archives in the folder, {total:.1f} GB."
+        )
+
+    def result(request: Request, ok: bool, message: str) -> Response:
+        return templates.TemplateResponse(request, "_result.html", {"ok": ok, "message": message})
 
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     return app

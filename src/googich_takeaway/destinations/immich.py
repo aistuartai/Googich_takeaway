@@ -97,6 +97,12 @@ class ImmichClient:
         data = self._request("GET", "/server/version")
         return f"{data['major']}.{data['minor']}.{data['patch']}"
 
+    def key_permissions(self) -> list[str]:
+        """Permissions of the API key in use. Works with any key, whatever its permissions."""
+        data = self._request("GET", "/api-keys/me")
+        permissions = data.get("permissions")
+        return [str(p) for p in permissions] if isinstance(permissions, list) else []
+
     def check_existing(self, checksums: Iterable[tuple[str, str]]) -> dict[str, CheckResult]:
         """Ask Immich which files it already has.
 

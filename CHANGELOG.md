@@ -52,3 +52,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same-origin checks on every change, login throttling, strict Content Security Policy and
   security headers, and an unauthenticated `/healthz`. htmx 2.0.11 is bundled, not loaded from
   a CDN. State database schema 3 adds the login tables.
+- Settings in the web interface: Immich address, public address and API key, download folder,
+  default time zone, and any number of Google Drive and local folder sources, each with a test
+  button. Credentials are encrypted with AES-256-GCM under a master key kept outside the
+  database, and are never shown again. State database schema 4.

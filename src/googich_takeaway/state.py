@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -62,6 +62,26 @@ _MIGRATIONS: dict[int, str] = {
             expires_at  TEXT NOT NULL
         ) STRICT;
     """,
+    4: """
+        CREATE TABLE settings (
+            name       TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE secrets (
+            name       TEXT PRIMARY KEY,
+            sealed     TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE sources (
+            id         INTEGER PRIMARY KEY,
+            kind       TEXT NOT NULL CHECK (kind IN ('gdrive', 'local')),
+            name       TEXT NOT NULL UNIQUE,
+            location   TEXT NOT NULL,
+            enabled    INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        ) STRICT;
+    """,
 }
 
 
@@ -106,6 +126,17 @@ class DownloadRecord:
     """When the file was found to be gone from the source (deleted by the user)."""
 
 
+@dataclass(frozen=True)
+class SourceRecord:
+    id: int
+    kind: str
+    """``gdrive`` or ``local``."""
+    name: str
+    location: str
+    """Drive folder ID, or local folder path."""
+    enabled: bool
+
+
 class StateError(Exception):
     """The state database cannot be used."""
 
@@ -116,7 +147,9 @@ class State:
         if not path.exists():
             # Owner-only: the database lists every photo path and, later, holds credentials.
             os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
-        self._db = sqlite3.connect(path, isolation_level=None)  # explicit transactions only
+        # Explicit transactions only. A State belongs to one task (a web request, a job) at a time,
+        # which may hop between threads, so the same-thread check is off.
+        self._db = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode = WAL")
         self._db.execute("PRAGMA foreign_keys = ON")
@@ -343,6 +376,72 @@ class State:
 
     def delete_all_sessions(self) -> None:
         self._db.execute("DELETE FROM web_sessions")
+
+    # --- settings, secrets and sources ----------------------------------------------------------
+
+    def get_setting(self, name: str) -> str | None:
+        row = self._db.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
+        return str(row[0]) if row else None
+
+    def set_setting(self, name: str, value: str | None, at: datetime) -> None:
+        if value is None:
+            self._db.execute("DELETE FROM settings WHERE name = ?", (name,))
+            return
+        self._db.execute(
+            "INSERT INTO settings (name, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (name) DO UPDATE SET value = excluded.value, "
+            "updated_at = excluded.updated_at",
+            (name, value, _to_text(at)),
+        )
+
+    def get_sealed(self, name: str) -> str | None:
+        row = self._db.execute("SELECT sealed FROM secrets WHERE name = ?", (name,)).fetchone()
+        return str(row[0]) if row else None
+
+    def set_sealed(self, name: str, sealed: str | None, at: datetime) -> None:
+        if sealed is None:
+            self._db.execute("DELETE FROM secrets WHERE name = ?", (name,))
+            return
+        self._db.execute(
+            "INSERT INTO secrets (name, sealed, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (name) DO UPDATE SET sealed = excluded.sealed, "
+            "updated_at = excluded.updated_at",
+            (name, sealed, _to_text(at)),
+        )
+
+    def add_source(self, kind: str, name: str, location: str, at: datetime) -> int:
+        try:
+            cursor = self._db.execute(
+                "INSERT INTO sources (kind, name, location, created_at) VALUES (?, ?, ?, ?)",
+                (kind, name, location, _to_text(at)),
+            )
+        except sqlite3.IntegrityError as error:
+            raise StateError(f"a source named {name!r} already exists") from error
+        return int(cursor.lastrowid or 0)
+
+    def sources(self) -> list[SourceRecord]:
+        rows = self._db.execute("SELECT * FROM sources ORDER BY name").fetchall()
+        return [_source(row) for row in rows]
+
+    def get_source(self, source_id: int) -> SourceRecord | None:
+        row = self._db.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
+        return _source(row) if row else None
+
+    def set_source_enabled(self, source_id: int, enabled: bool) -> None:
+        self._db.execute("UPDATE sources SET enabled = ? WHERE id = ?", (int(enabled), source_id))
+
+    def delete_source(self, source_id: int) -> None:
+        self._db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+
+def _source(row: sqlite3.Row) -> SourceRecord:
+    return SourceRecord(
+        id=row["id"],
+        kind=row["kind"],
+        name=row["name"],
+        location=row["location"],
+        enabled=bool(row["enabled"]),
+    )
 
 
 def _download(row: sqlite3.Row) -> DownloadRecord:

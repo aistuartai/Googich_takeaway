@@ -2,6 +2,17 @@
 {% block content %}
 <section class="card">
   <h1>Dashboard</h1>
-  <p>Sources, schedule, the download queue and logs will appear here.</p>
+  {% set ready = immich.url and immich.has_key and general.staging and sources %}
+  {% if not ready %}
+  <h2>Getting started</h2>
+  <ol class="checklist">
+    <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/settings">Connect Immich</a>: its address and an API key.</li>
+    <li class="{{ 'done' if general.staging }}"><a href="/settings">Choose the download folder</a> for Takeout archives.</li>
+    <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder.</li>
+  </ol>
+  {% else %}
+  <p>{{ sources|length }} source{{ '' if sources|length == 1 else 's' }} set up. Downloads go to <code>{{ general.staging }}</code>.</p>
+  <p class="muted">The schedule, download queue and logs will appear here.</p>
+  {% endif %}
 </section>
 {% endblock %}

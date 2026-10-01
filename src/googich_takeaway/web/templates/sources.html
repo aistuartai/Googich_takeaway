@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Sources · Googich Takeaway{% endblock %}
+{% block content %}
+<h1>Sources</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+<section class="card">
+  {% if sources %}
+  <table>
+    <thead><tr><th>Name</th><th>Type</th><th>Location</th><th></th></tr></thead>
+    <tbody>
+    {% for source in sources %}
+      <tr>
+        <td>{{ source.name }}</td>
+        <td>{{ 'Google Drive' if source.kind == 'gdrive' else 'Local folder' }}</td>
+        <td>
+          {% if source.kind == 'gdrive' %}
+            Folder <code>{{ source.location[:6] }}…</code>
+            {% if accounts[source.id] %}<br><small>Share the folder with <code>{{ accounts[source.id] }}</code> as Viewer.</small>{% endif %}
+          {% else %}<code>{{ source.location }}</code>{% endif %}
+          <div id="test-{{ source.id }}" aria-live="polite"></div>
+        </td>
+        <td class="row-actions">
+          <button type="button" class="secondary" hx-post="/sources/{{ source.id }}/test" hx-target="#test-{{ source.id }}">Test</button>
+          {% if source.kind == 'gdrive' %}
+          <details>
+            <summary>Replace key</summary>
+            <form method="post" action="/sources/{{ source.id }}/key" enctype="multipart/form-data">
+              <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+              <input type="file" name="key_file" accept="application/json,.json" required>
+              <button type="submit">Upload</button>
+            </form>
+          </details>
+          {% endif %}
+          <form method="post" action="/sources/{{ source.id }}/delete" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No sources yet.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Add a Google Drive folder</h2>
+  <form method="post" action="/sources/drive" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Name <input name="name" placeholder="Google Takeout" required maxlength="60"></label>
+    <label>Folder ID
+      <input name="folder_id" autocomplete="off" spellcheck="false" required>
+      <small>Open the folder in Google Drive; the ID is the part of the address after <code>/folders/</code>.</small>
+    </label>
+    <label>Service account key (JSON file)
+      <input type="file" name="key_file" accept="application/json,.json" required>
+      <small>Stored encrypted and never shown again. The service account only needs Viewer access to this one folder. See the README for setup steps.</small>
+    </label>
+    <div class="actions"><button type="submit">Add</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Add a local folder</h2>
+  <form method="post" action="/sources/local">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Name <input name="name" placeholder="Manual downloads" required maxlength="60"></label>
+    <label>Folder <input name="path" placeholder="/data/manual" required>
+      <small>A folder holding Takeout <code>.zip</code> or <code>.tgz</code> archives.</small>
+    </label>
+    <div class="actions"><button type="submit">Add</button></div>
+  </form>
+</section>
+{% endblock %}
