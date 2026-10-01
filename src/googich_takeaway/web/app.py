@@ -7,6 +7,7 @@ load only from this server, and the pages contain no inline script.
 """
 
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -22,10 +23,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from googich_takeaway import __version__, cleanup, updates
-from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
+from googich_takeaway.config import (
+    BAR_STYLES,
+    COLOUR_SCHEMES,
+    MAX_KEY_FILE_BYTES,
+    MOTION,
+    THEMES,
+    Config,
+    ConfigError,
+    Look,
+)
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.locations import LocationError, SmbSettings
+from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.logs import LogBuffer, Logs
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import RunOptions
@@ -35,7 +46,7 @@ from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.sources.local import LocalSource
 from googich_takeaway.state import State
-from googich_takeaway.web import auth
+from googich_takeaway.web import auth, demo
 from googich_takeaway.worker import Worker
 
 log = logging.getLogger("googich.web")
@@ -76,6 +87,8 @@ class WebSettings:
     state_path: Path
     master_key_path: Path | None = None
     """Defaults to $GOOGICH_MASTER_KEY_FILE, or master.key next to the state database."""
+    demo: bool = False
+    """Offer a simulated run for previewing the progress views (GOOGICH_DEMO=1)."""
 
 
 ImmichFactory = Callable[[str, str], ImmichClient]
@@ -133,7 +146,7 @@ def create_app(
     if logs is None:
         logging.getLogger().addHandler(log_store.buffer)  # tests and embedded use
     templates = Jinja2Templates(directory=HERE / "templates")
-    templates.env.globals.update(version=__version__)
+    templates.env.globals.update(version=__version__, default_look=Look(), demo=settings.demo)
     templates.env.filters.update(duration=format_duration, size=format_size)
     login_throttle = throttle or auth.LoginThrottle()
 
@@ -164,6 +177,7 @@ def create_app(
         **context: object,
     ) -> Response:
         context.setdefault("immich_link", config.immich().link)
+        context.setdefault("look", config.look())
         known = updates.cached(config.state) if updates.enabled(config.state) else None
         context.setdefault("update", known if known and known.newer else None)
         return templates.TemplateResponse(request, name, context, status_code=status_code)
@@ -264,12 +278,40 @@ def create_app(
         response.delete_cookie(COOKIE, path="/")
         return response
 
+    folder_cache: dict[str, tuple[float, int | None, int]] = {}
+
+    def journey(config: Config, state: State) -> dict[str, int | None]:
+        drive_count, drive_bytes = state.download_totals()
+        location = config.staging_location()
+        folder_count: int | None = 0
+        folder_bytes = 0
+        if location is not None:
+            key = location.describe()
+            cached = folder_cache.get(key)
+            if cached and time.monotonic() - cached[0] < 10:
+                folder_count, folder_bytes = cached[1], cached[2]
+            else:
+                try:
+                    found = list_archives(location)
+                    folder_count, folder_bytes = len(found), sum(a.size for a in found)
+                except LocationError:
+                    folder_count, folder_bytes = None, 0
+                folder_cache[key] = (time.monotonic(), folder_count, folder_bytes)
+        return {
+            "drive_count": drive_count,
+            "drive_bytes": drive_bytes,
+            "folder_count": folder_count,
+            "folder_bytes": folder_bytes,
+            "immich_count": state.upload_count("immich"),
+        }
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, config: ConfigDep, state: StateDep) -> Response:
         return page(
             request,
             config,
             "dashboard.html",
+            journey=journey(config, state),
             immich=config.immich(),
             general=config.general(),
             sources=config.sources(),
@@ -281,8 +323,15 @@ def create_app(
             zone=_zone(config.general().timezone),
         )
 
+    @app.post("/demo/run")
+    def demo_run() -> Response:
+        if not settings.demo:
+            return Response(status_code=404)
+        demo.play(worker)
+        return RedirectResponse("/", status_code=303)
+
     @app.get("/status", response_class=HTMLResponse)
-    def status_card(request: Request, config: ConfigDep) -> Response:
+    def status_card(request: Request, config: ConfigDep, state: StateDep) -> Response:
         """Polled by the dashboard while a run is going; reloads the page when it ends."""
         current = worker.status()
         if not current.running:
@@ -292,6 +341,8 @@ def create_app(
             "_status.html",
             {
                 "progress": worker.progress(),
+                "journey": journey(config, state),
+                "look": config.look(),
                 "status": current,
                 "schedule": config.schedule(),
                 "general": config.general(),
@@ -491,6 +542,10 @@ def create_app(
             timezones=TIMEZONES,
             has_smb_password=config.has_smb_password(),
             updates_enabled=updates.enabled(config.state),
+            themes=THEMES,
+            colour_schemes=COLOUR_SCHEMES,
+            bar_styles=BAR_STYLES,
+            motions=MOTION,
             update_known=updates.cached(config.state),
             outcomes=config.notification_outcomes(),
             has_urls=config.has_notification_urls(),
@@ -589,6 +644,21 @@ def create_app(
             return result(request, False, f"Unexpected error ({type(error).__name__}); see Logs.")
         space = f" {format_size(free)} free." if free is not None else ""
         return result(request, True, f"Can write to {location.describe()}.{space}")
+
+    @app.post("/settings/look")
+    def save_look(
+        request: Request,
+        config: ConfigDep,
+        theme: Annotated[str, Form()] = "auto",
+        colours: Annotated[str, Form()] = "spectrum",
+        bars: Annotated[str, Form()] = "striped",
+        motion: Annotated[str, Form()] = "auto",
+    ) -> Response:
+        try:
+            config.save_look(theme, colours, bars, motion)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=look#look", status_code=303)
 
     @app.post("/settings/updates")
     def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:

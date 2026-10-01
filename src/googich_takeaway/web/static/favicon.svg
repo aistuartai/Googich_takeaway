@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="journey" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#13a5cf"/>
+      <stop offset=".55" stop-color="#6f3fd6"/>
+      <stop offset="1" stop-color="#2a9a46"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="6" width="60" height="52" rx="14" fill="url(#journey)"/>
+  <path d="M16 31h17a6 6 0 0 0 .6-12A8.5 8.5 0 0 0 17.4 20.6 5.2 5.2 0 0 0 16 31z" fill="#fff"/>
+  <path d="M10 50l14-13 9 8.5 7.5-7 13.5 11.5z" fill="#fff" opacity=".9"/>
+</svg>

@@ -70,8 +70,8 @@ def world(tmp_path: Path) -> World:
 
 def test_dashboard_starts_with_a_checklist(world: World) -> None:
     page = world.client.get("/").text
-    assert "Getting started" in page
-    assert "Open Immich" not in page
+    assert "Bring your Google Photos home" in page
+    assert "Immich ↗" not in page
 
 
 def test_immich_settings_saved_tested_and_key_never_shown(world: World) -> None:
@@ -174,8 +174,9 @@ def test_dashboard_when_ready(world: World) -> None:
     folder.mkdir()
     world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
     page = world.client.get("/").text
-    assert "Getting started" not in page
-    assert "1 source." in page
+    assert "Bring your Google Photos home" not in page
+    assert 'class="journey"' in page
+    assert "Download folder" in page
     assert "Run now" in page
     assert "No runs yet." in page
 
@@ -272,7 +273,9 @@ def test_status_fragment_shows_live_progress(world: World) -> None:
     assert "Downloading" in fragment
     assert "takeout-x-001.zip" in fragment
     assert "2.0 GB" in fragment
-    assert "estimate based on earlier runs" in fragment
+    assert "estimated from earlier runs" in fragment
+    assert "pct-0 tone-0" in fragment
+    assert "leg leg-1 flowing" in fragment  # the Drive-to-folder leg animates while downloading
     assert 'hx-trigger="every 2s"' in fragment
 
 

@@ -112,7 +112,7 @@ def test_setup_logs_in_and_then_closes(tmp_path: Path, clock: Clock) -> None:
     assert cookie
     page = client.get("/")
     assert page.status_code == 200
-    assert "Getting started" in page.text
+    assert "Bring your Google Photos home" in page.text
     assert client.get("/setup").headers["location"] == "/login"
     assert client.app.state.setup_token is None  # type: ignore[attr-defined]
 

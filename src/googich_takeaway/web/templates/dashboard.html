@@ -1,24 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Dashboard</h1>
 {% set ready = immich.url and immich.has_key and general.configured and sources %}
 {% if not ready %}
-<section class="card">
-  <h2>Getting started</h2>
+<section class="card narrow-wide">
+  <h1>Bring your Google Photos home</h1>
+  <p>Three things to set up, then Googich Takeaway fetches your Takeout exports and adds anything new to Immich, on the schedule you choose.</p>
   <ol class="checklist">
     <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/settings">Connect Immich</a>: its address and an API key.</li>
-    <li class="{{ 'done' if general.configured }}"><a href="/settings">Choose the download folder</a> for Takeout archives.</li>
-    <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder.</li>
+    <li class="{{ 'done' if general.configured }}"><a href="/settings">Choose the download folder</a> for Takeout archives, on this server or a network share.</li>
+    <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder of archives.</li>
   </ol>
 </section>
 {% else %}
 {% if status.paused %}
 <section class="card warn" role="alert">
-  <h2>Schedule paused</h2>
-  <p>Scheduled runs stopped after {{ failures }} failed run{{ '' if failures == 1 else 's' }} in a row. Check the latest run below, fix the problem, then resume.</p>
+  <h2>Scheduled runs are paused</h2>
+  <p>They stopped after {{ failures }} failed run{{ '' if failures == 1 else 's' }} in a row. Check the latest run below, fix the problem, then resume.</p>
   <form method="post" action="/schedule/resume">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <button type="submit">Resume schedule</button>
+    <button type="submit">Resume the schedule</button>
   </form>
 </section>
 {% endif %}
@@ -32,11 +32,11 @@
     {% for run in runs %}
       <tr>
         <td>{{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}</td>
-        <td>{{ run.trigger }} · <a href="/logs?run={{ run.id }}&level=DEBUG">log</a></td>
+        <td>{{ run.trigger }}, <a href="/logs?run={{ run.id }}&level=DEBUG">log</a></td>
         <td class="run-{{ run.status or 'running' }}">
           {% if run.details and run.details != run.title %}
           <details><summary>{{ run.title }}</summary><pre>{{ run.details }}</pre></details>
-          {% else %}{{ run.title or 'Running…' }}{% endif %}
+          {% else %}{{ run.title or 'Running' }}{% endif %}
         </td>
       </tr>
     {% endfor %}

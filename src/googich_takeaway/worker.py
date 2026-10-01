@@ -86,6 +86,20 @@ class Worker:
     def progress(self) -> Snapshot:
         return self.tracker.snapshot()
 
+    def claim_for_demo(self) -> bool:
+        """Mark the worker busy for a simulated run (demo mode only). False if already busy."""
+        with self._lock:
+            if self._run_started is not None:
+                return False
+            self._run_started = self._clock()
+        self.tracker.start_run()
+        return True
+
+    def release_from_demo(self) -> None:
+        self.tracker.finish_run()  # measured demo speeds are discarded, never saved
+        with self._lock:
+            self._run_started = None
+
     # --- control -------------------------------------------------------------------------------
 
     def start(self) -> None:

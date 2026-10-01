@@ -12,6 +12,7 @@ resuming interrupted downloads and skipping archives downloaded before.
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -348,7 +349,12 @@ def _serve(args: argparse.Namespace) -> int:
     from googich_takeaway.web.app import WebSettings, create_app
 
     logs = setup_logging(args.state)
-    app = create_app(WebSettings(args.state), logs=logs)
+    demo = os.environ.get("GOOGICH_DEMO") == "1"
+    if demo:
+        logging.getLogger("googich").warning(
+            "Demo mode: a simulated run can be played from the dashboard"
+        )
+    app = create_app(WebSettings(args.state, demo=demo), logs=logs)
     uvicorn.run(
         app,
         host=args.host,

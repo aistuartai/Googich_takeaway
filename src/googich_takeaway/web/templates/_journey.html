@@ -1,0 +1,32 @@
+{%- from "_icons.html" import cloud, folder, gallery -%}
+{#- The journey: Google Drive to the download folder to Immich. The legs animate while files move. -#}
+{%- set moving_down = status.running and progress.stage and progress.stage.value == 'download' -%}
+{%- set moving_up = status.running and progress.stage and progress.stage.value == 'upload' -%}
+<section class="journey" aria-label="Where your photos are">
+  <div class="station station-drive">
+    <div class="station-icon">{{ cloud() }}</div>
+    <p class="station-name">Google Drive</p>
+    <p class="station-figure">{{ journey.drive_count }}</p>
+    <p class="station-note">{{ 'archive' if journey.drive_count == 1 else 'archives' }} downloaded so far{% if journey.drive_bytes %}, {{ journey.drive_bytes|size }}{% endif %}</p>
+  </div>
+  <div class="leg leg-1{{ ' flowing' if moving_down }}" aria-hidden="true">
+    <span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
+    {% if moving_down %}<span class="leg-label">downloading</span>{% endif %}
+  </div>
+  <div class="station station-folder">
+    <div class="station-icon">{{ folder() }}</div>
+    <p class="station-name">Download folder</p>
+    <p class="station-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }}</p>
+    <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% endif %}</p>
+  </div>
+  <div class="leg leg-2{{ ' flowing' if moving_up }}" aria-hidden="true">
+    <span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
+    {% if moving_up %}<span class="leg-label">uploading</span>{% endif %}
+  </div>
+  <div class="station station-immich">
+    <div class="station-icon">{{ gallery() }}</div>
+    <p class="station-name">Immich</p>
+    <p class="station-figure">{{ '{:,}'.format(journey.immich_count) }}</p>
+    <p class="station-note">{{ 'photo or video' if journey.immich_count == 1 else 'photos and videos' }} from Takeout in Immich</p>
+  </div>
+</section>

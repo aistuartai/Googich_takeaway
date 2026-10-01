@@ -1,0 +1,36 @@
+{#- Original icons for Googich Takeaway. Not the Google Drive, Google Photos or Immich logos:
+    those are other projects' trademarks. Colours come from currentColor and CSS. -#}
+
+{% macro cloud(cls="") -%}
+<svg class="icon {{ cls }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <path class="icon-fill" d="M14 37h21.5a8.5 8.5 0 0 0 1.7-16.8A12 12 0 0 0 14 17.5 9.75 9.75 0 0 0 14 37z"/>
+  <path class="icon-mark" d="M24 20v11m-4.5-4.5L24 31l4.5-4.5" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+{%- endmacro %}
+
+{% macro folder(cls="") -%}
+<svg class="icon {{ cls }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <rect class="icon-fill" x="7" y="10" width="34" height="12" rx="4"/>
+  <rect class="icon-fill" x="7" y="26" width="34" height="12" rx="4"/>
+  <circle class="icon-mark-dot" cx="34" cy="16" r="2.2"/>
+  <circle class="icon-mark-dot" cx="34" cy="32" r="2.2"/>
+  <path class="icon-mark" d="M13 16h11M13 32h11" fill="none" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
+{%- endmacro %}
+
+{% macro gallery(cls="") -%}
+<svg class="icon {{ cls }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <rect class="icon-fill" x="6" y="9" width="36" height="30" rx="6"/>
+  <circle class="icon-mark-dot" cx="17" cy="19" r="3.4"/>
+  <path class="icon-mark-solid" d="M10 35l10.5-10.5 6 6L31 26l7 9z"/>
+</svg>
+{%- endmacro %}
+
+{% macro mark(cls="") -%}
+{#- The app mark: a cloud coming down into your own photo frame. -#}
+<svg class="mark {{ cls }}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+  <rect x="2" y="6" width="60" height="52" rx="14" class="mark-frame"/>
+  <path d="M16 31h17a6 6 0 0 0 .6-12A8.5 8.5 0 0 0 17.4 20.6 5.2 5.2 0 0 0 16 31z" class="mark-cloud"/>
+  <path d="M10 50l14-13 9 8.5 7.5-7 13.5 11.5z" class="mark-hills"/>
+</svg>
+{%- endmacro %}

@@ -1,63 +1,72 @@
-<section class="card" id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
-  <div class="split">
-    <div>
-      <h2>Status</h2>
-      {% if status.running %}
-      <p><strong>Running</strong> since {{ status.run_started.astimezone(zone).strftime('%H:%M:%S') }}. This page updates by itself.</p>
-      {% else %}
-      <p>Idle. Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}; next run {{ status.next_run.astimezone(zone).strftime('%a %d %b %H:%M') }}{% endif %}.</p>
-      {% endif %}
-      <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.describe() }}</code>.</p>
-    </div>
-    <div class="run-controls">
-      <form method="post" action="/runs">
-        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-        <button type="submit" {{ 'disabled' if status.running }}>Run now</button>
-      </form>
-      {% if not status.running %}
-      <details>
-        <summary>Run with options</summary>
-        <form method="post" action="/runs" class="options">
+{%- from "_meters.html" import meter -%}
+<div id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {% include "_journey.html" %}
+  <section class="card">
+    <div class="status-head">
+      <div>
+        <h2>{% if status.running %}Working{% elif status.paused %}Schedule paused{% else %}Ready{% endif %}</h2>
+        {% if status.running %}
+        <p class="status-line">Started at {{ status.run_started.astimezone(zone).strftime('%H:%M:%S') }}. This page updates by itself.</p>
+        {% else %}
+        <p class="status-line">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
+        {% endif %}
+        <p class="muted">Downloads go to <code>{{ general.describe() }}</code>.</p>
+      </div>
+      <div class="run-controls">
+        <form method="post" action="/runs">
           <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-          <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
-          <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
-          <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
-          <small>Fetches Drive archives even if they were downloaded before, for example after the local copies were cleaned up.</small>
-          <button type="submit">Run</button>
+          <button type="submit" class="run" {{ 'disabled' if status.running }}>Run now</button>
         </form>
-      </details>
-      {% endif %}
+        {% if not status.running %}
+        <details>
+          <summary>Run with options</summary>
+          <form method="post" action="/runs" class="options">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
+            <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
+            <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
+            <small>Fetches Drive archives even if they were downloaded before, for example after the local copies were cleaned up.</small>
+            <button type="submit">Run</button>
+          </form>
+        </details>
+        {% if demo %}
+        <form method="post" action="/demo/run">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+          <button type="submit" class="secondary">Play a demo run</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
     </div>
-  </div>
-  {% if status.running and progress.stages %}
-  <div class="progress-view">
-    <p class="eta">Time left: <strong>{{ progress.eta_seconds|duration }}</strong>{% if progress.eta_is_estimate %} <span class="muted">(estimate based on earlier runs)</span>{% endif %}</p>
+
+    {% if status.running and progress.stages %}
+    <p class="eta">{{ progress.eta_seconds|duration }} left{% if progress.eta_is_estimate %} <span class="muted">estimated from earlier runs</span>{% endif %}</p>
     {% for view in progress.stages %}
-    <div class="stage{{ ' current' if view.stage == progress.stage }}">
+    <div class="stage">
       <div class="stage-head">
         <strong>{{ view.label }}</strong>
-        <span>{{ view.done|size }} of {{ view.total|size }}{% if view.rate %} · {{ view.rate|size }}/s{% endif %}{% if view.eta_seconds %} · {{ view.eta_seconds|duration }} left{% endif %}</span>
+        <span>{{ view.done|size }} of {{ view.total|size }}{% if view.rate %}, {{ view.rate|size }} a second{% endif %}{% if view.eta_seconds %}, {{ view.eta_seconds|duration }} left{% endif %}</span>
       </div>
-      <progress value="{{ view.done }}" max="{{ view.total or 1 }}"></progress>
+      {{ meter(view.done, view.total, view.label, active=(view.stage == progress.stage)) }}
       {% set open_items = view.items|rejectattr('state', 'equalto', 'done')|list %}
       {% set done_items = view.items|selectattr('state', 'equalto', 'done')|list %}
       {% if open_items %}
       <table class="queue">
         <tbody>
-        {% for item in open_items[:25] %}
+        {% for item in open_items[:12] %}
           <tr class="item-{{ item.state.value }}">
             <td>{{ item.name.rsplit('/', 1)[-1] }}</td>
             <td class="num">{{ item.size|size }}</td>
-            <td>{% if item.state.value == 'active' %}<progress value="{{ item.done }}" max="{{ item.size or 1 }}"></progress>{% else %}{{ item.state.value }}{% if item.detail %}: {{ item.detail }}{% endif %}{% endif %}</td>
+            <td>{% if item.state.value == 'active' %}{{ meter(item.done, item.size, item.name.rsplit('/', 1)[-1], active=True, small=True) }}{% else %}{{ item.state.value }}{% if item.detail %}: {{ item.detail }}{% endif %}{% endif %}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
-      {% if open_items|length > 25 %}<p class="muted">…and {{ open_items|length - 25 }} more waiting.</p>{% endif %}
+      {% if open_items|length > 12 %}<p class="muted">{{ open_items|length - 12 }} more waiting.</p>{% endif %}
       {% endif %}
-      {% if done_items %}<p class="muted">{{ done_items|length }} done.</p>{% endif %}
+      {% if done_items %}<p class="muted">{{ done_items|length }} finished.</p>{% endif %}
     </div>
     {% endfor %}
-  </div>
-  {% endif %}
-</section>
+    {% endif %}
+  </section>
+</div>

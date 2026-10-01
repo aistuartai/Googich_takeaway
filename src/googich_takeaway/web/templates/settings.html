@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Settings · Googich Takeaway{% endblock %}
+{% block title %}Settings | Googich Takeaway{% endblock %}
 {% block content %}
 <h1>Settings</h1>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
 
-<section class="card">
-  <h2>Immich</h2>
+<section class="settings-group" id="immich">
+  <header><h2>Immich</h2><p>Where photos go. The app adds only what Immich does not already have.</p></header>
+  <div class="card">
   <form method="post" action="/settings/immich">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label>Immich address
@@ -27,10 +28,12 @@
     </div>
     <div id="immich-test" aria-live="polite"></div>
   </form>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Downloads</h2>
+<section class="settings-group" id="downloads">
+  <header><h2>Downloads</h2><p>Where Takeout archives wait between download and import, and the time zone for undated photos.</p></header>
+  <div class="card">
   <form method="post" action="/settings/general">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <fieldset>
@@ -72,9 +75,11 @@
     </div>
     <div id="storage-test" aria-live="polite"></div>
   </form>
+  </div>
 </section>
-<section class="card">
-  <h2>Schedule</h2>
+<section class="settings-group" id="schedule">
+  <header><h2>Schedule</h2><p>How often to check for new exports. Failed runs never retry endlessly.</p></header>
+  <div class="card">
   <form method="post" action="/settings/schedule">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label>Run
@@ -99,10 +104,12 @@
     </label>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
+  </div>
 </section>
 
-<section class="card">
-  <h2>Notifications</h2>
+<section class="settings-group" id="notifications">
+  <header><h2>Notifications</h2><p>Messages after each run, through any service Apprise supports.</p></header>
+  <div class="card">
   <form method="post" action="/settings/notifications">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label>Apprise URLs, one per line
@@ -122,14 +129,51 @@
     </div>
     <div id="notify-test" aria-live="polite"></div>
   </form>
+  </div>
 </section>
-<section class="card">
-  <h2>Updates</h2>
+<section class="settings-group" id="updates">
+  <header><h2>Updates</h2><p>A notice when a new release is out. Nothing installs itself.</p></header>
+  <div class="card">
   <form method="post" action="/settings/updates">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
     <small>Only shows a notice; nothing is downloaded or installed automatically. The check asks GitHub anonymously for the latest release of this project. You are running version {{ version }}.{% if update_known %} Latest release seen: {{ update_known.latest }}, checked {{ update_known.checked_at.strftime('%d %b %H:%M') }} UTC.{% endif %}</small>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
+  </div>
+</section>
+<section class="settings-group" id="look">
+  <header><h2>Look and feel</h2><p>How this interface looks on this and every other device you use it from.</p></header>
+  <div class="card">
+  <form method="post" action="/settings/look">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <fieldset>
+      <legend>Theme</legend>
+      {% for value, label in themes.items() %}
+      <label class="check"><input type="radio" name="theme" value="{{ value }}" {{ 'checked' if look.theme == value }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Colours</legend>
+      {% for value, label in colour_schemes.items() %}
+      <label class="check"><input type="radio" name="colours" value="{{ value }}" {{ 'checked' if look.colours == value }}> {{ label }}</label>
+      <div class="swatches" data-colours="{{ value }}" aria-hidden="true">{% for t in range(0, 11, 2) %}<span class="tone-{{ t }}"></span>{% endfor %}</div>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Progress bars</legend>
+      {% for value, label in bar_styles.items() %}
+      <label class="check"><input type="radio" name="bars" value="{{ value }}" {{ 'checked' if look.bars == value }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Animation</legend>
+      {% for value, label in motions.items() %}
+      <label class="check"><input type="radio" name="motion" value="{{ value }}" {{ 'checked' if look.motion == value }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <div class="actions"><button type="submit">Save look and feel</button></div>
+  </form>
+  </div>
 </section>
 {% endblock %}

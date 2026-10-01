@@ -1,0 +1,18 @@
+{#- Progress, in the style chosen under Settings > Look and feel. Widths come from pct-N classes
+    (static/pct.css) because the Content Security Policy forbids inline styles. -#}
+{% macro meter(done, total, label, active=False, small=False) -%}
+{%- set p = ((done / total * 100) if total else 0)|round(0, 'floor')|int -%}
+{%- set p = [[p, 0]|max, 100]|min -%}
+{%- set t = (p // 10)|int -%}
+<div class="meter pct-{{ p }} tone-{{ t }}{{ ' active' if active }}{{ ' small' if small }}" role="progressbar" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p }}">
+  <div class="meter-track"><div class="meter-fill"></div></div>
+  <span class="meter-label">{{ p }}%</span>
+</div>
+{%- if not small %}
+<div class="capsules pct-{{ p }} tone-{{ t }}" aria-hidden="true">
+  {%- set lit = (p / 5)|round(0, 'floor')|int %}
+  {%- for i in range(20) %}<span class="capsule{{ ' on' if i < lit }}"></span>{% endfor %}
+  <span class="meter-label">{{ p }}%</span>
+</div>
+{%- endif %}
+{%- endmacro %}

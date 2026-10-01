@@ -81,6 +81,24 @@ class GeneralSettings:
         return str(self.staging) if self.staging else "not set"
 
 
+THEMES = {"auto": "Match this device", "light": "Light", "dark": "Dark"}
+COLOUR_SCHEMES = {
+    "spectrum": "Spectrum: sky to violet to green as work progresses",
+    "ocean": "Ocean: blues and teals",
+    "sunset": "Sunset: magenta, orange and gold",
+}
+BAR_STYLES = {"striped": "Striped bars", "segmented": "Segmented capsules"}
+MOTION = {"auto": "Animate unless this device asks for reduced motion", "off": "No animation"}
+
+
+@dataclass(frozen=True)
+class Look:
+    theme: str = "auto"
+    colours: str = "spectrum"
+    bars: str = "striped"
+    motion: str = "auto"
+
+
 class Config:
     def __init__(self, state: State, box: SecretBox, clock: Callable[[], datetime]) -> None:
         self.state = state
@@ -222,6 +240,34 @@ class Config:
             port=public.port,
             domain=public.domain,
         )
+
+    # --- look and feel ---------------------------------------------------------------------------
+
+    def look(self) -> Look:
+        stored = self._state.get_setting("ui.look")
+        if not stored:
+            return Look()
+        data = json.loads(stored)
+        return Look(
+            theme=data.get("theme", "auto") if data.get("theme") in THEMES else "auto",
+            colours=data.get("colours", "spectrum")
+            if data.get("colours") in COLOUR_SCHEMES
+            else "spectrum",
+            bars=data.get("bars", "striped") if data.get("bars") in BAR_STYLES else "striped",
+            motion=data.get("motion", "auto") if data.get("motion") in MOTION else "auto",
+        )
+
+    def save_look(self, theme: str, colours: str, bars: str, motion: str) -> None:
+        for value, allowed, label in (
+            (theme, THEMES, "theme"),
+            (colours, COLOUR_SCHEMES, "colour scheme"),
+            (bars, BAR_STYLES, "progress bar style"),
+            (motion, MOTION, "animation setting"),
+        ):
+            if value not in allowed:
+                raise ConfigError(f"Choose a {label} from the list.")
+        chosen = {"theme": theme, "colours": colours, "bars": bars, "motion": motion}
+        self._state.set_setting("ui.look", json.dumps(chosen), self._clock())
 
     # --- schedule --------------------------------------------------------------------------------
 

@@ -284,6 +284,20 @@ class State:
             found.update(row[0] for row in rows)
         return found
 
+    def upload_count(self, destination: str) -> int:
+        row = self._db.execute(
+            "SELECT count(*) FROM uploads WHERE destination = ?", (destination,)
+        ).fetchone()
+        return int(row[0])
+
+    def download_totals(self) -> tuple[int, int]:
+        """Distinct archives ever downloaded, and their total size."""
+        row = self._db.execute(
+            "SELECT count(*), coalesce(sum(size), 0) FROM ("
+            "SELECT source, file_id, max(size) AS size FROM downloads GROUP BY source, file_id)"
+        ).fetchone()
+        return int(row[0]), int(row[1])
+
     def uploads(self, destination: str) -> list[UploadRecord]:
         rows = self._db.execute(
             "SELECT * FROM uploads WHERE destination = ? ORDER BY uploaded_at, sha1",

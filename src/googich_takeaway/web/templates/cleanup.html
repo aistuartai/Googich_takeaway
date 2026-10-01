@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Cleanup · Googich Takeaway{% endblock %}
+{% block title %}Cleanup | Googich Takeaway{% endblock %}
 {% block content %}
 <h1>Cleanup</h1>
 {% if message %}<p class="result ok" role="status">{{ message }}</p>{% endif %}
@@ -68,9 +68,9 @@
   {% for copy in drive %}
   <div class="drive-export">
     <div class="stage-head">
-      <strong><code>{{ copy.export_id }}</code> · {{ copy.size|size }}{% if copy.sources %} · {{ copy.sources|join(', ') }}{% endif %}</strong>
+      <strong><code>{{ copy.export_id }}</code>, {{ copy.size|size }}{% if copy.sources %}, from {{ copy.sources|join(', ') }}{% endif %}</strong>
       <span>
-        {% if copy.ready %}<span class="ok-text">Ready to remove</span> · imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
+        {% if copy.ready %}<span class="ok-text">Ready to remove</span>, imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
         {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% endif %}
       </span>
     </div>
