@@ -267,6 +267,24 @@ def create_app(
             zone=_zone(config.general().timezone),
         )
 
+    @app.get("/status", response_class=HTMLResponse)
+    def status_card(request: Request, config: ConfigDep) -> Response:
+        """Polled by the dashboard while a run is going; reloads the page when it ends."""
+        current = worker.status()
+        if not current.running:
+            return Response(status_code=200, headers={"HX-Refresh": "true"})
+        return templates.TemplateResponse(
+            request,
+            "_status.html",
+            {
+                "status": current,
+                "schedule": config.schedule(),
+                "general": config.general(),
+                "sources": config.sources(),
+                "zone": _zone(config.general().timezone),
+            },
+        )
+
     @app.post("/runs")
     def run_now() -> Response:
         worker.request_run()

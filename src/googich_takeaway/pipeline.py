@@ -57,7 +57,7 @@ class RunReport:
 
     @property
     def nothing_new(self) -> bool:
-        return self.downloaded == 0 and self.exports_imported == 0 and self.uploaded == 0
+        return self.downloaded == 0 and self.uploaded == 0
 
     def message(self) -> Message:
         if self.problems:
@@ -68,8 +68,12 @@ class RunReport:
                 [*self.problems, *(["", "What did work:", *done] if done else [])],
             )
         if self.nothing_new:
-            lines = ["No new archives."] if not self.waiting else self._done_lines()
-            return Message(Outcome.NO_NEW_DATA, "Checked: nothing new", lines)
+            if self.already_present:
+                title = f"Nothing new: {self.already_present} files already in Immich"
+            else:
+                title = "Checked: nothing new"
+            lines = self._done_lines() or ["No new archives."]
+            return Message(Outcome.NO_NEW_DATA, title, lines)
         title = (
             f"Imported {self.uploaded} new photos and videos"
             if self.uploaded or not self.downloaded

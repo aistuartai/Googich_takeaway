@@ -244,3 +244,8 @@ def test_time_zone_is_a_dropdown(world: World) -> None:
     assert '<select name="timezone"' in page
     assert '<option value="Australia/Melbourne"' in page
     assert '<option value="UTC" selected>' in page
+
+
+def test_status_poll_reloads_page_when_idle(world: World) -> None:
+    response = world.client.get("/status")
+    assert response.headers["hx-refresh"] == "true"

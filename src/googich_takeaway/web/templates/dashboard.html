@@ -22,23 +22,7 @@
   </form>
 </section>
 {% endif %}
-<section class="card">
-  <div class="split">
-    <div>
-      <h2>Status</h2>
-      {% if status.running %}
-      <p><strong>Running</strong> since {{ status.run_started.astimezone(zone).strftime('%H:%M') }}.</p>
-      {% else %}
-      <p>Idle. Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}; next run {{ status.next_run.astimezone(zone).strftime('%a %d %b %H:%M') }}{% endif %}.</p>
-      {% endif %}
-      <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.staging }}</code>.</p>
-    </div>
-    <form method="post" action="/runs">
-      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-      <button type="submit" {{ 'disabled' if status.running }}>Run now</button>
-    </form>
-  </div>
-</section>
+{% include "_status.html" %}
 <section class="card">
   <h2>Recent runs</h2>
   {% if runs %}

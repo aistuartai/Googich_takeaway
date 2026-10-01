@@ -169,3 +169,20 @@ def test_download_folder_that_is_also_a_local_source_is_not_listed_twice(world: 
     again = world.pipeline().run()
     assert again.problems == []
     assert again.exports_imported == 0  # same parts, same export: recognised as done
+
+
+def test_export_already_in_immich_is_no_new_data(world: World) -> None:
+    world.configure(drive=False)
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    quirks_export().write(folder)
+    world.config.add_local_source("Manual", str(folder))
+    world.pipeline().run()
+    (world.tmp / "second").mkdir()
+    other = World(world.tmp / "second")
+    other.immich = world.immich  # same Immich, fresh app state: everything is already there
+    other.configure(drive=False)
+    other.config.add_local_source("Manual", str(folder))
+    message = other.pipeline().run().message()
+    assert message.outcome is Outcome.NO_NEW_DATA
+    assert message.title == "Nothing new: 13 files already in Immich"
