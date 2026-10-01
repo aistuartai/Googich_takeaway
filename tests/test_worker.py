@@ -166,3 +166,13 @@ def test_schedule_validation(world: World, args: tuple[str, ...], message: str) 
 
     with pytest.raises(ConfigError, match=message):
         world.config().save_schedule(*args)
+
+
+def test_run_options_are_recorded(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.configure()
+    world.worker.run_once(Trigger.MANUAL, RunOptions(reimport=True))
+    run = State(world.path).recent_runs()[0]
+    assert run.details is not None
+    assert "Options: re-import files missing from Immich." in run.details

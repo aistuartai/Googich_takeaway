@@ -21,7 +21,7 @@ from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Message, Outcome
-from googich_takeaway.pipeline import DriveFactory, ImmichFactory, Pipeline
+from googich_takeaway.pipeline import DriveFactory, ImmichFactory, Pipeline, RunOptions
 from googich_takeaway.schedule import next_run
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
@@ -64,7 +64,7 @@ class Worker:
         self._immich_factory = immich_factory
         self._drive_factory = drive_factory
         self._lock = threading.Lock()
-        self._manual_requested = False
+        self._manual_requested: RunOptions | None = None
         self._run_started: datetime | None = None
         self._thread: threading.Thread | None = None
 
@@ -88,12 +88,12 @@ class Worker:
         if self._thread:
             self._thread.join(timeout)
 
-    def request_run(self) -> bool:
+    def request_run(self, options: RunOptions | None = None) -> bool:
         """Ask for a run now. False if one is already running."""
         with self._lock:
             if self._run_started is not None:
                 return False
-            self._manual_requested = True
+            self._manual_requested = options or RunOptions()
         self._wake.set()
         return True
 
@@ -109,27 +109,29 @@ class Worker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            trigger = self._due_trigger()
-            if trigger is not None:
+            due = self._due_trigger()
+            if due is not None:
                 try:
-                    self.run_once(trigger)
+                    self.run_once(*due)
                 except Exception:
                     log.exception("Run crashed")
                 continue
             self._wake.wait(IDLE_CHECK_SECONDS)
             self._wake.clear()
 
-    def _due_trigger(self) -> Trigger | None:
+    def _due_trigger(self) -> tuple[Trigger, RunOptions] | None:
         with self._lock:
-            if self._manual_requested:
-                self._manual_requested = False
-                return Trigger.MANUAL
+            if self._manual_requested is not None:
+                options, self._manual_requested = self._manual_requested, None
+                return Trigger.MANUAL, options
         with State(self._state_path) as state:
             config = self._config(state)
             if config.schedule_paused():
                 return None
             due = self._next_due(state, config)
-        return Trigger.SCHEDULE if due is not None and due <= self._clock() else None
+        if due is not None and due <= self._clock():
+            return Trigger.SCHEDULE, RunOptions()
+        return None
 
     def _next_due(self, state: State, config: Config) -> datetime | None:
         schedule = config.schedule()
@@ -137,7 +139,7 @@ class Worker:
         zone = ZoneInfo(config.general().timezone)
         return next_run(schedule, self._clock(), zone, last)
 
-    def run_once(self, trigger: Trigger) -> Message:
+    def run_once(self, trigger: Trigger, options: RunOptions | None = None) -> Message:
         """Run the pipeline now, record it and notify. Used by the loop and by tests."""
         now = self._clock()
         with self._lock:
@@ -154,8 +156,12 @@ class Worker:
                     self._sleep,
                     immich_factory=self._immich_factory,
                     drive_factory=self._drive_factory,
+                    options=options or RunOptions(),
                 )
                 message = pipeline.run().message()
+                chosen = (options or RunOptions()).describe()
+                if chosen:
+                    message.lines.append(f"Options: {', '.join(chosen)}.")
                 state.finish_run(
                     run_id, message.outcome.value, message.title, message.body, self._clock()
                 )

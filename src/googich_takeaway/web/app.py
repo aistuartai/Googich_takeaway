@@ -26,6 +26,7 @@ from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.notify import Message, Outcome
+from googich_takeaway.pipeline import RunOptions
 from googich_takeaway.schedule import WEEKDAYS
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
@@ -286,8 +287,11 @@ def create_app(
         )
 
     @app.post("/runs")
-    def run_now() -> Response:
-        worker.request_run()
+    def run_now(
+        reimport: Annotated[str, Form()] = "",
+        download_again: Annotated[str, Form()] = "",
+    ) -> Response:
+        worker.request_run(RunOptions(reimport=bool(reimport), download_again=bool(download_again)))
         return RedirectResponse("/", status_code=303)
 
     @app.post("/schedule/resume")

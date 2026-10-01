@@ -249,3 +249,11 @@ def test_time_zone_is_a_dropdown(world: World) -> None:
 def test_status_poll_reloads_page_when_idle(world: World) -> None:
     response = world.client.get("/status")
     assert response.headers["hx-refresh"] == "true"
+
+
+def test_run_with_options_reaches_the_worker(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.post("/runs", data={"reimport": "1"})
+    worker = world.client.app.state.worker  # type: ignore[attr-defined]
+    assert worker._manual_requested == RunOptions(reimport=True, download_again=False)

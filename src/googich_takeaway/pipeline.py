@@ -41,6 +41,22 @@ ImmichFactory = Callable[[str, str], ImmichClient]
 DriveFactory = Callable[[str, dict[str, object]], GoogleDriveSource]
 
 
+@dataclass(frozen=True)
+class RunOptions:
+    reimport: bool = False
+    """Rescan finished exports and upload files Immich no longer has, even ones deleted there."""
+    download_again: bool = False
+    """Download archives from Drive even if they were downloaded before."""
+
+    def describe(self) -> list[str]:
+        chosen = []
+        if self.reimport:
+            chosen.append("re-import files missing from Immich")
+        if self.download_again:
+            chosen.append("download archives again")
+        return chosen
+
+
 @dataclass
 class RunReport:
     downloaded: int = 0
@@ -113,6 +129,7 @@ class Pipeline:
     drive_factory: DriveFactory = GoogleDriveSource
     destination: str = "immich"
     progress: Callable[[int], None] | None = None
+    options: RunOptions = RunOptions()
 
     def run(self) -> RunReport:
         report = RunReport()
@@ -147,7 +164,9 @@ class Pipeline:
                 continue
             try:
                 with self.drive_factory(source.location, self.config.drive_key(source.id)) as drive:
-                    fetched = downloader.fetch_new(drive)
+                    fetched = downloader.fetch_new(
+                        drive, ignore_history=self.options.download_again
+                    )
             except NotEnoughSpaceError as error:
                 report.problems.append(str(error))
                 return
@@ -185,7 +204,7 @@ class Pipeline:
                     report.waiting.append(export_id)
                     continue
                 export_key = _export_key(export_id, parts)
-                if self.state.is_export_complete(export_key):
+                if self.state.is_export_complete(export_key) and not self.options.reimport:
                     continue
                 self._import(export_id, export_key, parts, client, resolver, report)
 
@@ -201,7 +220,9 @@ class Pipeline:
         log.info("Importing export %s (%d parts)", export_id, len(parts))
         scan = scan_export(parts, resolver, self.clock(), progress=self.progress)
         checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
-        plan = plan_import(export_id, scan, checks, self.state, self.destination)
+        plan = plan_import(
+            export_id, scan, checks, self.state, self.destination, self.options.reimport
+        )
         result = run_import(
             plan, client, self.state, self.destination, self.clock, self.sleep, self.progress
         )

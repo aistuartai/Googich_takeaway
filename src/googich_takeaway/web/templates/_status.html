@@ -9,9 +9,24 @@
       {% endif %}
       <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.staging }}</code>.</p>
     </div>
-    <form method="post" action="/runs">
-      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-      <button type="submit" {{ 'disabled' if status.running }}>Run now</button>
-    </form>
+    <div class="run-controls">
+      <form method="post" action="/runs">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+        <button type="submit" {{ 'disabled' if status.running }}>Run now</button>
+      </form>
+      {% if not status.running %}
+      <details>
+        <summary>Run with options</summary>
+        <form method="post" action="/runs" class="options">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+          <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
+          <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
+          <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
+          <small>Fetches Drive archives even if they were downloaded before, for example after the local copies were cleaned up.</small>
+          <button type="submit">Run</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
   </div>
 </section>

@@ -186,3 +186,36 @@ def test_export_already_in_immich_is_no_new_data(world: World) -> None:
     message = other.pipeline().run().message()
     assert message.outcome is Outcome.NO_NEW_DATA
     assert message.title == "Nothing new: 13 files already in Immich"
+
+
+def test_reimport_option_brings_back_files_deleted_in_immich(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.configure()
+    world.pipeline().run()
+    deleted = sorted(world.immich.assets.values(), key=lambda a: a.filename)[:3]
+    for asset in deleted:
+        world.immich.delete(asset.sha1)
+
+    normal = world.pipeline().run()
+    assert normal.uploaded == 0  # finished export, and deletions are respected
+
+    pipeline = world.pipeline()
+    again = Pipeline(**{**pipeline.__dict__, "options": RunOptions(reimport=True)})
+    report = again.run()
+    assert report.problems == []
+    assert report.uploaded == 3
+    assert len(world.immich.assets) == 13
+
+
+def test_download_again_option_refetches_archives(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.configure()
+    world.pipeline().run()
+    for path in (world.tmp / "staging").glob("*.zip"):
+        path.unlink()  # cleaned up after import
+    assert world.pipeline().run().downloaded == 0
+    pipeline = world.pipeline()
+    again = Pipeline(**{**pipeline.__dict__, "options": RunOptions(download_again=True)})
+    assert again.run().downloaded == 2
