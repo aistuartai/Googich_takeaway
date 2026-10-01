@@ -74,15 +74,18 @@ def jpeg_bytes(
     image = Image.new("RGB", (16, 16), ((seed * 53) % 256, (seed * 97) % 256, (seed * 31) % 256))
     image.putpixel((0, 0), (seed % 256, (seed >> 8) % 256, (seed >> 16) % 256))
     buffer = io.BytesIO()
+    # The seed also goes in a JPEG comment: lossy compression can make nearby seeds' pixels
+    # identical, and every generated photo must be unique for scale tests.
+    comment = f"googich test image {seed}".encode()
     if exif_local is None:
-        image.save(buffer, "JPEG", quality=90)
+        image.save(buffer, "JPEG", quality=90, comment=comment)
         return buffer.getvalue()
     exif = Image.Exif()
     exif_ifd = exif.get_ifd(0x8769)
     exif_ifd[0x9003] = exif_local.strftime("%Y:%m:%d %H:%M:%S")  # DateTimeOriginal
     if exif_offset is not None:
         exif_ifd[0x9011] = _format_offset(exif_offset)  # OffsetTimeOriginal
-    image.save(buffer, "JPEG", quality=90, exif=exif.tobytes())
+    image.save(buffer, "JPEG", quality=90, exif=exif.tobytes(), comment=comment)
     return buffer.getvalue()
 
 

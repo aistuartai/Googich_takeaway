@@ -39,8 +39,8 @@
         <span>{{ view.done|size }} of {{ view.total|size }}{% if view.rate %} · {{ view.rate|size }}/s{% endif %}{% if view.eta_seconds %} · {{ view.eta_seconds|duration }} left{% endif %}</span>
       </div>
       <progress value="{{ view.done }}" max="{{ view.total or 1 }}"></progress>
-      {% set open_items = view.items|rejectattr('state', 'equalto', 'done')|list %}
-      {% set done_items = view.items|selectattr('state', 'equalto', 'done')|list %}
+      {% set open_items = view.items %}
+      <p class="muted">{{ '{:,}'.format(view.files_done) }} of {{ '{:,}'.format(view.files_total) }} files done{% if view.files_failed %}, {{ view.files_failed }} failed{% endif %}{% if view.files_skipped %}, {{ view.files_skipped }} skipped{% endif %}.</p>
       {% if open_items %}
       <table class="queue">
         <tbody>
@@ -53,9 +53,8 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if open_items|length > 25 %}<p class="muted">…and {{ open_items|length - 25 }} more waiting.</p>{% endif %}
+      {% if view.files_waiting > 25 %}<p class="muted">…and {{ '{:,}'.format(view.files_waiting - 25) }} more waiting.</p>{% endif %}
       {% endif %}
-      {% if done_items %}<p class="muted">{{ done_items|length }} done.</p>{% endif %}
     </div>
     {% endfor %}
   </div>

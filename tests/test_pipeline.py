@@ -231,11 +231,12 @@ def test_tracker_sees_every_stage(world: World) -> None:
     pipeline = world.pipeline()
     Pipeline(**{**pipeline.__dict__, "tracker": tracker}).run()
     stages = {v.stage: v for v in tracker.snapshot().stages}
-    assert {i.state for i in stages[Stage.DOWNLOAD].items} == {ItemState.DONE}
-    assert len(stages[Stage.DOWNLOAD].items) == 2
-    assert [i.state for i in stages[Stage.SCAN].items] == [ItemState.DONE]
-    assert len(stages[Stage.UPLOAD].items) == 13
+    assert (stages[Stage.DOWNLOAD].files_total, stages[Stage.DOWNLOAD].files_done) == (2, 2)
+    assert stages[Stage.SCAN].files_done == 1
+    assert (stages[Stage.UPLOAD].files_total, stages[Stage.UPLOAD].files_done) == (13, 13)
     assert stages[Stage.UPLOAD].done == stages[Stage.UPLOAD].total
+    assert stages[Stage.UPLOAD].items == []  # nothing left to show: all finished
+    assert {i.state for i in stages[Stage.UPLOAD].recent} == {ItemState.DONE}
 
 
 def test_redownloaded_export_already_imported_is_explained(world: World) -> None:

@@ -163,7 +163,7 @@ def test_import_asks_first_and_declining_uploads_nothing(
     server = FakeImmichServer()
     code, out, _, questions = run_import_cli(server, *import_args(export_dir, key_file, tmp_path))
     assert code == 0
-    assert questions == ["Upload 13 files (7.2 kB) to Immich at http://immich.test?"]
+    assert questions == ["Upload 13 files (7.4 kB) to Immich at http://immich.test?"]
     assert "Cancelled: nothing was uploaded." in out
     assert "review: " in out
     assert not server.assets
