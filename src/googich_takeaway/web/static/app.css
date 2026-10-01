@@ -73,3 +73,12 @@ table.queue td.num { text-align: right; white-space: nowrap; color: var(--muted)
 table.queue progress { min-width: 6rem; }
 .item-failed td { color: var(--error); }
 .item-skipped td, .item-waiting td { color: var(--muted); }
+.filters { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.filters label { margin: 0; }
+.button-link { padding: .55rem 0; }
+table.logs td { padding: .25rem .5rem; font-size: .85rem; vertical-align: top; }
+table.logs td.when, table.logs td.lvl, table.logs td.src { white-space: nowrap; color: var(--muted); }
+table.logs pre { margin: 0; color: var(--fg); font-family: ui-monospace, monospace; font-size: .85rem; }
+.log-warning td.lvl { color: #b26a00; }
+.log-error td.lvl, .log-critical td.lvl, .log-error pre { color: var(--error); }
+.tail-marker td { padding: 0; border: 0; }

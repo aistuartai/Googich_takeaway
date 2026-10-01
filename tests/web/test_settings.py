@@ -273,3 +273,25 @@ def test_status_fragment_shows_live_progress(world: World) -> None:
     assert "2.0 GB" in fragment
     assert "estimate based on earlier runs" in fragment
     assert 'hx-trigger="every 2s"' in fragment
+
+
+def test_log_viewer_tail_and_download(world: World) -> None:
+    import logging
+
+    logging.getLogger("googich.test.viewer").warning("viewer test line 1")
+    page = world.client.get("/logs?level=WARNING").text
+    assert "viewer test line 1" in page
+    assert 'hx-trigger="every 3s"' in page
+    last = re.findall(r"after=(\d+)", page)[-1]
+    logging.getLogger("googich.test.viewer").warning("viewer test line 2")
+    tail = world.client.get(f"/logs/tail?after={last}&level=WARNING").text
+    assert "viewer test line 2" in tail
+    assert "viewer test line 1" not in tail
+    assert world.client.get("/logs/download").status_code == 404  # no file in tests
+    paused = world.client.get("/logs?follow=0").text
+    assert 'hx-trigger="every 3s"' not in paused
+
+
+def test_pages_disable_htmx_eval(world: World) -> None:
+    page = world.client.get("/").text
+    assert '"allowEval": false' in page

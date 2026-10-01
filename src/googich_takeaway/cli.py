@@ -12,7 +12,6 @@ resuming interrupted downloads and skipping archives downloaded before.
 
 import argparse
 import json
-import logging
 import os
 import sys
 import time
@@ -345,11 +344,19 @@ def _fetch(args: argparse.Namespace, out: TextIO, err: TextIO, drive_factory: Dr
 def _serve(args: argparse.Namespace) -> int:
     import uvicorn
 
+    from googich_takeaway.logs import setup_logging
     from googich_takeaway.web.app import WebSettings, create_app
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    app = create_app(WebSettings(args.state))
-    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False, server_header=False)
+    logs = setup_logging(args.state)
+    app = create_app(WebSettings(args.state), logs=logs)
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        proxy_headers=False,
+        server_header=False,
+        log_config=None,  # keep the app's redacting handlers in charge of output
+    )
     return 0
 
 

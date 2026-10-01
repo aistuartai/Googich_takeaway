@@ -71,4 +71,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-file progress bars, smoothed transfer rates and time left per stage and for the whole run.
   Before a stage starts its time is estimated from rates measured on earlier runs.
 - Dashboard with status, next run, Run now, recent runs with details, and the pause banner.
+- Logs: JSON lines in rotating owner-only files beside the database, and a web viewer with
+  level and text filters, a live tail, per-run views linked from the dashboard and a download.
+  A redaction filter removes authorization headers, API keys, private keys and credentials in
+  URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.

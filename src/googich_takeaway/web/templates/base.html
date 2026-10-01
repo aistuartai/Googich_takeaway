@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Googich Takeaway{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
+  <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "includeIndicatorStyles": false}'>
   <script src="/static/htmx.min.js" defer></script>
 </head>
 <body{% if request.state.csrf is defined %} hx-headers='{"X-CSRF-Token": "{{ request.state.csrf }}"}'{% endif %}>
@@ -15,6 +16,7 @@
       <a href="/">Dashboard</a>
       <a href="/sources">Sources</a>
       <a href="/settings">Settings</a>
+      <a href="/logs">Logs</a>
       {% if immich_link %}<a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Open Immich ↗</a>{% endif %}
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">

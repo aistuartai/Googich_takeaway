@@ -1,0 +1,9 @@
+{% for entry in entries %}
+<tr class="log-{{ entry.level|lower }}">
+  <td class="when">{{ entry.time.astimezone(zone).strftime('%d %b %H:%M:%S') }}</td>
+  <td class="lvl">{{ entry.level }}</td>
+  <td class="src">{{ entry.logger.removeprefix('googich.') }}</td>
+  <td><pre>{{ entry.message }}</pre></td>
+</tr>
+{% endfor %}
+{% if follow %}<tr id="log-tail" hx-get="/logs/tail?after={{ last_seq }}&level={{ level }}&q={{ q|urlencode }}" hx-trigger="every 3s" hx-swap="outerHTML" class="tail-marker"><td colspan="4"></td></tr>{% endif %}

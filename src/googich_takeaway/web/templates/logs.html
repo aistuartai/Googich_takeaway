@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Logs · Googich Takeaway{% endblock %}
+{% block content %}
+<h1>Logs</h1>
+<section class="card">
+  {% if run %}<p>Showing run {{ run.id }}, started {{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}: {{ run.title or 'running' }}. <a href="/logs">Show all</a></p>{% endif %}
+  <form method="get" action="/logs" class="filters">
+    {% if run %}<input type="hidden" name="run" value="{{ run.id }}">{% endif %}
+    <label>Level
+      <select name="level">{% for name in levels %}<option {{ 'selected' if name == level }}>{{ name }}</option>{% endfor %}</select>
+    </label>
+    <label>Search <input name="q" value="{{ q }}" placeholder="text in message"></label>
+    <button type="submit">Filter</button>
+    <a class="button-link" href="/logs/download">Download log file</a>
+  </form>
+  {% if not run %}
+  <p class="muted">{% if follow %}New lines appear as they are logged. <a href="/logs?level={{ level }}&q={{ q|urlencode }}&follow=0">Pause</a>{% else %}Paused. <a href="/logs?level={{ level }}&q={{ q|urlencode }}">Follow new lines</a>{% endif %}</p>
+  {% endif %}
+  {% if entries %}
+  <table class="logs">
+    <thead><tr><th>Time</th><th>Level</th><th>Part</th><th>Message</th></tr></thead>
+    <tbody>{% include "_log_rows.html" %}</tbody>
+  </table>
+  {% else %}
+  <p>No log lines match.</p>
+  <table class="logs"><tbody>{% include "_log_rows.html" %}</tbody></table>
+  {% endif %}
+  <p class="muted">The viewer shows the most recent lines since the app started. Older lines are in the downloadable log file. Passwords, keys and tokens are removed before anything is logged.</p>
+</section>
+{% endblock %}

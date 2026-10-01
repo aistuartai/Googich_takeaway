@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -25,6 +25,7 @@ from googich_takeaway import __version__
 from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
+from googich_takeaway.logs import LogBuffer, Logs
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import RunOptions
 from googich_takeaway.progress import format_duration, format_size
@@ -49,6 +50,7 @@ TIMEZONES = [
     ),
     "UTC",
 ]
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 REQUIRED_PERMISSIONS = ("asset.upload", "asset.read")
 OPTIONAL_PERMISSIONS = ("stack.create",)
 
@@ -86,6 +88,7 @@ def create_app(
     immich_factory: ImmichFactory = ImmichClient,
     drive_factory: DriveFactory = GoogleDriveSource,
     start_worker: bool = True,
+    logs: Logs | None = None,
 ) -> FastAPI:
     async def csrf_guard(request: Request) -> None:
         # A dependency, not middleware: it shares FastAPI's parsed form with the route. Reading
@@ -124,6 +127,9 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.worker = worker
+    log_store = logs or Logs(buffer=LogBuffer(), directory=settings.state_path.parent / "logs")
+    if logs is None:
+        logging.getLogger().addHandler(log_store.buffer)  # tests and embedded use
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(version=__version__)
     templates.env.filters.update(duration=format_duration, size=format_size)
@@ -288,6 +294,66 @@ def create_app(
                 "sources": config.sources(),
                 "zone": _zone(config.general().timezone),
             },
+        )
+
+    @app.get("/logs", response_class=HTMLResponse)
+    def logs_page(
+        request: Request,
+        config: ConfigDep,
+        state: StateDep,
+        level: str = "INFO",
+        q: str = "",
+        run: int | None = None,
+        follow: int = 1,
+    ) -> Response:
+        since = until = None
+        selected = None
+        if run is not None:
+            selected = next((r for r in state.recent_runs(200) if r.id == run), None)
+            if selected:
+                since, until = selected.started_at, selected.finished_at
+        entries = log_store.buffer.query(level=level, text=q[:200], since=since, until=until)
+        return page(
+            request,
+            config,
+            "logs.html",
+            entries=entries,
+            level=level.upper() if level.upper() in LOG_LEVELS else "INFO",
+            levels=LOG_LEVELS,
+            q=q[:200],
+            run=selected,
+            follow=bool(follow) and selected is None,
+            last_seq=entries[-1].seq if entries else 0,
+            zone=_zone(config.general().timezone),
+        )
+
+    @app.get("/logs/tail", response_class=HTMLResponse)
+    def logs_tail(
+        request: Request, config: ConfigDep, after: int = 0, level: str = "INFO", q: str = ""
+    ) -> Response:
+        entries = log_store.buffer.query(level=level, text=q[:200], after=after)
+        return templates.TemplateResponse(
+            request,
+            "_log_rows.html",
+            {
+                "entries": entries,
+                "zone": _zone(config.general().timezone),
+                "last_seq": entries[-1].seq if entries else after,
+                "follow": True,
+                "level": level,
+                "q": q[:200],
+            },
+        )
+
+    @app.get("/logs/download")
+    def logs_download() -> Response:
+        path = log_store.current_file
+        if not path.exists():
+            return Response("No log file yet.", status_code=404, media_type="text/plain")
+        return FileResponse(
+            path,
+            media_type="application/x-ndjson",
+            filename=f"googich-{datetime.now(UTC):%Y%m%d-%H%M%S}.log",
         )
 
     @app.post("/runs")

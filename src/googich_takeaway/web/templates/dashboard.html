@@ -32,7 +32,7 @@
     {% for run in runs %}
       <tr>
         <td>{{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}</td>
-        <td>{{ run.trigger }}</td>
+        <td>{{ run.trigger }} · <a href="/logs?run={{ run.id }}&level=DEBUG">log</a></td>
         <td class="run-{{ run.status or 'running' }}">
           {% if run.details and run.details != run.title %}
           <details><summary>{{ run.title }}</summary><pre>{{ run.details }}</pre></details>
