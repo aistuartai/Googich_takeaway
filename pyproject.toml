@@ -7,7 +7,9 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "aistuartai" }]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "tzdata>=2025.2",  # time zone database for images without system zoneinfo
+]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: Python :: 3",
