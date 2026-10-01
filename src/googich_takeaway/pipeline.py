@@ -164,6 +164,8 @@ class Pipeline:
         for source in sources:
             if source.kind == "local":
                 archives += _archives_in(Path(source.location))
+        # The download folder may also be a local source; never list an archive twice.
+        archives = sorted({path.resolve(): path for path in archives}.values())
         resolver = DateResolver(default_timezone=ZoneInfo(general.timezone))
         # A part that failed to download is absent (only its .part file exists), so the export
         # would otherwise look complete without it. Block by export ID, from the failed names.

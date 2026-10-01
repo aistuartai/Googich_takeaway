@@ -237,3 +237,10 @@ def test_run_now_and_resume(world: World) -> None:
     assert "Schedule paused" in world.client.get("/").text
     assert world.post("/schedule/resume").status_code == 303
     assert "Schedule paused" not in world.client.get("/").text
+
+
+def test_time_zone_is_a_dropdown(world: World) -> None:
+    page = world.client.get("/settings").text
+    assert '<select name="timezone"' in page
+    assert '<option value="Australia/Melbourne"' in page
+    assert '<option value="UTC" selected>' in page

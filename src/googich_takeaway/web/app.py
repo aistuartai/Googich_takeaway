@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -41,6 +41,12 @@ COOKIE = "googich_session"
 SESSION_LIFETIME = timedelta(days=7)
 OPEN_PATHS = ("/login", "/setup", "/healthz", "/static/")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+TIMEZONES = [
+    *sorted(
+        z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/"))
+    ),
+    "UTC",
+]
 REQUIRED_PERMISSIONS = ("asset.upload", "asset.read")
 OPTIONAL_PERMISSIONS = ("stack.create",)
 
@@ -284,6 +290,7 @@ def create_app(
             general=config.general(),
             schedule=config.schedule(),
             weekdays=WEEKDAYS,
+            timezones=TIMEZONES,
             outcomes=config.notification_outcomes(),
             has_urls=config.has_notification_urls(),
             error=error,

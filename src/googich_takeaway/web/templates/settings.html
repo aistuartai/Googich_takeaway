@@ -38,7 +38,9 @@
       <small>Takeout archives are downloaded here before import. It needs room for one complete export.</small>
     </label>
     <label>Default time zone
-      <input name="timezone" value="{{ general.timezone }}" placeholder="Australia/Melbourne" required>
+      <select name="timezone" required>
+        {% for zone in timezones %}<option value="{{ zone }}" {{ 'selected' if zone == general.timezone }}>{{ zone.replace('_', ' ') }}</option>{% endfor %}
+      </select>
       <small>Used only for photos with no time zone information of their own.</small>
     </label>
     <div class="actions"><button type="submit">Save</button></div>

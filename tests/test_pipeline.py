@@ -160,3 +160,12 @@ def test_export_still_being_written_waits(world: World) -> None:
         drive_factory=lambda folder, info: GoogleDriveSource(FOLDER, info, world.drive.transport()),
     )
     assert later.run().uploaded == 13
+
+
+def test_download_folder_that_is_also_a_local_source_is_not_listed_twice(world: World) -> None:
+    world.configure()
+    world.pipeline().run()  # downloads into staging and imports
+    world.config.add_local_source("Same folder", str(world.tmp / "staging"))
+    again = world.pipeline().run()
+    assert again.problems == []
+    assert again.exports_imported == 0  # same parts, same export: recognised as done
