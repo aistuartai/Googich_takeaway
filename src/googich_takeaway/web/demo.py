@@ -45,7 +45,7 @@ def _run(worker: Worker, sleep: Callable[[float], None], speed: float) -> None:
                 f"Takeout/Google Photos/Holiday/PXL_2024{n:04d}_0900{n:02d}.MP.jpg",
                 rng.randint(1, 12) * 1_000_000,
             )
-            for n in range(1, 37)
+            for n in range(1, 401)
         ]
         tracker.plan(Stage.UPLOAD, photos)
         for name, size in photos:
@@ -69,5 +69,5 @@ def _transfer(
         step = min(size - done, int(rate * TICK * rng.uniform(0.7, 1.3)))
         done += max(step, 1)
         tracker.advance(max(step, 1))
-        sleep(TICK)
+        sleep(min(TICK, step / rate))
     tracker.end(stage, name)
