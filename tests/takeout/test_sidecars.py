@@ -147,13 +147,14 @@ names = st.from_regex(r"[A-Za-z0-9_ -]{1,60}", fullmatch=True).filter(
     extension=st.sampled_from(["jpg", "JPG", "heic", "mp4", "png"]),
     style=st.sampled_from(list(SidecarStyle)),
     duplicate=st.integers(min_value=0, max_value=3),
+    limit=st.sampled_from([None, 46]),
 )
 def test_any_takeout_named_sidecar_is_found(
-    stem: str, extension: str, style: SidecarStyle, duplicate: int
+    stem: str, extension: str, style: SidecarStyle, duplicate: int, limit: int | None
 ) -> None:
     original = f"{stem}.{extension}"
     media = duplicate_name(original, duplicate) if duplicate else original
-    sidecar = sidecar_name(original, style, duplicate)
+    sidecar = sidecar_name(original, style, duplicate, limit)
     results = match_sidecars([f"{F}/{media}", f"{F}/{sidecar}"])
     assert results[f"{F}/{media}"].sidecar == f"{F}/{sidecar}"
 

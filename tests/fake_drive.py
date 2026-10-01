@@ -117,6 +117,19 @@ class FakeDrive:
         found = re.fullmatch(r"/drive/v3/files/([^/]+)", request.url.path)
         if found and request.url.params.get("alt") == "media":
             return self._media(found[1], request)
+        if found and found[1] == FOLDER:
+            if not self.shared:
+                return httpx.Response(
+                    404, json={"error": {"code": 404, "errors": [{"reason": "notFound"}]}}
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "id": FOLDER,
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "trashed": False,
+                },
+            )
         return httpx.Response(404)
 
     def _token(self, request: httpx.Request) -> httpx.Response:

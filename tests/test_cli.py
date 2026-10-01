@@ -255,10 +255,10 @@ def test_fetch_list_only_downloads_nothing(tmp_path: Path) -> None:
     assert not (tmp_path / "staging").exists()
 
 
-def test_fetch_empty_folder_names_the_account_to_share_with(tmp_path: Path) -> None:
-    code, out, _ = run_fetch_cli(FakeDrive(shared=False), tmp_path)
-    assert code == 0
-    assert ACCOUNT in out
+def test_fetch_unshared_folder_names_the_account_to_share_with(tmp_path: Path) -> None:
+    code, _, err = run_fetch_cli(FakeDrive(shared=False), tmp_path)
+    assert code == 1
+    assert ACCOUNT in err
 
 
 def test_fetch_refuses_readable_key_file(tmp_path: Path) -> None:

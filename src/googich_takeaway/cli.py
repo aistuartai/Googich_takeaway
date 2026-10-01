@@ -393,7 +393,7 @@ def _print_report(
     out: TextIO,
 ) -> None:
     for export, scan in scans.items():
-        parts = sorted({i.archive.name for i in scan.items})
+        parts = [archive.name for archive in scan.archives]
         total = sum(i.size for i in scan.items)
         copies = len(scan.items) - len(scan.unique_items())
         dates = Counter(i.date.source.value if i.date else "none" for i in scan.unique_items())
@@ -413,6 +413,11 @@ def _print_report(
             + "\n"
         )
         out.write(f"  Sidecars      {paired} paired, {len(scan.unmatched_sidecars)} unmatched\n")
+        if scan.motion_companions:
+            out.write(
+                f"  Motion videos {len(scan.motion_companions)} Pixel .MP copies skipped "
+                "(already embedded in the photo)\n"
+            )
         items = statuses[export]
         if version is not None:
             labels = Counter(s.label for s in items)
@@ -453,7 +458,7 @@ def _as_json(
         "immich_version": version,
         "exports": {
             export: {
-                "parts": sorted({i.archive.name for i in scan.items}),
+                "parts": [archive.name for archive in scan.archives],
                 "unmatched_sidecars": scan.unmatched_sidecars,
                 "files": [
                     {

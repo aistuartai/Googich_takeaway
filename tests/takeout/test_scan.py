@@ -122,3 +122,24 @@ def test_offset_in_exif_survives_scan(tmp_path: Path) -> None:
     item = scan_export(builder.write(tmp_path), RESOLVER, NOW).items[0]
     assert item.date is not None
     assert item.date.xmp_value() == "2019-07-04T10:15:00+09:30"
+
+
+def test_pixel_motion_video_copy_is_skipped_when_embedded(tmp_path: Path) -> None:
+    from tests.fixtures.takeout import TakeoutBuilder
+
+    builder = TakeoutBuilder()
+    still = builder.add_motion_photo("PXL_20240101_010203456")
+    scan = scan_export(builder.write(tmp_path), RESOLVER, NOW)
+    assert [i.path for i in scan.items] == [still.path]
+    assert scan.motion_companions == [f"{F}/PXL_20240101_010203456.MP"]
+    assert scan.items[0].sidecar == still.sidecar_path
+
+
+def test_lone_mp_video_is_kept_as_a_video(tmp_path: Path) -> None:
+    from tests.fixtures.takeout import TakeoutBuilder, mp4_bytes
+
+    builder = TakeoutBuilder()
+    builder.add_file("Photos from 2019/PXL_20240101_010203456.MP", mp4_bytes(1))
+    scan = scan_export(builder.write(tmp_path), RESOLVER, NOW)
+    assert [i.kind for i in scan.items] == [MediaKind.VIDEO]
+    assert scan.motion_companions == []

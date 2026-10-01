@@ -66,12 +66,17 @@ class ScannedItem:
 
 @dataclass
 class ExportScan:
+    archives: list[Path] = field(default_factory=list)
+    """Every part scanned, including parts with no media (e.g. only archive_browser.html)."""
     items: list[ScannedItem] = field(default_factory=list)
     unmatched_sidecars: list[str] = field(default_factory=list)
     ignored: list[str] = field(default_factory=list)
     """Entries that are neither media nor sidecars, e.g. ``archive_browser.html``."""
     repeated_paths: list[str] = field(default_factory=list)
     """Paths found in more than one part; only the first copy is used."""
+    motion_companions: list[str] = field(default_factory=list)
+    """Pixel ``PXL_….MP`` videos whose ``PXL_….MP.jpg`` still already embeds the same video.
+    Immich plays the embedded video, so the separate copy is not uploaded."""
 
     def unique_items(self) -> list[ScannedItem]:
         return [item for item in self.items if item.duplicate_of is None]
@@ -92,7 +97,7 @@ def scan_export(
     progress: ProgressCallback | None = None,
 ) -> ExportScan:
     """Scan all parts of one export. ``now`` bounds plausible dates, for reproducibility."""
-    scan = ExportScan()
+    scan = ExportScan(archives=list(archives))
     media: dict[str, _Media] = {}
     sidecars: dict[str, SidecarData] = {}
     seen: set[str] = set()
@@ -122,6 +127,13 @@ def scan_export(
             else:
                 scan.ignored.append(entry.path)
                 _drain(entry.stream, progress)
+
+    for path in sorted(media):
+        if path.lower().endswith(".mp") and any(
+            path + suffix in media for suffix in (".jpg", ".jpeg", ".JPG", ".JPEG")
+        ):
+            scan.motion_companions.append(path)
+            del media[path]
 
     titles = {path: data.title for path, data in sidecars.items() if data.title}
     matches = match_sidecars([*media, *sidecars], titles)

@@ -27,7 +27,7 @@ PHOTO_EXTENSIONS = frozenset(
     }
 )  # fmt: skip
 VIDEO_EXTENSIONS = frozenset(
-    {"mp4", "mov", "m4v", "3gp", "avi", "mkv", "mts", "m2ts", "wmv", "mpg", "mpeg", "webm"}
+    {"mp4", "mov", "m4v", "3gp", "avi", "mkv", "mts", "m2ts", "wmv", "mpg", "mpeg", "webm", "mp"}
 )
 MEDIA_EXTENSIONS = PHOTO_EXTENSIONS | VIDEO_EXTENSIONS
 

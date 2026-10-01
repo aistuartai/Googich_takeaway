@@ -6,6 +6,7 @@ nor delete anything in Drive. The key file is read from disk and never logged or
 """
 
 import json
+import re
 import stat
 from collections.abc import Iterator, Mapping
 from datetime import datetime
@@ -114,7 +115,30 @@ class GoogleDriveSource:
         """Service account email, to share the Drive folder with."""
         return str(self._credentials.service_account_email)
 
+    def check_folder(self) -> None:
+        """Fail clearly if the folder is missing or not shared with the service account."""
+        url = f"{API}/files/{_path_segment(self.folder_id)}"
+        params = {"fields": "id,mimeType,trashed", "supportsAllDrives": "true"}
+        try:
+            response = self._client.get(url, params=params, headers=self._headers())
+        except httpx.HTTPError as error:
+            raise TransientSourceError(
+                f"cannot reach Google Drive: {type(error).__name__}"
+            ) from None
+        if response.status_code == 404:
+            raise SourceError(
+                f"the Drive folder was not found, or is not shared with {self.account}. "
+                "Share it with that address as Viewer, and check the folder ID."
+            )
+        _raise_for_status(response, "folder")
+        data = response.json()
+        if data.get("mimeType") != "application/vnd.google-apps.folder":
+            raise SourceError("the Drive folder ID points to a file, not a folder")
+        if data.get("trashed"):
+            raise SourceError("the Drive folder is in the trash")
+
     def list_archives(self) -> list[RemoteFile]:
+        self.check_folder()
         found: list[RemoteFile] = []
         page: str | None = None
         query = f"'{_quote(self.folder_id)}' in parents and trashed = false"
@@ -230,6 +254,12 @@ def _error_reasons(response: httpx.Response) -> set[str]:
     found = {str(e.get("reason")) for e in error.get("errors", []) if isinstance(e, dict)}
     found |= {str(d.get("reason")) for d in error.get("details", []) if isinstance(d, dict)}
     return {r for r in found if r and r != "None"}
+
+
+def _path_segment(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise SourceError("the Drive folder ID contains unexpected characters")
+    return value
 
 
 def _quote(value: str) -> str:

@@ -138,3 +138,11 @@ def test_files_gone_from_source_are_marked_removed(tmp_path: Path) -> None:
     assert result.removed_from_source == 1
     removed = {d.file_id: d.removed_at for d in s.state.downloads(s.source.name)}
     assert removed == {"a": NOW, "b": None}
+
+
+def test_staged_files_are_owner_only(tmp_path: Path) -> None:
+    s = Setup(tmp_path)
+    s.drive.add("a", "takeout-x-001.zip", DATA)
+    s.downloader().fetch_new(s.source)
+    assert (s.staging / "takeout-x-001.zip").stat().st_mode & 0o077 == 0
+    assert s.staging.stat().st_mode & 0o077 == 0

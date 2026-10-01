@@ -24,8 +24,10 @@ from PIL import Image
 ROOT = "Takeout/Google Photos"
 # Fixed timestamp for archive entries, so archives are byte-for-byte reproducible.
 _ENTRY_TIME = (2020, 1, 1, 0, 0, 0)
-# ASSUMPTION: sidecar file names are cut to this many characters before ".json".
-SIDECAR_STEM_LIMIT = 46
+# Observed in a real export (2026-10-01): supplemental-metadata sidecar names were not truncated,
+# with stems up to 68 characters. Older exports are reported to cut names at 46 characters, so the
+# builder can do either; the matcher must handle both.
+SIDECAR_STEM_LIMIT: int | None = None
 _QUICKTIME_EPOCH = datetime(1904, 1, 1, tzinfo=UTC)
 
 
@@ -36,7 +38,12 @@ class SidecarStyle(StrEnum):
     """``IMG_1234.jpg.supplemental-metadata.json`` — exports from 2024."""
 
 
-def sidecar_name(media_name: str, style: SidecarStyle, duplicate: int = 0) -> str:
+def sidecar_name(
+    media_name: str,
+    style: SidecarStyle,
+    duplicate: int = 0,
+    limit: int | None = SIDECAR_STEM_LIMIT,
+) -> str:
     """Name Takeout gives the sidecar of ``media_name``.
 
     ``media_name`` is the original name without any ``(n)`` duplicate suffix; ``duplicate`` is
@@ -44,7 +51,8 @@ def sidecar_name(media_name: str, style: SidecarStyle, duplicate: int = 0) -> st
     ``IMG_1234(1).jpg`` pairs with ``IMG_1234.jpg(1).json``.
     """
     stem = media_name if style is SidecarStyle.LEGACY else f"{media_name}.supplemental-metadata"
-    stem = stem[:SIDECAR_STEM_LIMIT]
+    if limit is not None:
+        stem = stem[:limit]
     suffix = f"({duplicate})" if duplicate else ""
     return f"{stem}{suffix}.json"
 
@@ -255,6 +263,15 @@ class TakeoutBuilder:
         self.expected[self.expected.index(video)] = shared
         return image, shared
 
+    def add_motion_photo(self, stem: str, folder: str = "Photos from 2019") -> ExpectedItem:
+        """Pixel motion photo: ``<stem>.MP.jpg`` (video embedded) plus a ``<stem>.MP`` copy.
+
+        Matches a real export: the separate ``.MP`` file is an MP4 and has no sidecar.
+        """
+        still = self.add_photo(f"{stem}.MP.jpg", folder)
+        self.add_file(f"{folder}/{stem}.MP", mp4_bytes(self.next_seed()))
+        return still
+
     def add_edited(self, original: ExpectedItem, suffix: str = "-edited") -> ExpectedItem:
         """Edited copy of ``original``: same folder, no sidecar of its own."""
         folder, _, name = original.path.removeprefix(f"{ROOT}/").rpartition("/")
@@ -290,7 +307,7 @@ class TakeoutBuilder:
         parts = sorted({entry.part for entry in self.entries})
         paths = []
         for part in parts:
-            # ASSUMPTION: part naming takeout-<export id>-<NNN>.<ext>.
+            # Real exports use takeout-<id>-<NNN> and also takeout-<id>-<n>-<NNN>.
             path = directory / f"takeout-{self.export_id}-{part:03d}.{archive_format}"
             entries = [entry for entry in self.entries if entry.part == part]
             if archive_format == "zip":

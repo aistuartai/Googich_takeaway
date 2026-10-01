@@ -60,8 +60,15 @@ def test_dropped_connection_is_transient() -> None:
 def test_unshared_folder_explains_itself() -> None:
     drive = FakeDrive(shared=False)
     drive.add("a", "takeout-x-001.zip", b"x")
-    with source(drive) as s:
-        assert s.list_archives() == []  # Drive shows an empty folder, not an error
+    with source(drive) as s, pytest.raises(SourceError, match=f"not shared with {ACCOUNT}"):
+        s.list_archives()
+
+
+def test_odd_folder_ids_are_refused_before_any_request() -> None:
+    drive = FakeDrive()
+    s = GoogleDriveSource("abc/../x", service_account_info(), transport=drive.transport())
+    with pytest.raises(SourceError, match="unexpected characters"):
+        s.list_archives()
 
 
 def test_account_email_is_available_for_setup_instructions() -> None:

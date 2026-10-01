@@ -42,4 +42,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checksum verification and atomic completion, refuses downloads that would not fit, and
   remembers what was downloaded (with `--ignore-history` to override).
 - Local folder source.
+- Pixel motion photos: the separate `.MP` video copy is skipped when the `.MP.jpg` still already
+  embeds it; a lone `.MP` file is treated as a video.
+- Drive folder is checked first, so a missing share is reported directly with the account to
+  share with. Downloaded archives and the staging folder are created owner-only.
 - State database schema 2: download history. Version 1 databases are upgraded in place.

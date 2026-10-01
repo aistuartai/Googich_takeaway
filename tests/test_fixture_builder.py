@@ -42,7 +42,8 @@ from tests.fixtures.takeout import (
     ],
 )
 def test_sidecar_names(media: str, style: SidecarStyle, duplicate: int, expected: str) -> None:
-    assert sidecar_name(media, style, duplicate) == expected
+    limit = 46 if expected.endswith("metada.json") else None
+    assert sidecar_name(media, style, duplicate, limit) == expected
 
 
 def test_duplicate_name() -> None:

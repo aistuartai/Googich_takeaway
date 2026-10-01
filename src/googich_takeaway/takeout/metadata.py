@@ -21,7 +21,7 @@ MAX_SIDECAR_BYTES = 1024 * 1024
 
 _QUICKTIME_EPOCH = datetime(1904, 1, 1, tzinfo=UTC)
 _PILLOW_EXTENSIONS = frozenset({"jpg", "jpeg", "png", "webp", "tif", "tiff"})
-_QUICKTIME_EXTENSIONS = frozenset({"mp4", "mov", "m4v", "3gp"})
+_QUICKTIME_EXTENSIONS = frozenset({"mp4", "mov", "m4v", "3gp", "mp"})
 
 _EXIF_IFD = 0x8769
 _GPS_IFD = 0x8825

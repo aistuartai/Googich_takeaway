@@ -82,7 +82,7 @@ class Downloader:
         return result
 
     def download(self, source: Source, file: RemoteFile) -> Path:
-        self.staging.mkdir(parents=True, exist_ok=True)
+        self.staging.mkdir(parents=True, exist_ok=True, mode=0o700)
         target = self.staging / _safe_name(file.name)
         part = target.with_name(target.name + ".part")
         marker = target.with_name(target.name + ".part.json")
@@ -90,7 +90,10 @@ class Downloader:
         if part.exists() and _marker(marker) != file.fingerprint:
             part.unlink()  # partial download of an older version
         marker.write_text(json.dumps({"file_id": file.file_id, "fingerprint": file.fingerprint}))
-        have = part.stat().st_size if part.exists() else 0
+        if not part.exists():
+            # Owner-only from the first byte: these are someone's photos.
+            os.close(os.open(part, os.O_CREAT | os.O_WRONLY, 0o600))
+        have = part.stat().st_size
         if have > file.size:
             part.unlink()
             have = 0
