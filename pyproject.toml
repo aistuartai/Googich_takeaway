@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "aistuartai" }]
 requires-python = ">=3.13"
 dependencies = [
+    "httpx>=0.28",
     "pillow>=11",
     "tzdata>=2025.2",  # time zone database for images without system zoneinfo
 ]
@@ -25,6 +26,9 @@ dev = [
     "ruff>=0.13",
     "mypy>=1.18",
 ]
+
+[project.scripts]
+googich = "googich_takeaway.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/aistuartai/Googich_takeaway"

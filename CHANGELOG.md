@@ -25,3 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hashing each media file (SHA-1), reading EXIF and video dates, pairing sidecars and resolving
   capture dates. Identical copies (for example in album folders) are marked so they upload once.
   Corrupt or truncated archives are reported as archive errors.
+- Immich client with a read-only duplicate check, batched, with clear errors that never include
+  the API key. Key files readable by other users are refused.
+- `googich scan` command: a dry run that reports files, capture dates, sidecar pairing and, with an
+  Immich server, which files are new. Text or JSON output. Never uploads or changes anything.

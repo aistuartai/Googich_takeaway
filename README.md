@@ -20,6 +20,25 @@ Google Takeout archives.
 
 Google Drive access is read-only: the app never changes or deletes anything in your Google account.
 
+## Trying the scanner
+
+The first working piece is a dry run. It reads Takeout archives and reports what an import would
+do, without uploading or changing anything.
+
+```bash
+uv run googich scan /path/to/takeout-archives --timezone Australia/Melbourne
+```
+
+To also see which files your Immich server already has, create an Immich API key with the
+`asset.upload` permission, save it in a file only you can read (`chmod 600`), and add:
+
+```bash
+--immich-url http://your-immich:2283 --key-file /path/to/immich.key
+```
+
+Add `--list` for every file, or `--json` for machine-readable output. The key is read from the
+file, so it never appears in your shell history or the process list.
+
 ## Requirements (planned)
 
 - Docker
