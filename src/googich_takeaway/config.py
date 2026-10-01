@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from googich_takeaway.credentials import SecretBox
+from googich_takeaway.notify import DEFAULT_OUTCOMES, Notifier, Outcome, invalid_urls
 from googich_takeaway.state import SourceRecord, State, StateError
 
 MAX_KEY_FILE_BYTES = 64 * 1024
@@ -113,6 +114,41 @@ class Config:
         now = self._clock()
         self._state.set_setting("staging.path", str(path), now)
         self._state.set_setting("timezone", timezone.strip(), now)
+
+    # --- notifications ---------------------------------------------------------------------------
+
+    def notification_outcomes(self) -> frozenset[Outcome]:
+        stored = self._state.get_setting("notify.outcomes")
+        if stored is None:
+            return DEFAULT_OUTCOMES
+        return frozenset(Outcome(o) for o in json.loads(stored) if o in Outcome)
+
+    def has_notification_urls(self) -> bool:
+        return self._state.get_sealed("notify.urls") is not None
+
+    def save_notifications(self, urls: str | None, outcomes: list[str]) -> None:
+        """``urls`` None keeps the stored URLs; an empty string removes them."""
+        chosen = sorted({Outcome(o).value for o in outcomes if o in Outcome})
+        now = self._clock()
+        if urls is not None:
+            lines = [line.strip() for line in urls.splitlines() if line.strip()]
+            if len(lines) > 20:
+                raise ConfigError("Use at most 20 notification URLs.")
+            bad = invalid_urls(lines)
+            if bad:
+                raise ConfigError(
+                    "Apprise does not recognise the URL on line "
+                    + ", ".join(str(n) for n in bad)
+                    + ". See the Apprise documentation for URL formats."
+                )
+            sealed = self._box.seal("notify.urls", "\n".join(lines).encode()) if lines else None
+            self._state.set_sealed("notify.urls", sealed, now)
+        self._state.set_setting("notify.outcomes", json.dumps(chosen), now)
+
+    def notifier(self) -> Notifier:
+        sealed = self._state.get_sealed("notify.urls")
+        urls = self._box.open("notify.urls", sealed).decode().splitlines() if sealed else []
+        return Notifier(urls, self.notification_outcomes())
 
     # --- sources ---------------------------------------------------------------------------------
 

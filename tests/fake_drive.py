@@ -50,7 +50,7 @@ class DriveFile:
     name: str
     data: bytes
     parent: str = FOLDER
-    modified: str = "2026-10-01T01:02:03.000Z"
+    modified: str = "2026-09-30T12:00:00.000Z"
     trashed: bool = False
 
     def listing(self) -> dict[str, str]:

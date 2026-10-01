@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -82,6 +82,23 @@ _MIGRATIONS: dict[int, str] = {
             created_at TEXT NOT NULL
         ) STRICT;
     """,
+    5: """
+        CREATE TABLE runs (
+            id          INTEGER PRIMARY KEY,
+            trigger     TEXT NOT NULL,
+            started_at  TEXT NOT NULL,
+            finished_at TEXT,
+            status      TEXT,
+            title       TEXT,
+            details     TEXT
+        ) STRICT;
+        CREATE TABLE completed_exports (
+            export_key   TEXT PRIMARY KEY,
+            export_id    TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            summary      TEXT NOT NULL
+        ) STRICT;
+    """,
 }
 
 
@@ -135,6 +152,17 @@ class SourceRecord:
     location: str
     """Drive folder ID, or local folder path."""
     enabled: bool
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    id: int
+    trigger: str
+    started_at: datetime
+    finished_at: datetime | None
+    status: str | None
+    title: str | None
+    details: str | None
 
 
 class StateError(Exception):
@@ -432,6 +460,60 @@ class State:
 
     def delete_source(self, source_id: int) -> None:
         self._db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+    # --- runs and completed exports ------------------------------------------------------------
+
+    def start_run(self, trigger: str, at: datetime) -> int:
+        cursor = self._db.execute(
+            "INSERT INTO runs (trigger, started_at) VALUES (?, ?)", (trigger, _to_text(at))
+        )
+        return int(cursor.lastrowid or 0)
+
+    def finish_run(self, run_id: int, status: str, title: str, details: str, at: datetime) -> None:
+        self._db.execute(
+            "UPDATE runs SET finished_at = ?, status = ?, title = ?, details = ? WHERE id = ?",
+            (_to_text(at), status, title, details, run_id),
+        )
+
+    def recent_runs(self, limit: int = 20) -> list[RunRecord]:
+        rows = self._db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,))
+        return [
+            RunRecord(
+                id=row["id"],
+                trigger=row["trigger"],
+                started_at=_from_text(row["started_at"]),
+                finished_at=_from_text(row["finished_at"]) if row["finished_at"] else None,
+                status=row["status"],
+                title=row["title"],
+                details=row["details"],
+            )
+            for row in rows
+        ]
+
+    def abandon_unfinished_runs(self, at: datetime) -> int:
+        """Runs left open by a crash or restart are closed as interrupted."""
+        cursor = self._db.execute(
+            "UPDATE runs SET finished_at = ?, status = 'interrupted', "
+            "title = 'Interrupted (the app stopped during the run)' WHERE finished_at IS NULL",
+            (_to_text(at),),
+        )
+        return cursor.rowcount
+
+    def is_export_complete(self, export_key: str) -> bool:
+        row = self._db.execute(
+            "SELECT 1 FROM completed_exports WHERE export_key = ?", (export_key,)
+        ).fetchone()
+        return row is not None
+
+    def mark_export_complete(
+        self, export_key: str, export_id: str, summary: str, at: datetime
+    ) -> None:
+        self._db.execute(
+            "INSERT INTO completed_exports (export_key, export_id, completed_at, summary) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (export_key) DO UPDATE SET "
+            "completed_at = excluded.completed_at, summary = excluded.summary",
+            (export_key, export_id, _to_text(at), summary),
+        )
 
 
 def _source(row: sqlite3.Row) -> SourceRecord:

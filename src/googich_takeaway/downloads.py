@@ -47,6 +47,8 @@ class FetchResult:
     """Downloaded before, according to the history."""
     failed: list[tuple[RemoteFile, str]] = field(default_factory=list)
     removed_from_source: int = 0
+    listed: list[RemoteFile] = field(default_factory=list)
+    """Every archive the source showed, downloaded or not."""
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ class Downloader:
         """Download every archive at the source not downloaded before."""
         result = FetchResult()
         files = source.list_archives()
+        result.listed = files
         result.removed_from_source = self.state.mark_removed_from_source(
             source.name, (f.file_id for f in files), self.clock()
         )

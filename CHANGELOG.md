@@ -56,3 +56,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default time zone, and any number of Google Drive and local folder sources, each with a test
   button. Credentials are encrypted with AES-256-GCM under a master key kept outside the
   database, and are never shown again. State database schema 4.
+- Run cycle: fetch from every Drive source, then import every complete export from the download
+  folder and local sources, with a report for the notification. Exports are only imported when
+  all parts downloaded and Takeout has stopped adding parts for an hour; cleanly imported exports
+  are not rescanned. Retries stay bounded.
+- Notifications through Apprise (ntfy, email, Home Assistant, Discord and many more) for success,
+  no new data, failure and pause, each switchable. URLs are stored encrypted and never logged.
+- State database schema 5: run history and completed exports.
