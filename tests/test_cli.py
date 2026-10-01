@@ -9,6 +9,7 @@ import pytest
 from googich_takeaway.cli import main
 from googich_takeaway.destinations.immich import ImmichClient
 from tests.destinations.test_immich import KEY, FakeImmich
+from tests.fake_immich import FakeImmichServer
 from tests.fixtures.takeout import ROOT, quirks_export
 
 
@@ -126,3 +127,85 @@ def test_corrupt_archive_exits_1(tmp_path: Path) -> None:
     code, _, err = run("scan", str(tmp_path))
     assert code == 1
     assert "takeout-20261001T010203Z-001.zip" in err
+
+
+# --- googich import ---------------------------------------------------------------------------
+
+
+def run_import_cli(
+    server: FakeImmichServer, *argv: str, answer: bool = False
+) -> tuple[int, str, str, list[str]]:
+    out, err = io.StringIO(), io.StringIO()
+    questions: list[str] = []
+
+    def factory(url: str, key: str) -> ImmichClient:
+        return ImmichClient(url, key, transport=server.transport())
+
+    def confirm(question: str) -> bool:
+        questions.append(question)
+        return answer
+
+    code = main(["import", *argv], out, err, client_factory=factory, confirm=confirm)
+    return code, out.getvalue(), err.getvalue(), questions
+
+
+def import_args(export_dir: Path, key_file: Path, tmp_path: Path) -> list[str]:
+    return [
+        str(export_dir), "--immich-url", "http://immich.test", "--key-file", str(key_file),
+        "--state", str(tmp_path / "state" / "state.db"), "--timezone", "Australia/Melbourne",
+    ]  # fmt: skip
+
+
+def test_import_asks_first_and_declining_uploads_nothing(
+    export_dir: Path, key_file: Path, tmp_path: Path
+) -> None:
+    server = FakeImmichServer()
+    code, out, _, questions = run_import_cli(server, *import_args(export_dir, key_file, tmp_path))
+    assert code == 0
+    assert questions == ["Upload 13 files (7.2 kB) to Immich at http://immich.test?"]
+    assert "Cancelled: nothing was uploaded." in out
+    assert "review: " in out
+    assert not server.assets
+
+
+def test_import_with_confirmation_uploads_and_verifies(
+    export_dir: Path, key_file: Path, tmp_path: Path
+) -> None:
+    server = FakeImmichServer()
+    code, out, err, _ = run_import_cli(
+        server, *import_args(export_dir, key_file, tmp_path), answer=True
+    )
+    assert code == 0, err
+    assert "Uploaded 13, verified 13" in out
+    assert len(server.assets) == 13
+
+    code, out, _, questions = run_import_cli(server, *import_args(export_dir, key_file, tmp_path))
+    assert code == 0
+    assert "Nothing to upload." in out
+    assert questions == []
+
+
+def test_import_yes_skips_question(export_dir: Path, key_file: Path, tmp_path: Path) -> None:
+    server = FakeImmichServer()
+    code, _, _, questions = run_import_cli(
+        server, *import_args(export_dir, key_file, tmp_path), "--yes"
+    )
+    assert code == 0
+    assert questions == []
+    assert len(server.assets) == 13
+
+
+def test_import_reports_failures_with_exit_1(
+    export_dir: Path, key_file: Path, tmp_path: Path
+) -> None:
+    server = FakeImmichServer(fail_uploads=100, store_failed_uploads=False)
+    code, out, _, _ = run_import_cli(server, *import_args(export_dir, key_file, tmp_path), "--yes")
+    assert code == 1
+    assert "failed:" in out
+    assert "run again to continue" in out
+
+
+def test_import_requires_immich(export_dir: Path) -> None:
+    code, _, err, _ = run_import_cli(FakeImmichServer(), str(export_dir))
+    assert code == 2
+    assert "needs --immich-url" in err

@@ -32,3 +32,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Local state database (SQLite, versioned schema, owner-only file) recording every upload, so
   photos deleted in Immich are not uploaded again.
 - XMP sidecar builder carrying the capture date with an explicit offset, GPS and description.
+- `googich import` command: shows the plan, asks for confirmation, streams new files to Immich
+  with an XMP sidecar, checks each file's SHA-1 while sending, then reads every upload back to
+  verify its date. Files deleted in Immich since an earlier upload, files in Immich's trash and
+  files with no capture date are skipped and reported. Interrupted runs resume without
+  duplicates.

@@ -39,6 +39,25 @@ To also see which files your Immich server already has, create an Immich API key
 Add `--list` for every file, or `--json` for machine-readable output. The key is read from the
 file, so it never appears in your shell history or the process list.
 
+## Importing
+
+```bash
+uv run googich import /path/to/takeout-archives --timezone Australia/Melbourne \
+  --immich-url http://your-immich:2283 --key-file /path/to/immich.key
+```
+
+The import shows what it will do and asks before uploading. It needs an API key with the
+`asset.upload` and `asset.read` permissions. Each file is uploaded unmodified, with a small XMP
+sidecar that carries its capture date and location, and is then read back from Immich to check
+the date.
+
+It remembers what it uploaded (in `~/.local/share/googich/state.db` by default), so running it
+again uploads only what is new. If you delete a photo in Immich, later imports will not bring it
+back; use `--reimport` if you want them to. Files with no capture date at all are listed for you
+to review rather than being given today's date.
+
+Try it on a test Immich user first, and back up your Immich database before the first real import.
+
 ## Requirements (planned)
 
 - Docker

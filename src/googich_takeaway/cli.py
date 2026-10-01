@@ -2,12 +2,16 @@
 
 ``googich scan`` reads Takeout archives and reports what an import would do. With an Immich URL
 and key file it also asks Immich which files it already has. It never uploads or changes anything.
+
+``googich import`` does the import: it shows the same plan, asks for confirmation, uploads new
+files with their capture dates and checks each one in Immich afterwards.
 """
 
 import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -24,6 +28,8 @@ from googich_takeaway.destinations.immich import (
     ImmichError,
     read_api_key,
 )
+from googich_takeaway.importer import Decision, ImportPlan, ImportResult, plan_import, run_import
+from googich_takeaway.state import State, StateError
 from googich_takeaway.takeout.archives import ArchiveError, archive_format, group_exports
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem, scan_export
@@ -52,13 +58,16 @@ def main(
     out: TextIO = sys.stdout,
     err: TextIO = sys.stderr,
     client_factory: ClientFactory = ImmichClient,
+    confirm: Callable[[str], bool] | None = None,
 ) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    if args.command != "scan":
-        parser.print_help(err)
-        return 2
-    return _scan(args, out, err, client_factory)
+    if args.command == "scan":
+        return _scan(args, out, err, client_factory)
+    if args.command == "import":
+        return _import(args, out, err, client_factory, confirm or _ask)
+    parser.print_help(err)
+    return 2
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -70,26 +79,67 @@ def _parser() -> argparse.ArgumentParser:
         help="report what importing Takeout archives would do (never uploads)",
         description="Scan Takeout archives and report what an import would do. Read-only.",
     )
-    scan.add_argument("paths", nargs="+", type=Path, help="archives, or folders containing them")
-    scan.add_argument(
+    _add_common(scan)
+    scan.add_argument("--list", action="store_true", help="list every file and its outcome")
+    scan.add_argument("--json", action="store_true", help="machine-readable output")
+
+    imp = commands.add_parser(
+        "import",
+        help="upload new files from Takeout archives to Immich",
+        description="Upload files Immich does not have, with their capture dates, then check them.",
+    )
+    _add_common(imp)
+    imp.add_argument(
+        "--state",
+        type=Path,
+        default=_default_state(),
+        help="state database (default: $GOOGICH_STATE or ~/.local/share/googich/state.db)",
+    )
+    imp.add_argument(
+        "--destination-name",
+        default="immich",
+        help="name this Immich server in the state database (default: immich)",
+    )
+    imp.add_argument(
+        "--reimport",
+        action="store_true",
+        help="also upload files this app uploaded before that are no longer in Immich",
+    )
+    imp.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    return parser
+
+
+def _add_common(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("paths", nargs="+", type=Path, help="archives, or folders containing them")
+    parser.add_argument(
         "--timezone",
         default=os.environ.get("TZ") or "UTC",
         help="time zone for photos with no other clue (default: $TZ or UTC)",
     )
-    scan.add_argument(
+    parser.add_argument(
         "--immich-url",
         default=os.environ.get("GOOGICH_IMMICH_URL"),
         help="Immich server, e.g. http://immich:2283 (or $GOOGICH_IMMICH_URL)",
     )
-    scan.add_argument(
+    parser.add_argument(
         "--key-file",
         type=Path,
         default=os.environ.get("GOOGICH_IMMICH_KEY_FILE"),
         help="file holding the Immich API key, mode 600 (or $GOOGICH_IMMICH_KEY_FILE)",
     )
-    scan.add_argument("--list", action="store_true", help="list every file and its outcome")
-    scan.add_argument("--json", action="store_true", help="machine-readable output")
-    return parser
+
+
+def _default_state() -> Path:
+    if os.environ.get("GOOGICH_STATE"):
+        return Path(os.environ["GOOGICH_STATE"])
+    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / "googich" / "state.db"
+
+
+def _ask(question: str) -> bool:
+    if not sys.stdin.isatty():
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
 def _scan(args: argparse.Namespace, out: TextIO, err: TextIO, client_factory: ClientFactory) -> int:
@@ -139,6 +189,111 @@ def _scan(args: argparse.Namespace, out: TextIO, err: TextIO, client_factory: Cl
     else:
         _print_report(scans, statuses, version, args.list, out)
     return 0
+
+
+def _import(
+    args: argparse.Namespace,
+    out: TextIO,
+    err: TextIO,
+    client_factory: ClientFactory,
+    confirm: Callable[[str], bool],
+) -> int:
+    if not args.immich_url or not args.key_file:
+        err.write("error: import needs --immich-url and --key-file\n")
+        return 2
+    try:
+        zone = ZoneInfo(args.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        err.write(f"error: unknown time zone {args.timezone!r}\n")
+        return 2
+    archives = _find_archives(args.paths)
+    if not archives:
+        err.write("error: no .zip, .tgz or .tar.gz archives found\n")
+        return 2
+
+    resolver = DateResolver(default_timezone=zone)
+    try:
+        key = read_api_key(args.key_file)
+        scans = {
+            export: scan_export(parts, resolver, datetime.now(UTC))
+            for export, parts in group_exports(archives).items()
+        }
+        with State(args.state) as state, client_factory(args.immich_url, key) as client:
+            version = client.server_version()
+            plans = []
+            for export, scan in scans.items():
+                checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
+                plans.append(
+                    plan_import(export, scan, checks, state, args.destination_name, args.reimport)
+                )
+            _print_plans(plans, version, out)
+            files = sum(len(p.with_decision(Decision.UPLOAD)) for p in plans)
+            size = sum(p.upload_bytes for p in plans)
+            if files == 0:
+                out.write("Nothing to upload.\n")
+                return 0
+            question = f"Upload {files} files ({_size(size)}) to Immich at {args.immich_url}?"
+            if not args.yes and not confirm(question):
+                out.write("Cancelled: nothing was uploaded.\n")
+                return 0
+            results = [
+                run_import(
+                    plan,
+                    client,
+                    state,
+                    args.destination_name,
+                    lambda: datetime.now(UTC),
+                    time.sleep,
+                )
+                for plan in plans
+            ]
+    except (ArchiveError, ImmichError, StateError, OSError) as error:
+        err.write(f"error: {error}\n")
+        return 1
+    return _print_results(results, out)
+
+
+def _print_plans(plans: list[ImportPlan], version: str, out: TextIO) -> None:
+    out.write(f"Immich {version}\n")
+    labels = {
+        Decision.UPLOAD: "to upload",
+        Decision.IN_IMMICH: "already in Immich",
+        Decision.IN_IMMICH_TRASH: "in Immich trash (left alone)",
+        Decision.DELETED_IN_IMMICH: "deleted in Immich since uploaded (skipped)",
+        Decision.NO_DATE: "no date found (skipped, needs review)",
+        Decision.UNSUPPORTED: "rejected by Immich",
+    }
+    for plan in plans:
+        out.write(f"Export {plan.export_id}\n")
+        for decision, label in labels.items():
+            count = len(plan.with_decision(decision))
+            if count:
+                extra = f" ({_size(plan.upload_bytes)})" if decision is Decision.UPLOAD else ""
+                out.write(f"  {count:>6}  {label}{extra}\n")
+        for planned in plan.with_decision(Decision.NO_DATE):
+            out.write(f"          review: {planned.item.path}\n")
+
+
+def _print_results(results: list[ImportResult], out: TextIO) -> int:
+    uploaded = sum(len(r.uploaded) for r in results)
+    adopted = sum(len(r.adopted) for r in results)
+    verified = sum(len(r.verified) for r in results)
+    out.write(f"Uploaded {uploaded}, verified {verified}")
+    out.write(f", {adopted} were already there\n" if adopted else "\n")
+    problems = 0
+    for result in results:
+        for item, detail in result.date_mismatch:
+            out.write(f"  date mismatch: {item.path}: {detail}\n")
+            problems += 1
+        for item in result.unverified:
+            out.write(f"  not yet checked (Immich still processing): {item.path}\n")
+        for item, detail in result.failed:
+            out.write(f"  failed: {item.path}: {detail}\n")
+            problems += 1
+        if result.aborted:
+            out.write(f"  {result.aborted}; run again to continue\n")
+            problems += 1
+    return 1 if problems else 0
 
 
 def _find_archives(paths: list[Path]) -> list[Path]:
