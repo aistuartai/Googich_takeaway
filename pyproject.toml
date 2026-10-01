@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "aistuartai" }]
 requires-python = ">=3.13"
 dependencies = [
+    "pillow>=11",
     "tzdata>=2025.2",  # time zone database for images without system zoneinfo
 ]
 classifiers = [
@@ -23,7 +24,6 @@ dev = [
     "hypothesis>=6",
     "ruff>=0.13",
     "mypy>=1.18",
-    "pillow>=11",
 ]
 
 [project.urls]

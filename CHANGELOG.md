@@ -21,3 +21,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sidecar matcher: pairs each photo and video with its Takeout JSON sidecar across all parts of
   an export, handling truncated names, duplicate suffixes, edited copies in several languages,
   Live Photo videos and matching by title.
+- Export scanner: streams every part of a zip or tgz export in one pass without extracting,
+  hashing each media file (SHA-1), reading EXIF and video dates, pairing sidecars and resolving
+  capture dates. Identical copies (for example in album folders) are marked so they upload once.
+  Corrupt or truncated archives are reported as archive errors.

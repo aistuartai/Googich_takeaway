@@ -84,6 +84,7 @@ name = "googich-takeaway"
 version = "0.1.0.dev0"
 source = { editable = "." }
 dependencies = [
+    { name = "pillow" },
     { name = "tzdata" },
 ]
 
@@ -91,19 +92,20 @@ dependencies = [
 dev = [
     { name = "hypothesis" },
     { name = "mypy" },
-    { name = "pillow" },
     { name = "pytest" },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "tzdata", specifier = ">=2025.2" }]
+requires-dist = [
+    { name = "pillow", specifier = ">=11" },
+    { name = "tzdata", specifier = ">=2025.2" },
+]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "hypothesis", specifier = ">=6" },
     { name = "mypy", specifier = ">=1.18" },
-    { name = "pillow", specifier = ">=11" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.13" },
 ]
