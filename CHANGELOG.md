@@ -47,3 +47,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Drive folder is checked first, so a missing share is reported directly with the account to
   share with. Downloaded archives and the staging folder are created owner-only.
 - State database schema 2: download history. Version 1 databases are upgraded in place.
+- Web interface foundation (`googich serve`): first-run setup protected by a one-time token from
+  the server log, Argon2id password, server-side sessions stored as hashes, CSRF tokens and
+  same-origin checks on every change, login throttling, strict Content Security Policy and
+  security headers, and an unauthenticated `/healthz`. htmx 2.0.11 is bundled, not loaded from
+  a CDN. State database schema 3 adds the login tables.

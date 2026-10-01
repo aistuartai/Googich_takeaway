@@ -12,6 +12,7 @@ resuming interrupted downloads and skipping archives downloaded before.
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -76,6 +77,8 @@ def main(
         return _import(args, out, err, client_factory, confirm or _ask)
     if args.command == "fetch":
         return _fetch(args, out, err, drive_factory)
+    if args.command == "serve":
+        return _serve(args)
     parser.print_help(err)
     return 2
 
@@ -144,6 +147,22 @@ def _parser() -> argparse.ArgumentParser:
     )
     fetch.add_argument(
         "--list-only", action="store_true", help="only list what would be downloaded"
+    )
+
+    serve = commands.add_parser("serve", help="run the web interface")
+    serve.add_argument(
+        "--host",
+        default=os.environ.get("GOOGICH_HOST", "127.0.0.1"),
+        help="address to listen on (default 127.0.0.1; use 0.0.0.0 in a container)",
+    )
+    serve.add_argument(
+        "--port", type=int, default=int(os.environ.get("GOOGICH_PORT", "8080")), help="port"
+    )
+    serve.add_argument("--state", type=Path, default=_default_state(), help="state database")
+    serve.add_argument(
+        "--immich-public-url",
+        default=os.environ.get("GOOGICH_IMMICH_PUBLIC_URL"),
+        help="Immich address for links in the web interface",
     )
     return parser
 
@@ -326,6 +345,17 @@ def _fetch(args: argparse.Namespace, out: TextIO, err: TextIO, drive_factory: Dr
     for file, detail in result.failed:
         out.write(f"  failed: {file.name}: {detail}; run again to resume\n")
     return 1 if result.failed else 0
+
+
+def _serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from googich_takeaway.web.app import WebSettings, create_app
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    app = create_app(WebSettings(args.state, immich_public_url=args.immich_public_url))
+    uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False, server_header=False)
+    return 0
 
 
 def _print_plans(plans: list[ImportPlan], version: str, out: TextIO) -> None:

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -45,6 +45,21 @@ _MIGRATIONS: dict[int, str] = {
             forgotten_at  TEXT,
             removed_at    TEXT,
             PRIMARY KEY (source, file_id, fingerprint)
+        ) STRICT;
+    """,
+    3: """
+        CREATE TABLE web_user (
+            id            INTEGER PRIMARY KEY CHECK (id = 1),
+            password_hash TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            changed_at    TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE web_sessions (
+            token_hash  TEXT PRIMARY KEY,
+            csrf_token  TEXT NOT NULL,
+            created_at  TEXT NOT NULL,
+            last_seen   TEXT NOT NULL,
+            expires_at  TEXT NOT NULL
         ) STRICT;
     """,
 }
@@ -283,6 +298,51 @@ class State:
             "SELECT * FROM downloads WHERE source = ? ORDER BY downloaded_at, name", (source,)
         )
         return [_download(row) for row in rows]
+
+    # --- web login ------------------------------------------------------------------------------
+
+    def password_hash(self) -> str | None:
+        row = self._db.execute("SELECT password_hash FROM web_user WHERE id = 1").fetchone()
+        return str(row[0]) if row else None
+
+    def set_password_hash(self, value: str, at: datetime) -> None:
+        self._db.execute(
+            """
+            INSERT INTO web_user (id, password_hash, created_at, changed_at) VALUES (1, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash,
+                                           changed_at = excluded.changed_at
+            """,
+            (value, _to_text(at), _to_text(at)),
+        )
+
+    def create_session(
+        self, token_hash: str, csrf_token: str, at: datetime, expires: datetime
+    ) -> None:
+        self._db.execute(
+            "INSERT INTO web_sessions (token_hash, csrf_token, created_at, last_seen, expires_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (token_hash, csrf_token, _to_text(at), _to_text(at), _to_text(expires)),
+        )
+
+    def get_session(self, token_hash: str, at: datetime) -> str | None:
+        """CSRF token of a live session, or None. Expired sessions are removed."""
+        self._db.execute("DELETE FROM web_sessions WHERE expires_at <= ?", (_to_text(at),))
+        row = self._db.execute(
+            "SELECT csrf_token FROM web_sessions WHERE token_hash = ?", (token_hash,)
+        ).fetchone()
+        if row is None:
+            return None
+        self._db.execute(
+            "UPDATE web_sessions SET last_seen = ? WHERE token_hash = ?",
+            (_to_text(at), token_hash),
+        )
+        return str(row[0])
+
+    def delete_session(self, token_hash: str) -> None:
+        self._db.execute("DELETE FROM web_sessions WHERE token_hash = ?", (token_hash,))
+
+    def delete_all_sessions(self) -> None:
+        self._db.execute("DELETE FROM web_sessions")
 
 
 def _download(row: sqlite3.Row) -> DownloadRecord:

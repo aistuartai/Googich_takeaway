@@ -104,14 +104,18 @@ def test_version_1_database_is_upgraded_keeping_uploads(tmp_path: Path) -> None:
     with sqlite3.connect(path) as raw:
         for statement in state_module._statements(state_module._MIGRATIONS[1]):
             raw.execute(statement)
-        raw.execute("PRAGMA user_version = 1")
-    with State(path) as state:
-        state.record_upload(record())
-    # Reopen as v1 with an upload, then upgrade.
-    with sqlite3.connect(path) as raw:
-        raw.execute("DROP TABLE downloads")
+        raw.execute(
+            "INSERT INTO uploads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+            (
+                "immich", "a" * 40, "asset-1", "uploaded", "20261001T010203Z",
+                "takeout-20261001T010203Z-001.zip",
+                "Takeout/Google Photos/Photos from 2019/IMG_1.jpg",
+                "2019-07-04T10:15:00+10:00", "2026-10-01T10:00:00+00:00",
+            ),
+        )  # fmt: skip
         raw.execute("PRAGMA user_version = 1")
     with State(path) as state:
         assert state.schema_version == SCHEMA_VERSION
         assert state.get_upload("immich", "a" * 40) == record()
         assert state.downloads("anything") == []
+        assert state.password_hash() is None
