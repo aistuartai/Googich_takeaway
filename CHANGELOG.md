@@ -29,3 +29,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the API key. Key files readable by other users are refused.
 - `googich scan` command: a dry run that reports files, capture dates, sidecar pairing and, with an
   Immich server, which files are new. Text or JSON output. Never uploads or changes anything.
+- Local state database (SQLite, versioned schema, owner-only file) recording every upload, so
+  photos deleted in Immich are not uploaded again.
+- XMP sidecar builder carrying the capture date with an explicit offset, GPS and description.
