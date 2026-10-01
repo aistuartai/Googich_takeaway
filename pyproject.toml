@@ -1,6 +1,6 @@
 [project]
 name = "googich-takeaway"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Self-hosted tool that moves Google Photos into Immich using Google Takeout archives."
 readme = "README.md"
 license = "MIT"
@@ -22,7 +22,7 @@ dependencies = [
     "uvicorn>=0.37",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
     "Topic :: Multimedia :: Graphics",

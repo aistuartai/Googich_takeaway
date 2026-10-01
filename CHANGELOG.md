@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-02
+
+First release. Googich Takeaway fetches Google Takeout archives from Google Drive or a local
+folder on a schedule, keeps them on local disk or an SMB share, and uploads only what Immich does
+not already have, with correct capture dates and locations, verified after upload. It runs as a
+Docker container with a password-protected web interface: settings, live progress, logs, run
+history, cleanup guidance and Apprise notifications. Credentials are encrypted at rest and Google
+Drive access is read-only. See the README for the quick start.
+
+Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), for amd64 and arm64.
+
 ### Added
 
 - Project skeleton: licence, README, changelog, security policy, packaging metadata.
@@ -87,3 +98,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A redaction filter removes authorization headers, API keys, private keys and credentials in
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
+
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.0

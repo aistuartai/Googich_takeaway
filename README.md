@@ -3,7 +3,7 @@
 Self-hosted tool that moves your Google Photos library into [Immich](https://immich.app/), using
 Google Takeout archives, and keeps it topped up on a schedule.
 
-> **Status: first release (0.1).** It works end to end and has been tested against real Google
+> **Status: first release (0.1.0).** It works end to end and has been tested against real Google
 > Drive, Immich and SMB, but it is young. Try it on a test Immich user first, and back up your
 > Immich database before the first real import.
 
