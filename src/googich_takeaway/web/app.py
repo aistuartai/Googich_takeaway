@@ -39,7 +39,9 @@ SECURITY_HEADERS = {
     ),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    # Not "no-referrer": browsers then send "Origin: null" on this site's own form posts, which
+    # the same-origin check must reject. "same-origin" still sends nothing to other sites.
+    "Referrer-Policy": "same-origin",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }

@@ -204,3 +204,19 @@ def test_pages_have_no_inline_script(tmp_path: Path, clock: Clock) -> None:
     client = make(tmp_path, clock)
     for page in (client.get("/setup").text,):
         assert re.findall(r"<script(?![^>]*\bsrc=)", page) == []
+
+
+def test_referrer_policy_lets_browsers_send_origin(tmp_path: Path, clock: Clock) -> None:
+    # With "no-referrer", browsers send "Origin: null" on same-site form posts.
+    assert make(tmp_path, clock).get("/healthz").headers["referrer-policy"] == "same-origin"
+
+
+def test_null_origin_is_refused(tmp_path: Path, clock: Clock) -> None:
+    client = make(tmp_path, clock)
+    token = client.app.state.setup_token  # type: ignore[attr-defined]
+    response = client.post(
+        "/setup",
+        data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
+        headers={"Origin": "null"},
+    )
+    assert response.status_code == 403
