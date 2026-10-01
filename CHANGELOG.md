@@ -18,3 +18,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Filename date parsing for common camera, Pixel, WhatsApp and screenshot names.
 - Test fixture builder that generates small synthetic Takeout exports (zip and tgz, multi-part)
   covering known naming quirks. No real photos are stored in the repository.
+- Sidecar matcher: pairs each photo and video with its Takeout JSON sidecar across all parts of
+  an export, handling truncated names, duplicate suffixes, edited copies in several languages,
+  Live Photo videos and matching by title.

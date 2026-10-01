@@ -250,7 +250,10 @@ class TakeoutBuilder:
         """
         image = self.add_photo(f"{stem}.{image_extension}", folder, taken_utc)
         video = self.add_video(f"{stem}.{video_extension}", folder, created_utc=taken_utc)
-        return image, video
+        # The video has no sidecar of its own; it shares the image's.
+        shared = ExpectedItem(video.path, video.title, image.sidecar_path, image.taken_utc)
+        self.expected[self.expected.index(video)] = shared
+        return image, shared
 
     def add_edited(self, original: ExpectedItem, suffix: str = "-edited") -> ExpectedItem:
         """Edited copy of ``original``: same folder, no sidecar of its own."""
