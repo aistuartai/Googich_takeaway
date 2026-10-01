@@ -68,6 +68,8 @@ class RunReport:
     needs_review: int = 0
     date_mismatches: int = 0
     unverified: int = 0
+    already_imported: list[tuple[str, datetime]] = field(default_factory=list)
+    """Exports skipped because they were imported completely before."""
     waiting: list[str] = field(default_factory=list)
     """Exports not imported yet because Takeout may still be adding parts."""
     problems: list[str] = field(default_factory=list)
@@ -91,11 +93,12 @@ class RunReport:
                 title = "Checked: nothing new"
             lines = self._done_lines() or ["No new archives."]
             return Message(Outcome.NO_NEW_DATA, title, lines)
-        title = (
-            f"Imported {self.uploaded} new photos and videos"
-            if self.uploaded or not self.downloaded
-            else f"Downloaded {self.downloaded} archives"
-        )
+        if self.uploaded or not self.downloaded:
+            title = f"Imported {self.uploaded} new photos and videos"
+        elif self.already_imported and not self.exports_imported:
+            title = f"Downloaded {self.downloaded} archives, already imported before"
+        else:
+            title = f"Downloaded {self.downloaded} archives"
         return Message(Outcome.SUCCESS, title, self._done_lines())
 
     def _done_lines(self) -> list[str]:
@@ -117,6 +120,11 @@ class RunReport:
             lines.append(f"{self.unverified} files are still being processed by Immich.")
         for export_id in self.waiting:
             lines.append(f"Export {export_id} is still being written by Takeout; next run.")
+        for export_id, when in self.already_imported:
+            lines.append(
+                f"Export {export_id} was already imported on {when:%d %b %Y %H:%M} UTC; "
+                "skipped (use Re-import to check it again)."
+            )
         return lines
 
 
@@ -222,7 +230,14 @@ class Pipeline:
                     self._skip(export_id, "Takeout is still writing it")
                     continue
                 export_key = _export_key(export_id, parts)
-                if self.state.is_export_complete(export_key) and not self.options.reimport:
+                completed = self.state.export_completed_at(export_key)
+                if completed is not None and not self.options.reimport:
+                    report.already_imported.append((export_id, completed))
+                    log.info(
+                        "Export %s was already imported on %s; skipped (Re-import rescans it)",
+                        export_id,
+                        completed.isoformat(timespec="minutes"),
+                    )
                     continue
                 self._import(export_id, export_key, parts, client, resolver, report)
 

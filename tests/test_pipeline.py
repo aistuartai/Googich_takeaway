@@ -235,3 +235,18 @@ def test_tracker_sees_every_stage(world: World) -> None:
     assert [i.state for i in stages[Stage.SCAN].items] == [ItemState.DONE]
     assert len(stages[Stage.UPLOAD].items) == 13
     assert stages[Stage.UPLOAD].done == stages[Stage.UPLOAD].total
+
+
+def test_redownloaded_export_already_imported_is_explained(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.configure()
+    world.pipeline().run()
+    pipeline = world.pipeline()
+    again = Pipeline(**{**pipeline.__dict__, "options": RunOptions(download_again=True)})
+    report = again.run()
+    message = report.message()
+    assert report.downloaded == 2
+    assert report.exports_imported == 0
+    assert message.title == "Downloaded 2 archives, already imported before"
+    assert "was already imported on 01 Oct 2026 00:00 UTC; skipped" in message.body

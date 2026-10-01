@@ -500,10 +500,13 @@ class State:
         return cursor.rowcount
 
     def is_export_complete(self, export_key: str) -> bool:
+        return self.export_completed_at(export_key) is not None
+
+    def export_completed_at(self, export_key: str) -> datetime | None:
         row = self._db.execute(
-            "SELECT 1 FROM completed_exports WHERE export_key = ?", (export_key,)
+            "SELECT completed_at FROM completed_exports WHERE export_key = ?", (export_key,)
         ).fetchone()
-        return row is not None
+        return _from_text(row[0]) if row else None
 
     def mark_export_complete(
         self, export_key: str, export_id: str, summary: str, at: datetime
