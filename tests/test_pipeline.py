@@ -333,3 +333,38 @@ def test_smb_settings_are_tested_before_saving(
     with pytest.raises(ConfigError, match="LOGON_FAILURE"):
         world.config.save_smb("nas.local", "Photos", "x", "photos", "wrong", "UTC")
     assert world.config.general().storage == "local"  # nothing saved
+
+
+def test_slow_immich_does_not_force_a_rescan(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    world.configure()
+    world.immich.metadata_delay_reads = 10**6  # Immich has not processed anything yet
+    first = world.pipeline().run()
+    assert first.problems == []
+    assert first.uploaded == 13
+    assert first.unverified == 13
+    assert "still being processed by Immich" in first.message().body
+    copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
+    assert copy.completed_at is not None  # imported: will not be rescanned
+    assert not copy.ready  # but not safe to delete yet
+    assert "still processing 13 files" in copy.reason
+
+    world.immich.metadata_delay_reads = 0  # Immich has caught up
+    second = world.pipeline().run()
+    assert second.exports_imported == 0  # no rescan of the archives
+    assert second.verified_later == 13
+    assert second.unverified == 0
+    assert cleanup.staged_exports(world.tmp / "staging", world.state)[0].ready
+
+
+def test_wrong_date_in_immich_blocks_cleanup(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    world.configure()
+    world.immich.shift_hours = 1
+    report = world.pipeline().run()
+    assert report.date_mismatches == 13
+    copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
+    assert not copy.ready
+    assert "different date" in copy.reason

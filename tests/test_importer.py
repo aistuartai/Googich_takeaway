@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -185,3 +185,27 @@ def test_dry_plan_changes_nothing(tmp_path: Path) -> None:
     r.plan()
     assert not r.server.assets
     assert r.state.uploads("immich") == []
+
+
+def test_verify_pending_respects_limit_and_budget(tmp_path: Path) -> None:
+    from googich_takeaway.importer import verify_pending
+
+    r = Run(tmp_path, FakeImmichServer(metadata_delay_reads=10**6))
+    plan = r.plan()
+    with r.client() as client:
+        run_import(plan, client, r.state, "immich", lambda: NOW, r.sleeps.append, verify_attempts=1)
+    r.server.metadata_delay_reads = 0
+    with r.client() as client:
+        first = verify_pending(r.state, client, "immich", lambda: NOW, limit=5)
+        assert (first.verified, first.remaining) == (5, 8)
+        calls = iter(range(1000))
+
+        def slow_clock() -> datetime:
+            return NOW + timedelta(minutes=4 * next(calls))  # each call costs four minutes
+
+        second = verify_pending(r.state, client, "immich", slow_clock)
+        assert second.verified == 1
+        rest = verify_pending(r.state, client, "immich", lambda: NOW)
+    assert rest.remaining == 0
+    statuses = {rec.status for rec in r.state.uploads("immich")}
+    assert statuses == {UploadStatus.VERIFIED}
