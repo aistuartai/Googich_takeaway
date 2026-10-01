@@ -47,3 +47,37 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
       - name: Scan full history
         run: ./gitleaks git --redact --no-banner .
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          tags: googich:test
+      - name: Start it the way the example compose file does, and check health
+        run: |
+          mkdir -p data && sudo chown 10001:10001 data
+          head -c 32 /dev/urandom | base64 > master.key && chmod 644 master.key
+          docker run -d --name googich -p 8080:8080 --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges:true --user 10001:10001 \
+            -v "$PWD/data:/data" -v "$PWD/master.key:/run/secrets/master_key:ro" \
+            -e GOOGICH_MASTER_KEY_FILE=/run/secrets/master_key googich:test
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)" = "303"
+          docker logs googich 2>&1 | grep -q "First-run setup"
+          docker exec googich id -u | grep -qx 10001
+      - name: Show logs on failure
+        if: failure()
+        run: docker logs googich || true

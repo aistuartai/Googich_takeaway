@@ -1,129 +1,158 @@
 # Googich Takeaway
 
 Self-hosted tool that moves your Google Photos library into [Immich](https://immich.app/), using
-Google Takeout archives.
+Google Takeout archives, and keeps it topped up on a schedule.
 
-> **Status: early development.** Nothing here is ready to use yet. Watch the
-> [releases](https://github.com/aistuartai/Googich_takeaway/releases) page for the first version.
+> **Status: first release (0.1).** It works end to end and has been tested against real Google
+> Drive, Immich and SMB, but it is young. Try it on a test Immich user first, and back up your
+> Immich database before the first real import.
 
-## What it will do
+## What it does
 
-- Pick up Google Takeout archives from a Google Drive folder or a local folder, on a schedule.
-- Download them to a staging location you choose (local disk or SMB share), resuming if interrupted.
-- Handle direct photo/video files as well as `.zip` and `.tgz` archives.
-- Upload only what Immich does not already have, keeping the original capture dates and locations
-  from Takeout's metadata files.
-- Remember what it has downloaded and uploaded, so nothing is processed twice — with a switch to
-  re-import when you need to.
-- Show queue progress with sizes and time estimates, and logs, in a password-protected web interface.
-- Tell you which archives are fully imported and safe to delete, locally and in Google Drive.
+- Picks up Google Takeout archives from a Google Drive folder, or a local folder, on a schedule.
+- Downloads them to a folder you choose, on local disk or an SMB share (NAS), resuming if
+  interrupted and checking each download against Drive's checksum.
+- Reads `.zip` and `.tgz` exports, pairs every photo and video with Takeout's metadata file, and
+  works out the correct capture date and time zone.
+- Uploads only what Immich does not already have, with the date and location attached, then reads
+  each upload back to check the date.
+- Remembers what it has done: archives are not downloaded twice, and photos you delete in Immich
+  are not brought back (unless you ask for a re-import).
+- Shows progress with sizes and time estimates, logs, and run history in a password-protected web
+  interface, and sends notifications through [Apprise](https://github.com/caronc/apprise).
+- Tells you which archives are fully imported and safe to delete, locally and in Google Drive.
 
 Google Drive access is read-only: the app never changes or deletes anything in your Google account.
 
-## Trying the scanner
+## Quick start (Docker)
 
-The first working piece is a dry run. It reads Takeout archives and reports what an import would
-do, without uploading or changing anything.
-
-```bash
-uv run googich scan /path/to/takeout-archives --timezone Australia/Melbourne
-```
-
-To also see which files your Immich server already has, create an Immich API key with the
-`asset.upload` permission, save it in a file only you can read (`chmod 600`), and add:
+Requirements: Docker with Compose, an Immich server, and space for one full Takeout export
+(locally or on an SMB share).
 
 ```bash
---immich-url http://your-immich:2283 --key-file /path/to/immich.key
+mkdir googich && cd googich
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/main/docker/compose.yaml
+
+# A data folder, and a master key that encrypts the credentials you enter later.
+mkdir -p data secrets && chmod 700 data secrets
+head -c 32 /dev/urandom | base64 > secrets/master.key && chmod 600 secrets/master.key
+
+PUID=$(id -u) PGID=$(id -g) docker compose up -d
+docker compose logs googich | grep "First-run setup"
 ```
 
-Add `--list` for every file, or `--json` for machine-readable output. The key is read from the
-file, so it never appears in your shell history or the process list.
+Open `http://<this host>:8080/setup`, enter the setup token from the log, and choose a password.
+The token stops anyone else on your network from claiming a fresh install.
 
-## Fetching from Google Drive
+Edit `compose.yaml` first if you want a different port, time zone, or a large local disk for
+downloads. The web interface is meant for your local network; put it behind HTTPS (a reverse
+proxy) if you reach it from anywhere else.
 
-Google Takeout can write its exports to a Google Drive folder on a schedule. `googich fetch`
-downloads new archives from that folder. It uses a Google Cloud service account that can only
-**read** the one folder you share with it, so it can never change or delete anything in your
-Google account.
+## First-time setup in the web interface
 
-One-time setup:
+The dashboard shows a checklist until these are done.
+
+1. **Settings → Immich.** Enter the Immich address the app can reach, for example
+   `http://immich:2283`, and an API key. Create the key in Immich under *Account Settings → API
+   Keys* with the `asset.upload` and `asset.read` permissions (`stack.create` is optional). Press
+   **Test connection**.
+2. **Settings → Downloads.** Choose a local folder (for example `/data/staging`) or an SMB share,
+   and your time zone. The folder is tested before it is saved.
+3. **Sources.** Add your Google Drive Takeout folder (see below), or a local folder of archives
+   you downloaded yourself. Press **Test**.
+4. **Settings → Schedule and Notifications.** Choose how often to run, and where to send
+   notifications. Or press **Run now** on the dashboard.
+
+### Connecting Google Drive
+
+The app reads your Takeout folder with a Google Cloud *service account* that can see only the one
+folder you share with it.
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable
    the **Google Drive API** for it.
 2. Under **IAM & Admin → Service Accounts**, create a service account. It needs no roles.
-3. On the service account's **Keys** tab, add a JSON key. Save the downloaded file somewhere only
-   you can read, then run `chmod 600` on it. Treat it like a password.
-4. In Google Drive, open the folder Takeout writes to, choose **Share**, and share it with the
-   service account's email address (it ends in `iam.gserviceaccount.com`) as **Viewer**.
-5. Copy the folder ID: the last part of the folder's URL in your browser.
+3. On its **Keys** tab, add a JSON key. Upload this file in the web interface (Sources → Add a
+   Google Drive folder), then delete your downloaded copy. Treat it like a password.
+4. In Google Drive, open the folder Takeout writes to, choose **Share**, and add the service
+   account's address (shown on the Sources page; it ends in `iam.gserviceaccount.com`) as
+   **Viewer**. Keep *General access* set to *Restricted*.
+5. The folder ID is the last part of the folder's address, after `/folders/`.
 
-Then:
+If Google says key creation is disabled, your account belongs to a Google Cloud organisation that
+blocks service account keys. Use a project under a personal account, or ask the organisation's
+administrator.
+
+### Scheduling Google Takeout
+
+In [Google Takeout](https://takeout.google.com/), select only **Google Photos**, choose **Add to
+Drive** as the delivery method and a **scheduled export**, and pick `.tgz` or `.zip`. `.tgz` suits
+SMB shares better. Each scheduled export is a complete copy of your library; the app imports only
+what is new.
+
+## Updating
+
+The app checks GitHub once a day and shows a banner when a new release is out (switch this off in
+Settings → Updates). It never updates itself. To update:
 
 ```bash
-uv run googich fetch --drive-folder FOLDER_ID --service-account /path/to/key.json \
-  --staging /path/to/downloads
+docker compose pull && docker compose up -d
 ```
 
-Downloads resume if interrupted, are checked against the checksum Drive reports, and are only
-renamed into place once complete. Archives downloaded before are skipped, even after you delete
-the local copy; use `--ignore-history` to download everything again, or `--list-only` to see what
-would be downloaded. A download that would not fit in the free space is refused before it starts.
+## Backups
 
-## Importing
-
-```bash
-uv run googich import /path/to/takeout-archives --timezone Australia/Melbourne \
-  --immich-url http://your-immich:2283 --key-file /path/to/immich.key
-```
-
-The import shows what it will do and asks before uploading. It needs an API key with the
-`asset.upload` and `asset.read` permissions. Each file is uploaded unmodified, with a small XMP
-sidecar that carries its capture date and location, and is then read back from Immich to check
-the date.
-
-It remembers what it uploaded (in `~/.local/share/googich/state.db` by default), so running it
-again uploads only what is new. If you delete a photo in Immich, later imports will not bring it
-back; use `--reimport` if you want them to. Files with no capture date at all are listed for you
-to review rather than being given today's date.
-
-Try it on a test Immich user first, and back up your Immich database before the first real import.
-
-## Requirements (planned)
-
-- Docker
-- An Immich server
-- Free disk space for one full Takeout export
-- Your own Google Cloud project with a service account (setup steps will be documented here)
-
-## Download folder on a NAS
-
-In the web interface, Settings → Downloads can keep downloaded archives in a folder on an SMB share
-(a NAS or Windows file server) instead of a local folder. The app connects to the share itself,
-so nothing has to be mounted and the container needs no extra privileges. Use an account that
-can reach only that folder. The folder is created if missing, and a test file is written and
-removed before the settings are saved.
-
-Reading zip archives over SMB needs random access, which means more network round trips than a
-local disk; `.tgz` exports are read straight through and suit network shares better.
+Back up the `data` folder: it holds the state database (what has been downloaded and uploaded,
+your settings and encrypted credentials) and logs. Keep `secrets/master.key` somewhere separate;
+without it the stored credentials cannot be read, and you would need to enter them again.
 
 ## Where credentials are kept
 
-Credentials entered in the web interface (the Immich API key and Google service account keys)
-are encrypted before they are stored, and the interface never shows them again. They are
-encrypted with a master key kept outside the database:
+Credentials entered in the web interface (the Immich API key, Google service account keys, the SMB
+password and notification URLs) are encrypted with AES-256-GCM before they are stored, and the
+interface never shows them again. The master key is read from `GOOGICH_MASTER_KEY_FILE` (the
+Docker secret in `compose.yaml`). If that is not set, `master.key` is created next to the database
+on first start, readable only by its owner; that protects a copy of the database on its own, such
+as a backup, but not someone who can read the whole data folder.
 
-- Set `GOOGICH_MASTER_KEY_FILE` to a file holding a base64-encoded 32-byte key, for example a
-  Docker secret. Create one with `head -c 32 /dev/urandom | base64 > master.key`.
-- If it is not set, `master.key` is created next to the database on first start, readable only
-  by its owner.
+Logs are written as JSON lines in `data/logs/` and pass through a filter that removes keys,
+tokens and passwords before anything is written.
 
-The second option protects a copy of the database on its own, such as a backup, but not someone
-who can read the whole data folder. Keep the master key out of the same backup as the database if
-you can. If the master key is lost, enter the credentials again.
+## Download folder on a NAS
+
+Settings → Downloads can keep downloaded archives in a folder on an SMB share (a NAS or Windows
+file server). The app connects to the share itself, so nothing has to be mounted and the container
+needs no extra privileges. Use an account that can reach only that folder.
+
+## Command-line tools
+
+The same engine runs from the command line, for scripting or a quick look before using the web
+interface. From a checkout of this repository, with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv run googich scan /path/to/archives --timezone Australia/Melbourne          # dry run
+uv run googich scan /path/to/archives --immich-url http://immich:2283 \
+  --key-file /path/to/immich.key                                             # what is new
+uv run googich import /path/to/archives --immich-url http://immich:2283 \
+  --key-file /path/to/immich.key --timezone Australia/Melbourne              # asks first
+uv run googich fetch --drive-folder FOLDER_ID --service-account key.json \
+  --staging /path/to/downloads                                               # from Drive
+```
+
+Key files must be readable only by you (`chmod 600`); keys are never accepted on the command line,
+so they stay out of your shell history.
+
+## Development
+
+```bash
+uv sync
+uv run ruff check && uv run mypy && uv run pytest
+```
+
+Tests use synthetic Takeout exports generated at test time, and in-memory stand-ins for Immich,
+Google Drive and SMB. No real photos are stored in the repository.
 
 ## Licence
 
 [MIT](LICENSE)
 
 Googich Takeaway is an independent project. It is not affiliated with, endorsed by, or sponsored
-by Google or Immich.
+by Google or Immich. Google Drive, Google Photos and Google Takeout are trademarks of Google LLC.

@@ -1,0 +1,42 @@
+# Googich Takeaway: example Docker Compose file.
+#
+#   1. Create the data folder and a master key for encrypting stored credentials, as your own user
+#      (keep the key safe, and out of backups of ./data):
+#        mkdir -p data secrets && chmod 700 data secrets
+#        head -c 32 /dev/urandom | base64 > secrets/master.key && chmod 600 secrets/master.key
+#   2. PUID=$(id -u) PGID=$(id -g) docker compose up -d
+#   3. docker compose logs googich | grep "First-run setup"   # the one-time setup token
+#   4. Open http://<this host>:8080/setup
+#
+# The data folder holds the state database and logs. Downloaded archives go to the download folder
+# chosen in Settings: /data/staging below, or an SMB share (no mount needed).
+
+services:
+  googich:
+    image: ghcr.io/aistuartai/googich_takeaway:latest
+    container_name: googich
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Australia/Melbourne
+      GOOGICH_MASTER_KEY_FILE: /run/secrets/master_key
+    secrets:
+      - master_key
+    volumes:
+      - ./data:/data
+      # A large local disk for downloads, if not using an SMB share. Choose /data/staging in Settings.
+      # - /mnt/big-disk/googich:/data/staging
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Run as the user who owns ./data and secrets/master.key, so the container can use them.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+secrets:
+  master_key:
+    file: ./secrets/master.key
