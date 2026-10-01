@@ -17,7 +17,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path
 
 from googich_takeaway.destinations.immich import (
     CheckAction,
@@ -28,7 +27,7 @@ from googich_takeaway.destinations.immich import (
 from googich_takeaway.destinations.xmp import build_xmp
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.state import State, UploadRecord, UploadStatus
-from googich_takeaway.takeout.archives import iter_entries
+from googich_takeaway.takeout.archives import ArchiveSource, iter_entries
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem
 
 MAX_CONSECUTIVE_FAILURES = 5
@@ -162,12 +161,12 @@ def _upload(
         if tracker:
             tracker.advance(amount)
 
-    archives: dict[Path, set[str]] = {}
+    archives: dict[ArchiveSource, set[str]] = {}
     for item in wanted.values():
         archives.setdefault(item.archive, set()).add(item.path)
 
     consecutive_failures = 0
-    for archive in sorted(archives):
+    for archive in sorted(archives, key=lambda a: a.name):
         paths = archives[archive]
         for entry in iter_entries(archive):
             if entry.path not in paths:

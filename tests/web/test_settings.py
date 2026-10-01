@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class World:
     def post(
         self,
         url: str,
-        data: dict[str, str | list[str]] | None = None,
+        data: Mapping[str, str | list[str]] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
     ) -> httpx.Response:
         form = {**(data or {}), "csrf_token": self.csrf}
@@ -307,3 +308,33 @@ def test_cleanup_page(world: World) -> None:
     assert refused.status_code == 303
     assert "not+been+imported" in refused.headers["location"].replace("%20", "+")
     assert (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").exists()
+
+
+def test_smb_download_folder_saved_through_the_form(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from tests.fake_smb import SMB_LOGIN, FakeSmb
+
+    fake = FakeSmb()
+    monkeypatch.setitem(sys.modules, "smbclient", fake)
+    form = {
+        "storage": "smb",
+        "timezone": "UTC",
+        "smb_server": "nas.local",
+        "smb_share": "Photos",
+        "smb_folder": "takeout",
+        "smb_username": "photos",
+        "smb_password": SMB_LOGIN,
+        "smb_port": "445",
+    }
+    assert world.post("/settings/general", data=form).status_code == 303
+    page = world.client.get("/settings").text
+    assert SMB_LOGIN not in page
+    assert 'value="smb" checked' in page
+    assert "Can write to \\\\nas.local\\Photos\\takeout" in world.htmx("/settings/storage/test")
+
+    bad = world.post("/settings/general", data={**form, "smb_password": "wrong"})
+    assert bad.status_code == 400
+    assert "LOGON_FAILURE" in bad.text

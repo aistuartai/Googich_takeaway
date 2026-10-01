@@ -6,13 +6,13 @@ item's capture date is resolved. Nothing is extracted to disk.
 """
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
-from googich_takeaway.takeout.archives import Readable, iter_entries
+from googich_takeaway.takeout.archives import ArchiveSource, Readable, iter_entries
 from googich_takeaway.takeout.dates import DateInputs, DateResolver, ResolvedDate
 from googich_takeaway.takeout.filenames import parse_filename_date
 from googich_takeaway.takeout.metadata import (
@@ -45,7 +45,7 @@ class MediaKind(StrEnum):
 
 @dataclass(frozen=True)
 class ScannedItem:
-    archive: Path
+    archive: ArchiveSource
     path: str
     size: int
     sha1: str
@@ -66,7 +66,7 @@ class ScannedItem:
 
 @dataclass
 class ExportScan:
-    archives: list[Path] = field(default_factory=list)
+    archives: list[ArchiveSource] = field(default_factory=list)
     """Every part scanned, including parts with no media (e.g. only archive_browser.html)."""
     items: list[ScannedItem] = field(default_factory=list)
     unmatched_sidecars: list[str] = field(default_factory=list)
@@ -84,14 +84,14 @@ class ExportScan:
 
 @dataclass(frozen=True)
 class _Media:
-    archive: Path
+    archive: ArchiveSource
     size: int
     sha1: str
     metadata: MediaMetadata
 
 
 def scan_export(
-    archives: list[Path],
+    archives: Sequence[ArchiveSource],
     resolver: DateResolver,
     now: datetime,
     progress: ProgressCallback | None = None,

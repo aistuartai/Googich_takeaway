@@ -17,6 +17,7 @@ dependencies = [
     "jinja2>=3.1",
     "pillow>=11",
     "python-multipart>=0.0.20",
+    "smbprotocol>=1.15",
     "tzdata>=2025.2",  # time zone database for images without system zoneinfo
     "uvicorn>=0.37",
 ]
@@ -63,6 +64,10 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "PT", "RUF"]
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["smbclient", "smbclient.*", "smbprotocol.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -124,7 +124,8 @@ def test_unsafe_names_from_the_source_stay_in_staging(tmp_path: Path) -> None:
     s = Setup(tmp_path)
     s.drive.add("a", "../../escape.zip", DATA)
     result = s.downloader().fetch_new(s.source)
-    assert [p for _, p in result.downloaded] == [s.staging / "escape.zip"]
+    assert [p.name for _, p in result.downloaded] == ["escape.zip"]
+    assert (s.staging / "escape.zip").exists()
     assert not (tmp_path / "escape.zip").exists()
 
 

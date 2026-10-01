@@ -330,8 +330,8 @@ def _fetch(args: argparse.Namespace, out: TextIO, err: TextIO, drive_factory: Dr
     except (SourceError, StateError, OSError) as error:
         err.write(f"error: {error}\n")
         return 1
-    for file, path in result.downloaded:
-        out.write(f"  downloaded  {_size(file.size):>9}  {path}\n")
+    for file, stored in result.downloaded:
+        out.write(f"  downloaded  {_size(file.size):>9}  {args.staging / stored.name}\n")
     out.write(
         f"Downloaded {len(result.downloaded)}, skipped {len(result.skipped)} downloaded before"
     )

@@ -7,7 +7,7 @@
       {% else %}
       <p>Idle. Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}; next run {{ status.next_run.astimezone(zone).strftime('%a %d %b %H:%M') }}{% endif %}.</p>
       {% endif %}
-      <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.staging }}</code>.</p>
+      <p class="muted">{{ sources|length }} source{{ '' if sources|length == 1 else 's' }}. Downloads go to <code>{{ general.describe() }}</code>.</p>
     </div>
     <div class="run-controls">
       <form method="post" action="/runs">

@@ -22,11 +22,12 @@ from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
 from googich_takeaway.importer import Decision, plan_import, run_import
+from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
+from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
-from googich_takeaway.sources.local import ARCHIVE_SUFFIXES
 from googich_takeaway.state import State
 from googich_takeaway.takeout.archives import ArchiveError, group_exports
 from googich_takeaway.takeout.dates import DateResolver
@@ -158,7 +159,8 @@ class Pipeline:
         sources = [s for s in self.config.sources() if s.enabled]
         if not immich.url or not key:
             raise ConfigError("Immich is not set up (Settings).")
-        if general.staging is None:
+        staging = self.config.staging_location()
+        if staging is None:
             raise ConfigError("No download folder is set (Settings).")
         if not sources:
             raise ConfigError("No sources are set up (Sources).")
@@ -167,7 +169,7 @@ class Pipeline:
         failed_names: set[str] = set()
         newest: dict[str, datetime] = {}
         downloader = Downloader(
-            general.staging,
+            staging,
             self.state,
             self.clock,
             self.sleep,
@@ -198,12 +200,15 @@ class Pipeline:
                 report.problems.append(f"{source.name}: {detail}")
 
         # 2. Import every complete export not imported before.
-        archives = _archives_in(general.staging)
+        try:
+            found = list_archives(staging)
+        except LocationError as error:
+            raise ConfigError(f"Download folder: {error}") from None
         for source in sources:
             if source.kind == "local":
-                archives += _archives_in(Path(source.location))
+                found += list_archives(LocalLocation(Path(source.location)))
         # The download folder may also be a local source; never list an archive twice.
-        archives = sorted({path.resolve(): path for path in archives}.values())
+        archives = sorted({_identity(a): a for a in found}.values())
         resolver = DateResolver(default_timezone=ZoneInfo(general.timezone))
         # A part that failed to download is absent (only its .part file exists), so the export
         # would otherwise look complete without it. Block by export ID, from the failed names.
@@ -211,7 +216,7 @@ class Pipeline:
         exports = group_exports(archives)
         if self.tracker:
             pending = [
-                (export_id, sum(p.stat().st_size for p in parts))
+                (export_id, sum(p.size for p in parts))
                 for export_id, parts in exports.items()
                 if self.options.reimport
                 or not self.state.is_export_complete(_export_key(export_id, parts))
@@ -245,14 +250,14 @@ class Pipeline:
         self,
         export_id: str,
         export_key: str,
-        parts: list[Path],
+        parts: list[StoredFile],
         client: ImmichClient,
         resolver: DateResolver,
         report: RunReport,
     ) -> None:
         log.info("Importing export %s (%d parts)", export_id, len(parts))
         if self.tracker:
-            self.tracker.begin(Stage.SCAN, export_id, sum(p.stat().st_size for p in parts))
+            self.tracker.begin(Stage.SCAN, export_id, sum(p.size for p in parts))
         scan = scan_export(parts, resolver, self.clock(), progress=self._scan_progress)
         if self.tracker:
             self.tracker.end(Stage.SCAN, export_id)
@@ -306,14 +311,13 @@ class Pipeline:
             self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
 
 
-def _archives_in(folder: Path) -> list[Path]:
-    if not folder.is_dir():
-        return []
-    return sorted(
-        p for p in folder.iterdir() if p.is_file() and p.name.lower().endswith(ARCHIVE_SUFFIXES)
-    )
+def _identity(archive: StoredFile) -> str:
+    location = archive.location
+    if isinstance(location, LocalLocation):
+        return str((location.folder / archive.name).resolve())
+    return f"{location.describe()}\\{archive.name}"
 
 
-def _export_key(export_id: str, parts: list[Path]) -> str:
+def _export_key(export_id: str, parts: list[StoredFile]) -> str:
     """Identifies an export by its parts' names and sizes, so a newly added part re-imports."""
-    return export_key(export_id, [(p.name, p.stat().st_size) for p in parts])
+    return export_key(export_id, [(p.name, p.size) for p in parts])

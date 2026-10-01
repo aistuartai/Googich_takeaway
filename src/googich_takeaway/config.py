@@ -15,6 +15,13 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from googich_takeaway.credentials import SecretBox
+from googich_takeaway.locations import (
+    LocalLocation,
+    Location,
+    LocationError,
+    SmbLocation,
+    SmbSettings,
+)
 from googich_takeaway.notify import DEFAULT_OUTCOMES, Notifier, Outcome, invalid_urls
 from googich_takeaway.schedule import Mode, Schedule, parse_time
 from googich_takeaway.state import SourceRecord, State, StateError
@@ -40,9 +47,38 @@ class ImmichSettings:
 
 
 @dataclass(frozen=True)
+class SmbPublic:
+    """SMB settings that may be shown; the password is stored sealed, separately."""
+
+    server: str
+    share: str
+    folder: str
+    username: str
+    port: int = 445
+    domain: str = ""
+
+    def unc(self) -> str:
+        parts = [p for p in self.folder.replace("/", "\\").split("\\") if p]
+        return "\\\\" + "\\".join([self.server, self.share, *parts])
+
+
+@dataclass(frozen=True)
 class GeneralSettings:
     staging: Path | None
+    """Local download folder, when storage is local."""
     timezone: str
+    storage: str = "local"
+    """``local`` or ``smb``."""
+    smb: SmbPublic | None = None
+
+    @property
+    def configured(self) -> bool:
+        return self.staging is not None if self.storage == "local" else self.smb is not None
+
+    def describe(self) -> str:
+        if self.storage == "smb" and self.smb:
+            return self.smb.unc()
+        return str(self.staging) if self.staging else "not set"
 
 
 class Config:
@@ -85,36 +121,106 @@ class Config:
 
     def general(self) -> GeneralSettings:
         staging = self._state.get_setting("staging.path")
+        smb_json = self._state.get_setting("staging.smb")
+        smb = SmbPublic(**json.loads(smb_json)) if smb_json else None
         return GeneralSettings(
             staging=Path(staging) if staging else None,
             timezone=self._state.get_setting("timezone") or "UTC",
+            storage=self._state.get_setting("staging.storage") or "local",
+            smb=smb,
         )
 
+    def staging_location(self) -> Location | None:
+        general = self.general()
+        if general.storage == "smb":
+            if general.smb is None:
+                return None
+            return SmbLocation(self._smb_settings(general.smb, self._smb_password()))
+        return LocalLocation(general.staging) if general.staging else None
+
     def save_general(self, staging: str, timezone: str) -> None:
+        """Use a local download folder."""
         path = Path(staging.strip())
         if not staging.strip() or not path.is_absolute():
             raise ConfigError("The download folder must be a full path, starting with /.")
         if ".." in path.parts:
             raise ConfigError("The download folder must not contain '..'.")
+        zone = _zone_name(timezone)
         try:
-            path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        except OSError as error:
-            raise ConfigError(f"Cannot create the download folder: {error.strerror}.") from None
-        if not path.is_dir():
-            raise ConfigError("The download folder path is not a folder.")
-        probe = path / ".googich-write-test"
-        try:
-            probe.write_bytes(b"")
-            probe.unlink()
-        except OSError as error:
-            raise ConfigError(f"Cannot write to the download folder: {error.strerror}.") from None
-        try:
-            ZoneInfo(timezone.strip())
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ConfigError(f"Unknown time zone {timezone.strip()!r}.") from None
+            LocalLocation(path).prepare()
+        except LocationError as error:
+            raise ConfigError(str(error)) from None
         now = self._clock()
         self._state.set_setting("staging.path", str(path), now)
-        self._state.set_setting("timezone", timezone.strip(), now)
+        self._state.set_setting("staging.storage", "local", now)
+        self._state.set_setting("timezone", zone, now)
+
+    def save_smb(
+        self,
+        server: str,
+        share: str,
+        folder: str,
+        username: str,
+        password: str | None,
+        timezone: str,
+        port: str = "445",
+        domain: str = "",
+        test: Callable[[SmbSettings], None] | None = None,
+    ) -> None:
+        """Use a folder on an SMB share. ``password`` None or empty keeps the stored one.
+
+        The share is tested (create folder, write and delete a file) before anything is saved.
+        """
+        public = SmbPublic(
+            server=_host(server),
+            share=_smb_part(share, "share"),
+            folder="/".join(
+                _smb_part(p, "folder") for p in folder.replace("\\", "/").split("/") if p
+            ),
+            username=username.strip(),
+            port=_port(port),
+            domain=domain.strip(),
+        )
+        if not public.username or len(public.username) > 256:
+            raise ConfigError("Enter the SMB user name.")
+        secret = password if password else self._smb_password()
+        if not secret:
+            raise ConfigError("Enter the SMB password.")
+        zone = _zone_name(timezone)
+        settings = self._smb_settings(public, secret)
+        try:
+            (test or (lambda s: SmbLocation(s).prepare()))(settings)
+        except LocationError as error:
+            raise ConfigError(str(error)) from None
+        now = self._clock()
+        self._state.set_setting("staging.smb", json.dumps(public.__dict__), now)
+        if password:
+            self._state.set_sealed(
+                "staging.smb.password",
+                self._box.seal("staging.smb.password", password.encode()),
+                now,
+            )
+        self._state.set_setting("staging.storage", "smb", now)
+        self._state.set_setting("timezone", zone, now)
+
+    def has_smb_password(self) -> bool:
+        return self._state.get_sealed("staging.smb.password") is not None
+
+    def _smb_password(self) -> str | None:
+        sealed = self._state.get_sealed("staging.smb.password")
+        return self._box.open("staging.smb.password", sealed).decode() if sealed else None
+
+    @staticmethod
+    def _smb_settings(public: SmbPublic, password: str | None) -> SmbSettings:
+        return SmbSettings(
+            server=public.server,
+            share=public.share,
+            folder=public.folder,
+            username=public.username,
+            password=password or "",
+            port=public.port,
+            domain=public.domain,
+        )
 
     # --- schedule --------------------------------------------------------------------------------
 
@@ -287,6 +393,42 @@ def parse_service_account(data: bytes) -> dict[str, Any]:
         if not isinstance(info.get(field), str) or not info[field]:
             raise ConfigError(f"The service account key is missing {field}.")
     return info
+
+
+def _zone_name(value: str) -> str:
+    try:
+        ZoneInfo(value.strip())
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError(f"Unknown time zone {value.strip()!r}.") from None
+    return value.strip()
+
+
+_HOST = re.compile(r"[A-Za-z0-9.-]{1,253}")
+_SMB_PART = re.compile(r"[^\\/:*?\"<>|\x00-\x1f]{1,255}")
+
+
+def _host(value: str) -> str:
+    host = value.strip().removeprefix("\\\\").removeprefix("//").rstrip("/\\")
+    if not _HOST.fullmatch(host):
+        raise ConfigError("Enter the SMB server as a name or IP address, for example nas.local.")
+    return host
+
+
+def _smb_part(value: str, label: str) -> str:
+    text = value.strip()
+    if not _SMB_PART.fullmatch(text) or text in (".", ".."):
+        raise ConfigError(f"The SMB {label} name contains characters SMB does not allow.")
+    return text
+
+
+def _port(value: str) -> int:
+    try:
+        port = int(value or "445")
+    except ValueError:
+        raise ConfigError("The SMB port must be a number.") from None
+    if not 1 <= port <= 65535:
+        raise ConfigError("The SMB port must be between 1 and 65535.")
+    return port
 
 
 def _drive_key_name(source_id: int) -> str:

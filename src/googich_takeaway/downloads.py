@@ -12,15 +12,18 @@ Downloads are resumable and verified:
   history is ignored or the file is forgotten.
 """
 
+import contextlib
 import hashlib
+import io
 import json
 import os
-import shutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import IO
 
+from googich_takeaway.locations import LocalLocation, Location, LocationError, StoredFile
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.sources.base import (
     RemoteFile,
@@ -43,7 +46,7 @@ class NotEnoughSpaceError(SourceError):
 
 @dataclass
 class FetchResult:
-    downloaded: list[tuple[RemoteFile, Path]] = field(default_factory=list)
+    downloaded: list[tuple[RemoteFile, StoredFile]] = field(default_factory=list)
     skipped: list[RemoteFile] = field(default_factory=list)
     """Downloaded before, according to the history."""
     failed: list[tuple[RemoteFile, str]] = field(default_factory=list)
@@ -54,13 +57,20 @@ class FetchResult:
 
 @dataclass(frozen=True)
 class Downloader:
-    staging: Path
+    staging: Location | Path
+    """Where archives are downloaded to. A plain path means a local folder."""
     state: State
     clock: Callable[[], datetime]
     sleep: Callable[[float], None]
     free_margin: int = DEFAULT_FREE_MARGIN
     progress: Callable[[int], None] | None = None
     tracker: Tracker | None = None
+
+    @property
+    def location(self) -> Location:
+        if isinstance(self.staging, Path):
+            return LocalLocation(self.staging)
+        return self.staging
 
     def fetch_new(self, source: Source, ignore_history: bool = False) -> FetchResult:
         """Download every archive at the source not downloaded before."""
@@ -77,13 +87,20 @@ class Downloader:
             or not self.state.was_downloaded(source.name, f.file_id, f.fingerprint)
         ]
         result.skipped = [f for f in files if f not in wanted]
+        if not wanted:
+            return result
+        location = self.location
+        try:
+            location.prepare()
+        except LocationError as error:
+            raise SourceError(f"download folder: {error}") from None
         if self.tracker:
             self.tracker.plan(Stage.DOWNLOAD, [(f.name, f.size) for f in wanted])
         for file in wanted:
             if self.tracker:
                 self.tracker.begin(Stage.DOWNLOAD, file.name, file.size)
             try:
-                path = self.download(source, file)
+                stored = self._download(location, source, file)
             except NotEnoughSpaceError as error:
                 if self.tracker:
                     self.tracker.end(Stage.DOWNLOAD, file.name, ItemState.FAILED, str(error))
@@ -93,33 +110,48 @@ class Downloader:
                 if self.tracker:
                     self.tracker.end(Stage.DOWNLOAD, file.name, ItemState.FAILED, str(error))
                 continue
-            result.downloaded.append((file, path))
+            result.downloaded.append((file, stored))
             if self.tracker:
                 self.tracker.end(Stage.DOWNLOAD, file.name)
         return result
 
-    def download(self, source: Source, file: RemoteFile) -> Path:
-        self.staging.mkdir(parents=True, exist_ok=True, mode=0o700)
-        target = self.staging / _safe_name(file.name)
-        part = target.with_name(target.name + ".part")
-        marker = target.with_name(target.name + ".part.json")
+    def download(self, source: Source, file: RemoteFile) -> StoredFile:
+        location = self.location
+        try:
+            location.prepare()
+        except LocationError as error:
+            raise SourceError(f"download folder: {error}") from None
+        return self._download(location, source, file)
 
-        if part.exists() and _marker(marker) != file.fingerprint:
-            part.unlink()  # partial download of an older version
-        marker.write_text(json.dumps({"file_id": file.file_id, "fingerprint": file.fingerprint}))
-        if not part.exists():
-            # Owner-only from the first byte: these are someone's photos.
-            os.close(os.open(part, os.O_CREAT | os.O_WRONLY, 0o600))
-        have = part.stat().st_size
-        if have > file.size:
-            part.unlink()
-            have = 0
-        self._check_space(file.size - have, file.name)
+    def _download(self, location: Location, source: Source, file: RemoteFile) -> StoredFile:
+        try:
+            return self._transfer(location, source, file)
+        except LocationError as error:
+            # Losing the share mid-download is like losing the network: resume next time.
+            raise SourceError(f"{file.name}: {error}; will resume") from None
+
+    def _transfer(self, location: Location, source: Source, file: RemoteFile) -> StoredFile:
+        target = _safe_name(file.name)
+        part = target + ".part"
+        marker = target + ".part.json"
+
+        have = location.size(part)
+        if have is not None and _marker(location.read_small(marker)) != file.fingerprint:
+            location.delete(part)  # partial download of an older version
+            have = None
+        location.write_small(
+            marker, json.dumps({"file_id": file.file_id, "fingerprint": file.fingerprint}).encode()
+        )
+        if have is not None and have > file.size:
+            location.delete(part)
+            have = None
+        have = have or 0
+        self._check_space(location, file.size - have, file.name)
 
         delay = BACKOFF_START
         for attempt in range(1, ATTEMPTS + 1):
             try:
-                with part.open("ab") as handle:
+                with location.open_append(part) as handle:
                     for chunk in source.read(file, start=have):
                         handle.write(chunk)
                         have += len(chunk)
@@ -130,10 +162,10 @@ class Downloader:
                         if have > file.size:
                             raise SourceError(f"{file.name}: larger than the source reported")
                     handle.flush()
-                    os.fsync(handle.fileno())
+                    _fsync(handle)
                 break
             except TransientSourceError:
-                have = part.stat().st_size
+                have = location.size(part) or 0
                 if attempt == ATTEMPTS:
                     raise
                 self.sleep(delay)
@@ -141,10 +173,9 @@ class Downloader:
 
         if have != file.size:
             raise SourceError(f"{file.name}: got {have} bytes, expected {file.size}; will resume")
-        _verify(part, file)
-        part.replace(target)
-        _fsync_dir(target.parent)
-        marker.unlink(missing_ok=True)
+        _verify(location, part, file)
+        location.replace(part, target)
+        location.delete(marker)
         self.state.record_download(
             DownloadRecord(
                 source=source.name,
@@ -153,24 +184,26 @@ class Downloader:
                 name=file.name,
                 size=file.size,
                 link=file.link,
-                local_path=str(target),
+                local_path=f"{location.describe()}/{target}",
                 downloaded_at=self.clock(),
                 forgotten_at=None,
                 removed_at=None,
             )
         )
-        return target
+        return StoredFile(location, target, file.size)
 
-    def _check_space(self, needed: int, name: str) -> None:
-        free = shutil.disk_usage(self.staging).free
+    def _check_space(self, location: Location, needed: int, name: str) -> None:
+        free = location.free_space()
+        if free is None:
+            return  # the share does not report it; the server will refuse if it is full
         if needed + self.free_margin > free:
             raise NotEnoughSpaceError(
                 f"{name}: needs {_gb(needed)} plus {_gb(self.free_margin)} margin, "
-                f"but only {_gb(free)} is free in {self.staging}"
+                f"but only {_gb(free)} is free in {location.describe()}"
             )
 
 
-def _verify(path: Path, file: RemoteFile) -> None:
+def _verify(location: Location, part: str, file: RemoteFile) -> None:
     if file.sha256:
         algorithm, expected = "sha256", file.sha256
     elif file.md5:
@@ -178,19 +211,27 @@ def _verify(path: Path, file: RemoteFile) -> None:
     else:
         return  # nothing to check against; size already matched
     digest = hashlib.new(algorithm, usedforsecurity=False)
-    with path.open("rb") as handle:
+    with location.open_read(part) as handle:
         while chunk := handle.read(HASH_CHUNK):
             digest.update(chunk)
     if digest.hexdigest() != expected.lower():
-        path.unlink()
+        location.delete(part)
         raise SourceError(f"{file.name}: {algorithm} does not match the source; discarded")
 
 
-def _marker(path: Path) -> str | None:
-    try:
-        return str(json.loads(path.read_text())["fingerprint"])
-    except (OSError, ValueError, KeyError, TypeError):
+def _marker(data: bytes | None) -> str | None:
+    if data is None:
         return None
+    try:
+        return str(json.loads(data)["fingerprint"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _fsync(handle: IO[bytes]) -> None:
+    """Make the data durable where the platform allows; SMB handles flush instead."""
+    with contextlib.suppress(AttributeError, OSError, io.UnsupportedOperation):
+        os.fsync(handle.fileno())
 
 
 def _safe_name(name: str) -> str:
@@ -199,14 +240,6 @@ def _safe_name(name: str) -> str:
     if cleaned in ("", ".", "..") or cleaned.startswith("."):
         raise SourceError(f"refusing unsafe file name {name!r}")
     return cleaned
-
-
-def _fsync_dir(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _gb(value: int) -> str:

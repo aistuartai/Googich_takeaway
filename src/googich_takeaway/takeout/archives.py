@@ -8,7 +8,7 @@ import re
 import tarfile
 import zipfile
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Protocol
@@ -47,7 +47,20 @@ class ArchiveEntry:
     stream: Readable
 
 
-def archive_format(path: Path) -> str:
+class Named(Protocol):
+    @property
+    def name(self) -> str: ...
+
+
+class OpenableArchive(Named, Protocol):
+    def open(self) -> IO[bytes]: ...
+
+
+ArchiveSource = Path | OpenableArchive
+"""A local path, or an archive in a download location (``locations.StoredFile``)."""
+
+
+def archive_format(path: Named) -> str:
     name = path.name.lower()
     if name.endswith(".zip"):
         return "zip"
@@ -56,31 +69,39 @@ def archive_format(path: Path) -> str:
     raise ArchiveError(f"not a .zip, .tgz or .tar.gz archive: {path.name}")
 
 
-def iter_entries(path: Path) -> Iterator[ArchiveEntry]:
+def _open(source: ArchiveSource) -> IO[bytes]:
+    if isinstance(source, Path):
+        return source.open("rb")
+    return source.open()
+
+
+def iter_entries(source: ArchiveSource) -> Iterator[ArchiveEntry]:
     """Yield every regular file in a zip or tgz archive, in archive order."""
-    kind = archive_format(path)
+    kind = archive_format(source)
     try:
-        if kind == "zip":
-            yield from _iter_zip(path)
-        else:
-            yield from _iter_tgz(path)
+        with _open(source) as handle:
+            if kind == "zip":
+                yield from _iter_zip(handle, source.name)
+            else:
+                yield from _iter_tgz(handle, source.name)
     except _READ_ERRORS as error:
-        raise ArchiveError(f"{path.name}: {error}") from error
+        raise ArchiveError(f"{source.name}: {error}") from error
 
 
-def _iter_zip(path: Path) -> Iterator[ArchiveEntry]:
-    with zipfile.ZipFile(path) as archive:
+def _iter_zip(handle: IO[bytes], name: str) -> Iterator[ArchiveEntry]:
+    # Zip needs random access to its central directory; local files and SMB handles both seek.
+    with zipfile.ZipFile(handle) as archive:
         for info in archive.infolist():
             if info.is_dir():
                 continue
             with archive.open(info) as stream:
-                guarded = _GuardedStream(stream, path.name, info.filename)
+                guarded = _GuardedStream(stream, name, info.filename)
                 yield ArchiveEntry(info.filename, info.file_size, guarded)
 
 
-def _iter_tgz(path: Path) -> Iterator[ArchiveEntry]:
+def _iter_tgz(handle: IO[bytes], name: str) -> Iterator[ArchiveEntry]:
     # Stream mode ("r|gz") reads sequentially, which suits network shares; no seeking.
-    with tarfile.open(path, mode="r|gz") as archive:
+    with tarfile.open(fileobj=handle, mode="r|gz") as archive:
         for member in archive:
             if not member.isfile():
                 continue  # directories, links and devices are never followed
@@ -88,7 +109,7 @@ def _iter_tgz(path: Path) -> Iterator[ArchiveEntry]:
             if stream is None:
                 continue
             with stream:
-                guarded = _GuardedStream(stream, path.name, member.name)
+                guarded = _GuardedStream(stream, name, member.name)
                 yield ArchiveEntry(member.name, member.size, guarded)
 
 
@@ -98,15 +119,18 @@ _PART_NAME = re.compile(
 )
 
 
-def group_exports(paths: list[Path]) -> dict[str, list[Path]]:
+def group_exports[N: Named](paths: Sequence[N]) -> dict[str, list[N]]:
     """Group archive parts by export, parts in order.
 
     Takeout names parts ``takeout-<timestamp>-001.zip``, ``-002.zip`` and so on. Archives with
     other names are treated as exports of their own, keyed by file name.
     """
-    groups: dict[str, list[tuple[int, Path]]] = {}
+    groups: dict[str, list[tuple[int, str, N]]] = {}
     for path in paths:
         match = _PART_NAME.match(path.name)
         key, part = (match["export"], int(match["part"])) if match else (path.name, 0)
-        groups.setdefault(key, []).append((part, path))
-    return {key: [p for _, p in sorted(parts)] for key, parts in sorted(groups.items())}
+        groups.setdefault(key, []).append((part, path.name, path))
+    return {
+        key: [p for _, _, p in sorted(parts, key=lambda t: (t[0], t[1]))]
+        for key, parts in sorted(groups.items())
+    }

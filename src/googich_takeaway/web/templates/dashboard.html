@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Dashboard</h1>
-{% set ready = immich.url and immich.has_key and general.staging and sources %}
+{% set ready = immich.url and immich.has_key and general.configured and sources %}
 {% if not ready %}
 <section class="card">
   <h2>Getting started</h2>
   <ol class="checklist">
     <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/settings">Connect Immich</a>: its address and an API key.</li>
-    <li class="{{ 'done' if general.staging }}"><a href="/settings">Choose the download folder</a> for Takeout archives.</li>
+    <li class="{{ 'done' if general.configured }}"><a href="/settings">Choose the download folder</a> for Takeout archives.</li>
     <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder.</li>
   </ol>
 </section>

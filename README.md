@@ -95,6 +95,17 @@ Try it on a test Immich user first, and back up your Immich database before the 
 - Free disk space for one full Takeout export
 - Your own Google Cloud project with a service account (setup steps will be documented here)
 
+## Download folder on a NAS
+
+In the web interface, Settings → Downloads can keep downloaded archives in a folder on an SMB share
+(a NAS or Windows file server) instead of a local folder. The app connects to the share itself,
+so nothing has to be mounted and the container needs no extra privileges. Use an account that
+can reach only that folder. The folder is created if missing, and a test file is written and
+removed before the settings are saved.
+
+Reading zip archives over SMB needs random access, which means more network round trips than a
+local disk; `.tgz` exports are read straight through and suit network shares better.
+
 ## Where credentials are kept
 
 Credentials entered in the web interface (the Immich API key and Google service account keys)

@@ -16,11 +16,11 @@ import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from googich_takeaway.destinations.immich import CheckAction, ImmichClient
-from googich_takeaway.sources.local import ARCHIVE_SUFFIXES
+from googich_takeaway.locations import LocalLocation, Location, LocationError, archives
 from googich_takeaway.state import State
 from googich_takeaway.takeout.archives import group_exports
 
@@ -85,33 +85,32 @@ def _count(value: object) -> int:
     return value if isinstance(value, int) else 0
 
 
-def staged_exports(staging: Path | None, state: State) -> list[ExportCopy]:
-    if staging is None or not staging.is_dir():
+def _staging(staging: Location | Path | None) -> Location | None:
+    if isinstance(staging, Path):
+        return LocalLocation(staging)
+    return staging
+
+
+def staged_exports(staging: Location | Path | None, state: State) -> list[ExportCopy]:
+    location = _staging(staging)
+    if location is None:
         return []
-    archives = [
-        p for p in staging.iterdir() if p.is_file() and p.name.lower().endswith(ARCHIVE_SUFFIXES)
-    ]
     copies = []
-    for export_id, paths in group_exports(archives).items():
-        parts = [Part(p.name, p.stat().st_size) for p in paths]
+    for export_id, files in group_exports(archives(location)).items():
+        parts = [Part(f.name, f.size) for f in files]
         copies.append(_describe(ExportCopy(export_id, parts), state))
     return copies
 
 
-def partial_downloads(staging: Path | None) -> list[Partial]:
-    if staging is None or not staging.is_dir():
+def partial_downloads(staging: Location | Path | None) -> list[Partial]:
+    location = _staging(staging)
+    if location is None:
         return []
-    found = []
-    for path in sorted(staging.glob("*.part")):
-        info = path.stat()
-        found.append(
-            Partial(
-                path.name.removesuffix(".part"),
-                info.st_size,
-                datetime.fromtimestamp(info.st_mtime, UTC),
-            )
-        )
-    return found
+    return [
+        Partial(f.name.removesuffix(".part"), f.size, f.modified)
+        for f in location.list()
+        if f.name.endswith(".part")
+    ]
 
 
 def drive_exports(state: State, source_names: dict[str, str]) -> list[ExportCopy]:
@@ -158,7 +157,7 @@ class CleanupError(Exception):
 
 
 def delete_staged_export(
-    staging: Path,
+    staging: Location | Path,
     state: State,
     export_id: str,
     confirmed_not_imported: bool,
@@ -168,7 +167,10 @@ def delete_staged_export(
 
     Re-checks completeness against the files on disk at the moment of deletion.
     """
-    copy = next((c for c in staged_exports(staging, state) if c.export_id == export_id), None)
+    location = _staging(staging)
+    if location is None:
+        raise CleanupError("No download folder is set.")
+    copy = next((c for c in staged_exports(location, state) if c.export_id == export_id), None)
     if copy is None:
         raise CleanupError("That export is no longer in the download folder.")
     if not copy.ready:
@@ -178,23 +180,27 @@ def delete_staged_export(
             f"{copy.not_imported} files from this export were not imported (no date, or rejected "
             "by Immich). Tick the box to confirm you want to delete the archives anyway."
         )
-    root = staging.resolve()
     freed = 0
     for part in copy.parts:
-        path = (staging / part.name).resolve()
-        if path.parent != root:
-            raise CleanupError("Refusing to delete a file outside the download folder.")
-        freed += path.stat().st_size
-        path.unlink()
+        try:
+            location.delete(part.name)  # names are checked: never outside the folder
+        except LocationError as error:
+            raise CleanupError(str(error)) from None
+        freed += part.size
         log(f"Deleted {part.name} from the download folder")
     return freed
 
 
-def delete_partial(staging: Path, name: str) -> int:
-    path = (staging / (name + ".part")).resolve()
-    if path.parent != staging.resolve() or not path.is_file():
-        raise CleanupError("No such partial download.")
-    size = path.stat().st_size
-    path.unlink()
-    (staging / (name + ".part.json")).unlink(missing_ok=True)
+def delete_partial(staging: Location | Path, name: str) -> int:
+    location = _staging(staging)
+    if location is None:
+        raise CleanupError("No download folder is set.")
+    try:
+        size = location.size(name + ".part")
+        if size is None:
+            raise CleanupError("No such partial download.")
+        location.delete(name + ".part")
+        location.delete(name + ".part.json")
+    except LocationError:
+        raise CleanupError("No such partial download.") from None
     return size

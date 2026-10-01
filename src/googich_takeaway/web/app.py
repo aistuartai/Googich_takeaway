@@ -25,6 +25,7 @@ from googich_takeaway import __version__, cleanup
 from googich_takeaway.config import MAX_KEY_FILE_BYTES, Config, ConfigError
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
+from googich_takeaway.locations import LocationError, SmbSettings
 from googich_takeaway.logs import LogBuffer, Logs
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import RunOptions
@@ -88,6 +89,7 @@ def create_app(
     immich_factory: ImmichFactory = ImmichClient,
     drive_factory: DriveFactory = GoogleDriveSource,
     start_worker: bool = True,
+    smb_test: Callable[[SmbSettings], None] | None = None,
     logs: Logs | None = None,
 ) -> FastAPI:
     async def csrf_guard(request: Request) -> None:
@@ -369,13 +371,19 @@ def create_app(
         message: str | None = None,
         error: str | None = None,
     ) -> Response:
-        staging = config.general().staging
+        staging = config.staging_location()
+        try:
+            staged = cleanup.staged_exports(staging, state)
+            partials = cleanup.partial_downloads(staging)
+        except LocationError as problem:
+            staged, partials = [], []
+            error = error or f"Cannot read the download folder: {problem}"
         return page(
             request,
             config,
             "cleanup.html",
-            staged=cleanup.staged_exports(staging, state),
-            partials=cleanup.partial_downloads(staging),
+            staged=staged,
+            partials=partials,
             drive=cleanup.drive_exports(state, drive_labels(config)),
             running=worker.status().running,
             message=message,
@@ -390,7 +398,7 @@ def create_app(
         export_id: str,
         confirm: Annotated[str, Form()] = "",
     ) -> Response:
-        staging = config.general().staging
+        staging = config.staging_location()
         if staging is None:
             return RedirectResponse("/cleanup?error=No+download+folder+is+set.", status_code=303)
         if worker.status().running:
@@ -408,7 +416,7 @@ def create_app(
 
     @app.post("/cleanup/partial/{name}")
     def delete_partial(config: ConfigDep, name: str) -> Response:
-        staging = config.general().staging
+        staging = config.staging_location()
         if staging is None or worker.status().running:
             return RedirectResponse(
                 "/cleanup?error=Not+possible+while+a+run+is+going.", status_code=303
@@ -479,6 +487,7 @@ def create_app(
             schedule=config.schedule(),
             weekdays=WEEKDAYS,
             timezones=TIMEZONES,
+            has_smb_password=config.has_smb_password(),
             outcomes=config.notification_outcomes(),
             has_urls=config.has_notification_urls(),
             error=error,
@@ -531,14 +540,48 @@ def create_app(
     def save_general(
         request: Request,
         config: ConfigDep,
-        staging: Annotated[str, Form()],
         timezone: Annotated[str, Form()],
+        storage: Annotated[str, Form()] = "local",
+        staging: Annotated[str, Form()] = "",
+        smb_server: Annotated[str, Form()] = "",
+        smb_share: Annotated[str, Form()] = "",
+        smb_folder: Annotated[str, Form()] = "",
+        smb_username: Annotated[str, Form()] = "",
+        smb_password: Annotated[str, Form()] = "",
+        smb_domain: Annotated[str, Form()] = "",
+        smb_port: Annotated[str, Form()] = "445",
     ) -> Response:
         try:
-            config.save_general(staging, timezone)
+            if storage == "smb":
+                config.save_smb(
+                    smb_server,
+                    smb_share,
+                    smb_folder,
+                    smb_username,
+                    smb_password or None,
+                    timezone,
+                    port=smb_port,
+                    domain=smb_domain,
+                    test=smb_test,
+                )
+            else:
+                config.save_general(staging, timezone)
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=general", status_code=303)
+
+    @app.post("/settings/storage/test", response_class=HTMLResponse)
+    def test_storage(request: Request, config: ConfigDep) -> Response:
+        location = config.staging_location()
+        if location is None:
+            return result(request, False, "Save a download folder first.")
+        try:
+            location.prepare()
+            free = location.free_space()
+        except LocationError as error:
+            return result(request, False, str(error))
+        space = f" {format_size(free)} free." if free is not None else ""
+        return result(request, True, f"Can write to {location.describe()}.{space}")
 
     @app.post("/settings/schedule")
     def save_schedule(

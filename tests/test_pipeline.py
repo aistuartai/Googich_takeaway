@@ -13,6 +13,7 @@ from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from tests.fake_drive import FOLDER, FakeDrive
 from tests.fake_immich import KEY, FakeImmichServer
+from tests.fake_smb import FakeSmb
 from tests.fixtures.takeout import quirks_export
 from tests.test_config import key_file
 
@@ -250,3 +251,85 @@ def test_redownloaded_export_already_imported_is_explained(world: World) -> None
     assert report.exports_imported == 0
     assert message.title == "Downloaded 2 archives, already imported before"
     assert "was already imported on 01 Oct 2026 00:00 UTC; skipped" in message.body
+
+
+def smb_world(world: World, monkeypatch: pytest.MonkeyPatch) -> FakeSmb:
+    import sys
+
+    from tests.fake_smb import SMB_LOGIN
+
+    fake = FakeSmb()
+    monkeypatch.setitem(sys.modules, "smbclient", fake)
+    world.configure()
+    world.config.save_smb(
+        "nas.local", "Photos", "takeout", "photos", SMB_LOGIN, "Australia/Melbourne"
+    )
+    return fake
+
+
+def test_full_run_with_an_smb_download_folder(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = smb_world(world, monkeypatch)
+    report = world.pipeline().run()
+    assert report.problems == []
+    assert report.downloaded == 2
+    assert report.uploaded == 13
+    stored = sorted(p.rsplit("\\", 1)[-1] for p in fake.files)
+    assert stored == ["takeout-20261001T010203Z-001.zip", "takeout-20261001T010203Z-002.zip"]
+    assert list((world.tmp / "staging").iterdir()) == []  # nothing written locally
+    assert world.pipeline().run().message().outcome is Outcome.NO_NEW_DATA
+
+
+def test_lost_smb_share_mid_download_resumes_next_run(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = smb_world(world, monkeypatch)
+    fake.fail_writes_after = 5000
+    first = world.pipeline().run()
+    assert first.message().outcome is Outcome.FAILED
+    assert not world.immich.assets
+    assert any(p.endswith(".part") for p in fake.files)
+    fake.fail_writes_after = None
+    second = world.pipeline().run()
+    assert second.problems == []
+    assert second.uploaded == 13
+
+
+def test_smb_cleanup(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    from googich_takeaway import cleanup
+
+    fake = smb_world(world, monkeypatch)
+    world.pipeline().run()
+    location = world.config.staging_location()
+    copy = cleanup.staged_exports(location, world.state)[0]
+    assert copy.ready
+    assert location is not None
+    cleanup.delete_staged_export(location, world.state, copy.export_id, confirmed_not_imported=True)
+    assert not any(p.endswith(".zip") for p in fake.files)
+
+
+def test_smb_password_is_sealed_and_kept(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    import sqlite3
+
+    from tests.fake_smb import SMB_LOGIN
+
+    smb_world(world, monkeypatch)
+    dump = "\n".join(sqlite3.connect(world.tmp / "state.db").iterdump())
+    assert SMB_LOGIN not in dump
+    world.config.save_smb("nas.local", "Photos", "takeout", "photos", None, "UTC")  # keep it
+    assert world.config.general().storage == "smb"
+    assert world.config.general().describe() == "\\\\nas.local\\Photos\\takeout"
+
+
+def test_smb_settings_are_tested_before_saving(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from googich_takeaway.config import ConfigError
+
+    monkeypatch.setitem(sys.modules, "smbclient", FakeSmb())
+    with pytest.raises(ConfigError, match="LOGON_FAILURE"):
+        world.config.save_smb("nas.local", "Photos", "x", "photos", "wrong", "UTC")
+    assert world.config.general().storage == "local"  # nothing saved

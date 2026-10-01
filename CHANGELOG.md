@@ -71,6 +71,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-file progress bars, smoothed transfer rates and time left per stage and for the whole run.
   Before a stage starts its time is estimated from rates measured on earlier runs.
 - Dashboard with status, next run, Run now, recent runs with details, and the pause banner.
+- Download folder on an SMB share (NAS or file server), built in: the app connects with
+  smbprotocol itself, so no mounts or container privileges are needed. Downloads resume after a
+  lost connection, archives are read and uploaded from the share, and cleanup works there too.
+  The share is tested before settings are saved; the password is stored encrypted.
 - Cleanup page. Download folder: delete archives of exports imported completely, re-checked
   against the files on disk at the time of deletion; partial downloads listed with their age.
   Google Drive: the app never deletes there; it lists downloaded exports ready to remove, with
