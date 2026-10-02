@@ -14,6 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The Takeout guide explains why an export is often far bigger than the storage Google shows
+  (album copies, and photos that do not count towards Google storage) and how to leave the
+  album copies out, and now recommends `.zip`, which resumes best.
 - The dashboard keeps up during a run: the Google Photos figure updates as soon as an export
   has been read, Immich's "of the latest export" line counts up while uploading, and the
   download folder shows how many photos and videos are not in Immich yet.

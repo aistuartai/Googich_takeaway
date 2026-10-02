@@ -19,7 +19,9 @@ Cloud project. You can switch later, or use both.
 
 ## 1. Set up Takeout to email you
 
-Follow [Setting up Google Takeout](takeout.md), but at **Destination** choose
+Follow [Setting up Google Takeout](takeout.md) (including
+[Making the export smaller](takeout.md#making-the-export-smaller), which matters more when you
+download it yourself), but at **Destination** choose
 **Send download link via email** instead of Add to Drive. For **File size**, a smaller size such
 as **10 GB** is easier to download in a browser: if one part fails, there is less to repeat.
 
