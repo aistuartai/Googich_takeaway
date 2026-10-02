@@ -8,6 +8,16 @@
 </svg>
 {%- endmacro %}
 
+{% macro prints(cls="") -%}
+{#- A pile of photo prints: the library in Google Photos. -#}
+<svg class="icon {{ cls }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <rect class="icon-fill icon-back" x="13" y="6" width="28" height="24" rx="5" transform="rotate(8 27 18)"/>
+  <rect class="icon-fill" x="7" y="15" width="30" height="26" rx="5"/>
+  <circle class="icon-mark-dot" cx="16" cy="23" r="2.8"/>
+  <path class="icon-mark-solid" d="M11 37l8-8 5 5 4-4 6 7z"/>
+</svg>
+{%- endmacro %}
+
 {% macro folder(cls="") -%}
 <svg class="icon {{ cls }}" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
   <rect class="icon-fill" x="7" y="10" width="34" height="12" rx="4"/>
@@ -23,6 +33,12 @@
   <rect class="icon-fill" x="6" y="9" width="36" height="30" rx="6"/>
   <circle class="icon-mark-dot" cx="17" cy="19" r="3.4"/>
   <path class="icon-mark-solid" d="M10 35l10.5-10.5 6 6L31 26l7 9z"/>
+</svg>
+{%- endmacro %}
+
+{% macro leave(cls="") -%}
+<svg class="icon {{ cls }}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <path d="M10 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20H10M15 8l4 4-4 4M19 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 {%- endmacro %}
 

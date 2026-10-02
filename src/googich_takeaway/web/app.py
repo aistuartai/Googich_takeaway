@@ -6,27 +6,30 @@ the session's CSRF token. Responses carry a strict Content Security Policy: scri
 load only from this server, and the pages contain no inline script.
 """
 
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from googich_takeaway import __version__, cleanup, updates
+from googich_takeaway import __version__, cleanup, reminders, updates
 from googich_takeaway.config import (
     BAR_STYLES,
     COLOUR_SCHEMES,
+    DASHBOARD_ITEMS,
     MAX_KEY_FILE_BYTES,
     MOTION,
     THEMES,
@@ -36,18 +39,23 @@ from googich_takeaway.config import (
 )
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
-from googich_takeaway.locations import LocationError, SmbSettings, close_shared_smb
+from googich_takeaway.locations import (
+    Location,
+    LocationError,
+    SmbSettings,
+    StoredFile,
+    close_shared_smb,
+)
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.logs import LogBuffer, Logs
-from googich_takeaway.notify import Message, Outcome
-from googich_takeaway.pipeline import RunOptions
+from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, RunOptions
 from googich_takeaway.progress import format_duration, format_size
-from googich_takeaway.schedule import WEEKDAYS
+from googich_takeaway.schedule import TAKEOUT_FREQUENCIES, WEEKDAYS, Schedule, upcoming_runs
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.sources.local import LocalSource
 from googich_takeaway.state import State
-from googich_takeaway.web import auth, demo
+from googich_takeaway.web import auth, demo, help
 from googich_takeaway.worker import Worker
 
 log = logging.getLogger("googich.web")
@@ -109,6 +117,7 @@ def create_app(
     start_worker: bool = True,
     smb_test: Callable[[SmbSettings], None] | None = None,
     logs: Logs | None = None,
+    github_transport: httpx.BaseTransport | None = None,
 ) -> FastAPI:
     async def csrf_guard(request: Request) -> None:
         # A dependency, not middleware: it shares FastAPI's parsed form with the route. Reading
@@ -153,7 +162,9 @@ def create_app(
         logging.getLogger().addHandler(log_store.buffer)  # tests and embedded use
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.globals.update(version=__version__, default_look=Look(), demo=settings.demo)
-    templates.env.filters.update(duration=format_duration, size=format_size)
+    templates.env.filters.update(
+        duration=format_duration, size=format_size, export_date=_export_date
+    )
     login_throttle = throttle or auth.LoginThrottle()
     data_dir = settings.state_path.parent
 
@@ -299,40 +310,137 @@ def create_app(
         response.delete_cookie(COOKIE, path="/")
         return response
 
-    folder_cache: dict[str, tuple[float, int | None, int]] = {}
+    listing_cache: dict[str, tuple[float, list[StoredFile] | None]] = {}
 
-    def journey(config: Config, state: State) -> dict[str, int | None]:
+    def folder_listing(location: Location) -> list[StoredFile] | None:
+        """The download folder's archives, read at most every 10 seconds (it may be on SMB).
+
+        None if the folder cannot be read right now."""
+        key = location.describe()
+        hit = listing_cache.get(key)
+        if hit and time.monotonic() - hit[0] < 10:
+            return hit[1]
+        try:
+            found: list[StoredFile] | None = list_archives(location)
+        except LocationError:
+            found = None
+        listing_cache[key] = (time.monotonic(), found)
+        return found
+
+    def latest_export(state: State) -> dict[str, object] | None:
+        stored = state.get_setting(LATEST_EXPORT_SETTING)
+        if not stored:
+            return None
+        data = json.loads(stored)
+        data["at"] = datetime.fromisoformat(data["at"])
+        return data if isinstance(data, dict) else None
+
+    def journey(config: Config, state: State) -> dict[str, object]:
         drive_count, drive_bytes = state.download_totals()
         location = config.staging_location()
         folder_count: int | None = 0
         folder_bytes = 0
         if location is not None:
-            key = location.describe()
-            cached = folder_cache.get(key)
-            if cached and time.monotonic() - cached[0] < 10:
-                folder_count, folder_bytes = cached[1], cached[2]
+            found = folder_listing(location)
+            if found is None:
+                folder_count = None
             else:
-                try:
-                    found = list_archives(location)
-                    folder_count, folder_bytes = len(found), sum(a.size for a in found)
-                except LocationError:
-                    folder_count, folder_bytes = None, 0
-                folder_cache[key] = (time.monotonic(), folder_count, folder_bytes)
+                folder_count, folder_bytes = len(found), sum(a.size for a in found)
         return {
             "drive_count": drive_count,
             "drive_bytes": drive_bytes,
             "folder_count": folder_count,
             "folder_bytes": folder_bytes,
             "immich_count": state.upload_count("immich"),
+            "photos": latest_export(state),
+        }
+
+    def cached_call(key: str, seconds: float, read: Callable[[], object]) -> object:
+        """Remember a slow reading (an SMB listing, free space) for a few seconds."""
+        hit = slow_cache.get(key)
+        if hit and time.monotonic() - hit[0] < seconds:
+            return hit[1]
+        value = read()
+        slow_cache[key] = (time.monotonic(), value)
+        return value
+
+    slow_cache: dict[str, tuple[float, object]] = {}
+
+    def source_summaries(config: Config, state: State) -> list[dict[str, object]]:
+        found: list[dict[str, object]] = []
+        for source in config.sources():
+            latest: dict[str, tuple[int, datetime]] = {}
+            for record in state.downloads(f"{source.kind}:{source.location}"):
+                latest[record.file_id] = (record.size, record.downloaded_at)
+            found.append(
+                {
+                    "source": source,
+                    "folder_name": config.drive_folder_name(source.id),
+                    "archives": len(latest),
+                    "bytes": sum(size for size, _ in latest.values()),
+                    "last": max((at for _, at in latest.values()), default=None),
+                }
+            )
+        return found
+
+    def destination_summary(config: Config, state: State) -> dict[str, object]:
+        counts = state.verification_counts("immich")
+        location = config.staging_location()
+        free: int | None = None
+        if location is not None:
+
+            def read_free() -> int | None:
+                try:
+                    return location.free_space()
+                except LocationError:
+                    return None
+
+            value = cached_call(f"free:{location.describe()}", 60, read_free)
+            free = value if isinstance(value, int) else None
+        return {
+            "immich": config.immich(),
+            "uploaded": sum(counts.values()),
+            "awaiting": counts.get("uploaded", 0),
+            "general": config.general(),
+            "free": free,
+        }
+
+    def cleanup_summary(config: Config, state: State) -> dict[str, object]:
+        location = config.staging_location()
+        staged: list[cleanup.ExportCopy] | None = []
+        if location is not None:
+            found = folder_listing(location)
+            staged = None if found is None else cleanup.staged_exports(location, state, found)
+        folder_ready = [c for c in staged or [] if c.ready]
+        drive_ready = [
+            c
+            for c in cleanup.drive_exports(state, drive_labels(config))
+            if c.ready and any(p.removed_at is None for p in c.parts)
+        ]
+        folder_bytes = sum(c.size for c in folder_ready)
+        drive_bytes = sum(p.size for c in drive_ready for p in c.parts if p.removed_at is None)
+        return {
+            "total": folder_bytes + drive_bytes,
+            "folder_exports": len(folder_ready),
+            "folder_bytes": folder_bytes,
+            "folder_unreadable": staged is None,
+            "drive_exports": len(drive_ready),
+            "drive_bytes": drive_bytes,
         }
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, config: ConfigDep, state: StateDep) -> Response:
+        items = config.dashboard_items()
         return page(
             request,
             config,
             "dashboard.html",
-            journey=journey(config, state),
+            items=items,
+            dashboard_items=DASHBOARD_ITEMS,
+            journey=journey(config, state) if {"journey", "destinations"} & set(items) else None,
+            source_cards=source_summaries(config, state) if "sources" in items else [],
+            destinations=destination_summary(config, state) if "destinations" in items else None,
+            cleanable=cleanup_summary(config, state) if "cleanup" in items else None,
             immich=config.immich(),
             general=config.general(),
             sources=config.sources(),
@@ -340,9 +448,35 @@ def create_app(
             status=worker.status(),
             progress=worker.progress(),
             failures=config.scheduled_failures(),
-            runs=state.recent_runs(15),
+            runs=state.recent_runs(15) if "runs" in items else [],
+            reminders=reminders.takeout_reminders(config, state, clock()),
             zone=_zone(config.general().timezone),
         )
+
+    @app.get("/dashboard/configure", response_class=HTMLResponse)
+    def dashboard_configure(request: Request, config: ConfigDep) -> Response:
+        return page(
+            request,
+            config,
+            "dashboard_configure.html",
+            items=config.dashboard_items(),
+            dashboard_items=DASHBOARD_ITEMS,
+            saved=request.query_params.get("saved"),
+        )
+
+    @app.post("/dashboard/items")
+    def save_dashboard(
+        config: ConfigDep,
+        items: Annotated[list[str] | None, Form()] = None,
+        back: Annotated[str, Form()] = "/",
+    ) -> Response:
+        try:
+            config.save_dashboard_items(items or [])
+        except ConfigError:
+            return Response("Unknown dashboard item.", status_code=400)
+        if back == "/dashboard/configure":  # only ever these two places
+            return RedirectResponse("/dashboard/configure?saved=1", status_code=303)
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/demo/run")
     def demo_run() -> Response:
@@ -362,6 +496,8 @@ def create_app(
             "_status.html",
             {
                 "progress": worker.progress(),
+                "items": config.dashboard_items(),
+                "immich_link": config.immich().link,
                 "journey": journey(config, state),
                 "look": config.look(),
                 "status": current,
@@ -432,6 +568,32 @@ def create_app(
             filename=f"googich-{datetime.now(UTC):%Y%m%d-%H%M%S}.log",
         )
 
+    # --- help --------------------------------------------------------------------------------
+
+    @app.get("/help", response_class=HTMLResponse)
+    def help_index(request: Request, config: ConfigDep) -> Response:
+        return page(request, config, "help.html", topics=help.TOPICS)
+
+    @app.get("/help/{slug}", response_class=HTMLResponse)
+    def help_page(request: Request, config: ConfigDep, slug: str) -> Response:
+        found = help.page(slug)
+        if found is None:
+            return page(request, config, "help.html", topics=help.TOPICS, status_code=404)
+        return page(request, config, "help_page.html", doc=found, topics=help.TOPICS)
+
+    @app.get("/about", response_class=HTMLResponse)
+    def about(request: Request, config: ConfigDep) -> Response:
+        known = updates.cached(config.state)
+        return page(
+            request,
+            config,
+            "about.html",
+            update_known=known,
+            update_available=known if known and known.newer else None,
+            repository=updates.REPOSITORY,
+            zone=_zone(config.general().timezone),
+        )
+
     # --- cleanup -------------------------------------------------------------------------------
 
     def drive_labels(config: Config) -> dict[str, str]:
@@ -485,6 +647,7 @@ def create_app(
             )
         except cleanup.CleanupError as error:
             return RedirectResponse(f"/cleanup?error={quote(str(error))}", status_code=303)
+        listing_cache.clear()
         note = f"Deleted export {export_id} from the download folder, freeing {format_size(freed)}."
         return RedirectResponse(f"/cleanup?message={quote(note)}", status_code=303)
 
@@ -547,9 +710,270 @@ def create_app(
         config.set_schedule_paused(False)
         return RedirectResponse("/", status_code=303)
 
-    # --- settings ------------------------------------------------------------------------------
+    # --- settings, schedule, notifications, updates ------------------------------------------
+    #
+    # A form that fails to save shows its page again with an error. ``draft`` holds what was typed,
+    # so it is shown again; passwords, keys and notification addresses never are.
 
-    def settings_page(
+    def settings_page(request: Request, config: Config, error: str | None = None) -> Response:
+        """Time zone, and look and feel."""
+        return page(
+            request,
+            config,
+            "settings.html",
+            general=config.general(),
+            timezones=TIMEZONES,
+            themes=THEMES,
+            colour_schemes=COLOUR_SCHEMES,
+            bar_styles=BAR_STYLES,
+            motions=MOTION,
+            saved=request.query_params.get("saved"),
+            error=error,
+            status_code=400 if error else 200,
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_view(request: Request, config: ConfigDep) -> Response:
+        return settings_page(request, config)
+
+    @app.post("/settings/timezone")
+    def save_timezone(
+        request: Request, config: ConfigDep, timezone: Annotated[str, Form()]
+    ) -> Response:
+        try:
+            config.save_timezone(timezone)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=timezone#timezone", status_code=303)
+
+    @app.post("/settings/look")
+    def save_look(
+        request: Request,
+        config: ConfigDep,
+        theme: Annotated[str, Form()] = "auto",
+        colours: Annotated[str, Form()] = "spectrum",
+        bars: Annotated[str, Form()] = "striped",
+        motion: Annotated[str, Form()] = "auto",
+    ) -> Response:
+        try:
+            config.save_look(theme, colours, bars, motion)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=look#look", status_code=303)
+
+    def schedule_page(
+        request: Request,
+        config: Config,
+        error: str | None = None,
+        draft: dict[str, str] | None = None,
+    ) -> Response:
+        schedule = config.schedule()
+        zone = _zone(config.general().timezone)
+        today = clock().astimezone(zone).date()
+        last = next(
+            (r.started_at for r in config.state.recent_runs(50) if r.trigger == "schedule"), None
+        )
+        exports = schedule.exports()
+        arrivals = [t.astimezone(zone).date() for t in config.state.download_times()]
+        return page(
+            request,
+            config,
+            "schedule.html",
+            schedule=schedule,
+            upcoming=upcoming_runs(schedule, clock(), zone, last),
+            takeout_status=schedule.takeout_status(today),
+            paused=config.schedule_paused(),
+            zone=zone,
+            today=today,
+            takeout_frequencies=TAKEOUT_FREQUENCIES,
+            takeout_ends=reminders.schedule_end(schedule.takeout_started),
+            checks=[
+                (
+                    day,
+                    schedule.check_days(day),
+                    _export_state(day, exports, arrivals, today, schedule),
+                )
+                for day in exports
+            ],
+            next_export=next((day for day in exports if day >= today), None),
+            weekdays=WEEKDAYS,
+            general=config.general(),
+            saved=request.query_params.get("saved"),
+            error=error,
+            draft=draft or {},
+            status_code=400 if error else 200,
+        )
+
+    @app.get("/schedule", response_class=HTMLResponse)
+    def schedule_view(request: Request, config: ConfigDep) -> Response:
+        return schedule_page(request, config)
+
+    @app.post("/schedule/takeout")
+    def save_takeout_schedule(
+        request: Request,
+        config: ConfigDep,
+        started: Annotated[str, Form()] = "",
+        every_months: Annotated[str, Form()] = "2",
+    ) -> Response:
+        try:
+            config.save_takeout_schedule(started, every_months)
+        except ConfigError as error:
+            return schedule_page(request, config, error=str(error))
+        return RedirectResponse("/schedule?saved=takeout#takeout", status_code=303)
+
+    @app.post("/schedule")
+    def save_schedule(
+        request: Request,
+        config: ConfigDep,
+        mode: Annotated[str, Form()],
+        at: Annotated[str, Form()] = "03:00",
+        weekday: Annotated[str, Form()] = "6",
+        every_hours: Annotated[str, Form()] = "24",
+        pause_after: Annotated[str, Form()] = "3",
+    ) -> Response:
+        try:
+            config.save_schedule(mode, at, weekday, every_hours, pause_after)
+        except ConfigError as error:
+            draft = {
+                "mode": mode,
+                "at": at,
+                "weekday": weekday,
+                "every_hours": every_hours,
+                "pause_after": pause_after,
+            }
+            return schedule_page(request, config, str(error), draft=draft)
+        return RedirectResponse("/schedule?saved=schedule#schedule", status_code=303)
+
+    @app.post("/schedule/follow")
+    def save_follow_options(
+        request: Request,
+        config: ConfigDep,
+        retry_days: Annotated[str, Form()] = "1",
+        wait_days: Annotated[str, Form()] = "14",
+        fallback_weekly: Annotated[str, Form()] = "",
+        fallback_weekday: Annotated[str, Form()] = "6",
+    ) -> Response:
+        try:
+            config.save_follow_options(
+                retry_days, wait_days, bool(fallback_weekly), fallback_weekday
+            )
+        except ConfigError as error:
+            return schedule_page(request, config, str(error))
+        return RedirectResponse("/schedule?saved=follow#follow", status_code=303)
+
+    def notifications_page(
+        request: Request, config: Config, error: str | None = None, draft_name: str = ""
+    ) -> Response:
+        return page(
+            request,
+            config,
+            "notifications.html",
+            outcomes=config.notification_outcomes(),
+            targets=config.notification_targets(),
+            saved=request.query_params.get("saved"),
+            error=error,
+            draft_name=draft_name,
+            status_code=400 if error else 200,
+        )
+
+    @app.get("/notifications", response_class=HTMLResponse)
+    def notifications_view(request: Request, config: ConfigDep) -> Response:
+        return notifications_page(request, config)
+
+    @app.post("/notifications")
+    def save_notifications(
+        request: Request,
+        config: ConfigDep,
+        outcomes: Annotated[list[str] | None, Form()] = None,
+    ) -> Response:
+        try:
+            config.save_notifications(None, outcomes or [])
+        except ConfigError as error:
+            return notifications_page(request, config, error=str(error))
+        return RedirectResponse("/notifications?saved=outcomes#outcomes", status_code=303)
+
+    @app.post("/notifications/add")
+    def add_notification(
+        request: Request,
+        config: ConfigDep,
+        name: Annotated[str, Form()] = "",
+        url: Annotated[str, Form()] = "",
+    ) -> Response:
+        try:
+            config.add_notification_target(name, url)
+        except ConfigError as error:  # the URL is not put back into the page
+            return notifications_page(request, config, error=str(error), draft_name=name)
+        log.info("Notification %r added", name.strip())
+        return RedirectResponse("/notifications?saved=added", status_code=303)
+
+    @app.post("/notifications/{target_id}/remove")
+    def remove_notification(config: ConfigDep, target_id: str) -> Response:
+        config.remove_notification_target(target_id)
+        return RedirectResponse("/notifications?saved=removed", status_code=303)
+
+    @app.post("/notifications/test", response_class=HTMLResponse)
+    def test_notifications(request: Request, config: ConfigDep) -> Response:
+        if not config.has_notification_urls():
+            return result(request, False, "Add a notification first.")
+        ok, reasons, _ = config.test_notification()
+        return test_result(request, ok, reasons)
+
+    @app.post("/notifications/{target_id}/test", response_class=HTMLResponse)
+    def test_notification(request: Request, config: ConfigDep, target_id: str) -> Response:
+        found = next((t for t in config.notification_targets() if t.id == target_id), None)
+        if found is None:
+            return result(request, False, "No such notification.")
+        ok, reasons, note = config.test_notification(target_id)
+        log.info("Test notification to %r: %s", found.name, "sent" if ok else "failed")
+        return test_result(request, ok, reasons, note)
+
+    def test_result(request: Request, ok: bool, reasons: list[str], note: str = "") -> Response:
+        if ok:
+            return result(request, True, f"Test notification sent.{note}")
+        why = " ".join(reasons) if reasons else "The service did not accept it."
+        return result(request, False, f"Not delivered: {why}")
+
+    @app.get("/updates", response_class=HTMLResponse)
+    def updates_view(request: Request, config: ConfigDep) -> Response:
+        known = updates.cached(config.state)
+        return page(
+            request,
+            config,
+            "updates.html",
+            updates_enabled=updates.enabled(config.state),
+            update_known=known,
+            update_available=known if known and known.newer else None,
+            saved=request.query_params.get("saved"),
+            zone=_zone(config.general().timezone),
+        )
+
+    @app.post("/updates/apply")
+    def apply_update(config: ConfigDep) -> Response:
+        """Ask the host helper to install the newest release the app itself found."""
+        known = updates.cached(config.state)
+        if known is None or not known.newer:
+            return RedirectResponse("/updates?saved=no-update", status_code=303)
+        try:
+            updates.request_update(data_dir, known.latest)  # never a version from the browser
+        except ValueError as error:
+            log.warning("Update request refused: %s", error)
+            return RedirectResponse("/updates?saved=no-helper", status_code=303)
+        log.warning("Update to %s requested from the web interface", known.latest)
+        return RedirectResponse("/updates?saved=update-requested", status_code=303)
+
+    @app.post("/updates/check")
+    def check_updates(state: StateDep) -> Response:
+        found = updates.check_now(state, clock, github_transport)
+        return RedirectResponse(f"/updates?saved=check-{found.value}", status_code=303)
+
+    @app.post("/updates/daily")
+    def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:
+        updates.set_enabled(state, bool(check), clock())
+        return RedirectResponse("/updates?saved=updates", status_code=303)
+
+    # --- destinations --------------------------------------------------------------------------
+
+    def destinations_page(
         request: Request,
         config: Config,
         error: str | None = None,
@@ -557,27 +981,17 @@ def create_app(
         draft: dict[str, str] | None = None,
         failed: str | None = None,
     ) -> Response:
-        """``draft`` holds what was typed into a form that failed to save, so it is shown again.
+        """Where photos go (Immich) and where archives wait (the download folder).
 
+        ``draft`` holds what was typed into a form that failed to save, so it is shown again.
         Passwords and keys are never put back into the page."""
         return page(
             request,
             config,
-            "settings.html",
+            "destinations.html",
             immich=config.immich(),
             general=config.general(),
-            schedule=config.schedule(),
-            weekdays=WEEKDAYS,
-            timezones=TIMEZONES,
             has_smb_password=config.has_smb_password(),
-            updates_enabled=updates.enabled(config.state),
-            themes=THEMES,
-            colour_schemes=COLOUR_SCHEMES,
-            bar_styles=BAR_STYLES,
-            motions=MOTION,
-            update_known=updates.cached(config.state),
-            outcomes=config.notification_outcomes(),
-            has_urls=config.has_notification_urls(),
             error=error,
             saved=saved,
             draft=draft or {},
@@ -585,11 +999,13 @@ def create_app(
             status_code=400 if error else 200,
         )
 
-    @app.get("/settings", response_class=HTMLResponse)
-    def settings_view(request: Request, config: ConfigDep, saved: str | None = None) -> Response:
-        return settings_page(request, config, saved=saved)
+    @app.get("/destinations", response_class=HTMLResponse)
+    def destinations_view(
+        request: Request, config: ConfigDep, saved: str | None = None
+    ) -> Response:
+        return destinations_page(request, config, saved=saved)
 
-    @app.post("/settings/immich")
+    @app.post("/destinations/immich")
     def save_immich(
         request: Request,
         config: ConfigDep,
@@ -601,10 +1017,10 @@ def create_app(
             config.save_immich(url, public_url, api_key or None)
         except ConfigError as error:
             draft = {"url": url, "public_url": public_url}
-            return settings_page(request, config, str(error), draft=draft, failed="immich")
-        return RedirectResponse("/settings?saved=immich", status_code=303)
+            return destinations_page(request, config, str(error), draft=draft, failed="immich")
+        return RedirectResponse("/destinations?saved=immich#immich", status_code=303)
 
-    @app.post("/settings/immich/test", response_class=HTMLResponse)
+    @app.post("/destinations/immich/test", response_class=HTMLResponse)
     def test_immich(request: Request, config: ConfigDep) -> Response:
         immich = config.immich()
         key = config.immich_key()
@@ -627,11 +1043,10 @@ def create_app(
         note = f" Optional, for stacking edited copies: {', '.join(optional)}." if optional else ""
         return result(request, True, f"Connected to Immich {version}. The API key is fine.{note}")
 
-    @app.post("/settings/general")
+    @app.post("/destinations/downloads")
     def save_general(
         request: Request,
         config: ConfigDep,
-        timezone: Annotated[str, Form()],
         storage: Annotated[str, Form()] = "local",
         staging: Annotated[str, Form()] = "",
         smb_server: Annotated[str, Form()] = "",
@@ -650,18 +1065,16 @@ def create_app(
                     smb_folder,
                     smb_username,
                     smb_password or None,
-                    timezone,
                     port=smb_port,
                     domain=smb_domain,
                     test=smb_test,
                 )
             else:
-                config.save_general(staging, timezone)
+                config.save_general(staging)
         except ConfigError as error:
             draft = {
                 "storage": storage,
                 "staging": staging,
-                "timezone": timezone,
                 "smb_server": smb_server,
                 "smb_share": smb_share,
                 "smb_folder": smb_folder,
@@ -669,10 +1082,10 @@ def create_app(
                 "smb_domain": smb_domain,
                 "smb_port": smb_port,
             }
-            return settings_page(request, config, str(error), draft=draft, failed="downloads")
-        return RedirectResponse("/settings?saved=general", status_code=303)
+            return destinations_page(request, config, str(error), draft=draft, failed="downloads")
+        return RedirectResponse("/destinations?saved=downloads#downloads", status_code=303)
 
-    @app.post("/settings/storage/test", response_class=HTMLResponse)
+    @app.post("/destinations/downloads/test", response_class=HTMLResponse)
     def test_storage(request: Request, config: ConfigDep) -> Response:
         location = config.staging_location()
         if location is None:
@@ -688,103 +1101,19 @@ def create_app(
         space = f" {format_size(free)} free." if free is not None else ""
         return result(request, True, f"Can write to {location.describe()}.{space}")
 
-    @app.post("/settings/look")
-    def save_look(
-        request: Request,
-        config: ConfigDep,
-        theme: Annotated[str, Form()] = "auto",
-        colours: Annotated[str, Form()] = "spectrum",
-        bars: Annotated[str, Form()] = "striped",
-        motion: Annotated[str, Form()] = "auto",
-    ) -> Response:
-        try:
-            config.save_look(theme, colours, bars, motion)
-        except ConfigError as error:
-            return settings_page(request, config, error=str(error))
-        return RedirectResponse("/settings?saved=look#look", status_code=303)
-
-    @app.post("/updates/apply")
-    def apply_update(config: ConfigDep) -> Response:
-        """Ask the host helper to install the newest release the app itself found."""
-        known = updates.cached(config.state)
-        if known is None or not known.newer:
-            return RedirectResponse("/settings?saved=no-update#updates", status_code=303)
-        try:
-            updates.request_update(data_dir, known.latest)  # never a version from the browser
-        except ValueError as error:
-            log.warning("Update request refused: %s", error)
-            return RedirectResponse("/settings?saved=no-helper#updates", status_code=303)
-        log.warning("Update to %s requested from the web interface", known.latest)
-        return RedirectResponse("/settings?saved=update-requested#updates", status_code=303)
-
-    @app.post("/settings/updates")
-    def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:
-        updates.set_enabled(state, bool(check), clock())
-        return RedirectResponse("/settings?saved=updates", status_code=303)
-
-    @app.post("/settings/schedule")
-    def save_schedule(
-        request: Request,
-        config: ConfigDep,
-        mode: Annotated[str, Form()],
-        at: Annotated[str, Form()] = "03:00",
-        weekday: Annotated[str, Form()] = "6",
-        every_hours: Annotated[str, Form()] = "24",
-        pause_after: Annotated[str, Form()] = "3",
-    ) -> Response:
-        try:
-            config.save_schedule(mode, at, weekday, every_hours, pause_after)
-        except ConfigError as error:
-            draft = {
-                "mode": mode,
-                "at": at,
-                "weekday": weekday,
-                "every_hours": every_hours,
-                "pause_after": pause_after,
-            }
-            return settings_page(request, config, str(error), draft=draft, failed="schedule")
-        return RedirectResponse("/settings?saved=schedule", status_code=303)
-
-    @app.post("/settings/notifications")
-    def save_notifications(
-        request: Request,
-        config: ConfigDep,
-        urls: Annotated[str, Form()] = "",
-        remove: Annotated[str, Form()] = "",
-        outcomes: Annotated[list[str] | None, Form()] = None,
-    ) -> Response:
-        new_urls: str | None = "" if remove else (urls if urls.strip() else None)
-        try:
-            config.save_notifications(new_urls, outcomes or [])
-        except ConfigError as error:
-            return settings_page(request, config, error=str(error))
-        return RedirectResponse("/settings?saved=notifications", status_code=303)
-
-    @app.post("/settings/notifications/test", response_class=HTMLResponse)
-    def test_notifications(request: Request, config: ConfigDep) -> Response:
-        notifier = config.notifier()
-        if not notifier.configured:
-            return result(request, False, "Save at least one notification URL first.")
-        sent = notifier.send(
-            Message(Outcome.SUCCESS, "Test notification", ["Notifications are working."]),
-            force=True,
-        )
-        if sent:
-            return result(request, True, "Test notification sent.")
-        return result(request, False, "Could not deliver to every service. Check the URLs.")
-
     # --- sources -------------------------------------------------------------------------------
 
     def sources_page(request: Request, config: Config, error: str | None = None) -> Response:
-        accounts = {
-            s.id: config.drive_account(s.id) for s in config.sources() if s.kind == "gdrive"
-        }
+        drives = [s for s in config.sources() if s.kind == "gdrive"]
+        accounts = {s.id: config.drive_account(s.id) for s in drives}
+        folder_names = {s.id: config.drive_folder_name(s.id) for s in drives}
         return page(
             request,
             config,
             "sources.html",
             sources=config.sources(),
             accounts=accounts,
+            folder_names=folder_names,
             error=error,
             status_code=400 if error else 200,
         )
@@ -803,9 +1132,14 @@ def create_app(
     ) -> Response:
         data = await key_file.read(MAX_KEY_FILE_BYTES + 1)
         try:
-            config.add_drive_source(name, folder_id, data)
+            source_id = config.add_drive_source(name, folder_id, data)
         except ConfigError as error:
             return sources_page(request, config, error=str(error))
+        try:  # best effort: the folder may not be shared with the account yet
+            with drive_factory(folder_id.strip(), config.drive_key(source_id)) as drive:
+                config.set_drive_folder_name(source_id, drive.check_folder())
+        except (SourceError, ConfigError):
+            pass
         return RedirectResponse("/sources", status_code=303)
 
     @app.post("/sources/local")
@@ -853,13 +1187,17 @@ def create_app(
             else:
                 with drive_factory(source.location, config.drive_key(source_id)) as drive:
                     files = drive.list_archives()
+                    if drive.folder_name:
+                        config.set_drive_folder_name(source_id, drive.folder_name)
         except (SourceError, ConfigError) as error:
             return result(request, False, str(error))
+        name = config.drive_folder_name(source_id) if source.kind == "gdrive" else None
+        connected = f"Connected to the folder “{name}”." if name else "Connected."
         if not files:
-            return result(request, True, "Connected. No Takeout archives in the folder yet.")
+            return result(request, True, f"{connected} No Takeout archives in the folder yet.")
         total = sum(f.size for f in files) / 1000**3
         return result(
-            request, True, f"Connected. {len(files)} archives in the folder, {total:.1f} GB."
+            request, True, f"{connected} {len(files)} archives in the folder, {total:.1f} GB."
         )
 
     def result(request: Request, ok: bool, message: str) -> Response:
@@ -872,6 +1210,29 @@ def create_app(
         # proxies' forwarded headers are believed; anyone else's are ignored.
         app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=list(settings.trusted_proxies))
     return app
+
+
+def _export_state(
+    expected: date, exports: list[date], arrivals: list[date], today: date, schedule: Schedule
+) -> str:
+    """For the Schedule page: what happened to one expected Takeout export."""
+    later = [day for day in exports if day > expected]
+    until = later[0] if later else expected + timedelta(days=62)
+    if any(expected <= day < until for day in arrivals):
+        return "Arrived"
+    if today < expected:
+        return "Planned"
+    if today < expected + timedelta(days=schedule.wait_days):
+        return "Waiting"
+    return "Not seen"
+
+
+def _export_date(value: str) -> str:
+    """``20261001`` (the start of a Takeout export ID) as ``01 Oct 2026``."""
+    try:
+        return datetime.strptime(value[:8], "%Y%m%d").strftime("%d %b %Y")
+    except ValueError:
+        return value
 
 
 def _zone(name: str) -> ZoneInfo:

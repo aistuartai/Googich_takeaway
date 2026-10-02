@@ -14,8 +14,9 @@ from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.web.app import WebSettings, create_app
-from tests.fake_drive import ACCOUNT, FOLDER, FakeDrive, service_account_info
+from tests.fake_drive import ACCOUNT, FOLDER, FOLDER_NAME, FakeDrive, service_account_info
 from tests.fake_immich import KEY, FakeImmichServer
+from tests.test_updates import FakeGitHub
 from tests.web.test_app import ORIGIN, PASSWORD
 
 FOLDER_ID = FOLDER + "-abcdefghij"
@@ -26,6 +27,7 @@ class World:
         self.immich = FakeImmichServer()
         self.drive = FakeDrive()
         self.drive.add("a", "takeout-20261001T010203Z-001.zip", b"x" * 1000)
+        self.github = FakeGitHub()
         app = create_app(
             WebSettings(tmp_path / "state.db"),
             immich_factory=lambda url, key: ImmichClient(url, key, self.immich.transport()),
@@ -33,6 +35,7 @@ class World:
                 FOLDER, info, self.drive.transport()
             ),
             start_worker=False,
+            github_transport=self.github.transport(),
         )
         self.client = TestClient(app, follow_redirects=False)
         token = app.state.setup_token
@@ -76,7 +79,7 @@ def test_dashboard_starts_with_a_checklist(world: World) -> None:
 
 def test_immich_settings_saved_tested_and_key_never_shown(world: World) -> None:
     response = world.post(
-        "/settings/immich",
+        "/destinations/immich",
         data={
             "url": "http://immich.test:2283",
             "public_url": "https://photos.example",
@@ -84,26 +87,28 @@ def test_immich_settings_saved_tested_and_key_never_shown(world: World) -> None:
         },
     )
     assert response.status_code == 303
-    page = world.client.get("/settings").text
+    page = world.client.get("/destinations").text
     assert KEY not in page
     assert "Saved. Leave blank to keep it." in page
     assert 'href="https://photos.example"' in page  # header link uses the public address
-    assert "Connected to Immich 2.7.5. The API key is fine." in world.htmx("/settings/immich/test")
+    assert "Connected to Immich 2.7.5. The API key is fine." in world.htmx(
+        "/destinations/immich/test"
+    )
 
 
 def test_immich_test_reports_missing_permissions(world: World) -> None:
     world.immich.permissions = ["asset.upload"]
-    world.post("/settings/immich", data={"url": "http://immich.test", "api_key": KEY})
-    assert "lacks: asset.read" in world.htmx("/settings/immich/test")
+    world.post("/destinations/immich", data={"url": "http://immich.test", "api_key": KEY})
+    assert "lacks: asset.read" in world.htmx("/destinations/immich/test")
 
 
 def test_immich_test_reports_bad_key(world: World) -> None:
-    world.post("/settings/immich", data={"url": "http://immich.test", "api_key": "wrong-key"})
-    assert "rejected the API key" in world.htmx("/settings/immich/test")
+    world.post("/destinations/immich", data={"url": "http://immich.test", "api_key": "wrong-key"})
+    assert "rejected the API key" in world.htmx("/destinations/immich/test")
 
 
 def test_invalid_settings_show_errors(world: World) -> None:
-    response = world.post("/settings/immich", data={"url": "nope", "api_key": KEY})
+    response = world.post("/destinations/immich", data={"url": "nope", "api_key": KEY})
     assert response.status_code == 400
     assert "http:// or https://" in response.text
 
@@ -111,7 +116,7 @@ def test_invalid_settings_show_errors(world: World) -> None:
 def test_general_settings(world: World) -> None:
     staging = world.tmp / "staging"
     response = world.post(
-        "/settings/general", data={"staging": str(staging), "timezone": "Australia/Melbourne"}
+        "/destinations/downloads", data={"staging": str(staging), "timezone": "Australia/Melbourne"}
     )
     assert response.status_code == 303
     assert staging.is_dir()
@@ -128,10 +133,13 @@ def test_add_drive_source_test_it_and_remove_it(world: World) -> None:
     page = world.client.get("/sources").text
     assert ACCOUNT in page  # who to share the folder with
     assert "PRIVATE KEY" not in page
-    assert FOLDER_ID not in page  # only a short prefix is shown
+    assert f"<code>{FOLDER_ID}</code>" in page
+    assert f'href="https://drive.google.com/drive/folders/{FOLDER_ID}"' in page
+    assert f"<strong>{FOLDER_NAME}</strong>" in page  # looked up when the source was added
     source_id = re.search(r"/sources/(\d+)/test", page)
     assert source_id
-    assert "1 archives in the folder" in world.htmx(f"/sources/{source_id[1]}/test")
+    tested = world.htmx(f"/sources/{source_id[1]}/test")
+    assert f"Connected to the folder “{FOLDER_NAME}”. 1 archives in the folder" in tested
     world.post(f"/sources/{source_id[1]}/delete")
     assert "No sources yet." in world.client.get("/sources").text
 
@@ -168,8 +176,8 @@ def test_local_source(world: World) -> None:
 
 
 def test_dashboard_when_ready(world: World) -> None:
-    world.post("/settings/immich", data={"url": "http://immich.test", "api_key": KEY})
-    world.post("/settings/general", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
+    world.post("/destinations/immich", data={"url": "http://immich.test", "api_key": KEY})
+    world.post("/destinations/downloads", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
     folder = world.tmp / "manual"
     folder.mkdir()
     world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
@@ -183,7 +191,7 @@ def test_dashboard_when_ready(world: World) -> None:
 
 def test_schedule_saved_and_shown(world: World) -> None:
     response = world.post(
-        "/settings/schedule",
+        "/schedule",
         data={
             "mode": "weekly",
             "at": "02:30",
@@ -193,40 +201,44 @@ def test_schedule_saved_and_shown(world: World) -> None:
         },
     )
     assert response.status_code == 303
-    page = world.client.get("/settings").text
+    page = world.client.get("/schedule").text
     assert 'value="weekly" selected' in page
-    bad = world.post("/settings/schedule", data={"mode": "daily", "at": "3pm"})
+    bad = world.post("/schedule", data={"mode": "daily", "at": "3pm"})
     assert bad.status_code == 400
     assert "24-hour" in bad.text
 
 
-def test_notifications_saved_sealed_and_tested(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from googich_takeaway.notify import Message, Notifier
-
-    sent: list[Message] = []
-
-    def capture(self: Notifier, message: Message, force: bool = False) -> bool:
-        sent.append(message)
-        return True
-
-    monkeypatch.setattr(Notifier, "send", capture)
-    secret = "ntfys://tok3n@ntfy.example/photos"  # noqa: S105 - test value
-    response = world.post(
-        "/settings/notifications", data={"urls": secret, "outcomes": ["failed", "paused"]}
-    )
+def test_notifications_are_named_listed_tested_and_removed(world: World) -> None:
+    secret = "json://tok3n@127.0.0.1:9/hook"  # noqa: S105 - test value; nothing listens there
+    response = world.post("/notifications/add", data={"name": "Phone", "url": secret})
     assert response.status_code == 303
-    page = world.client.get("/settings").text
+    page = world.client.get("/notifications").text
     assert "tok3n" not in page
-    assert "Saved. Leave blank to keep them." in page
-    assert "Test notification sent." in world.htmx("/settings/notifications/test")
-    assert sent[0].title == "Test notification"
+    assert '<input name="url" type="text"' in page
+    assert "<strong>Phone</strong>" in page
+    assert '<td class="muted">JSON</td>' in page
+    target = re.search(r"/notifications/([0-9a-f]{8})/test", page)
+    assert target
+    tested = world.htmx(f"/notifications/{target[1]}/test")
+    assert "Not delivered:" in tested
+    assert "tok3n" not in tested
+    duplicate = world.post("/notifications/add", data={"name": "phone", "url": secret})
+    assert duplicate.status_code == 400
+    assert "already a notification called" in duplicate.text
+    wrong = world.post("/notifications/add", data={"name": "HA", "url": "http://ha.local/x"})
+    assert wrong.status_code == 400
+    assert "hassio://" in wrong.text
+    assert 'value="HA"' in wrong.text  # the name is kept, the URL is not
+    assert world.post("/notifications", data={"outcomes": ["failed"]}).status_code == 303
+    assert 'value="failed" checked' in world.client.get("/notifications").text
+    world.post(f"/notifications/{target[1]}/remove")
+    assert "No notifications yet." in world.client.get("/notifications").text
+    assert "Add a notification first." in world.htmx("/notifications/test")
 
 
 def test_run_now_and_resume(world: World) -> None:
-    world.post("/settings/immich", data={"url": "http://immich.test", "api_key": KEY})
-    world.post("/settings/general", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
+    world.post("/destinations/immich", data={"url": "http://immich.test", "api_key": KEY})
+    world.post("/destinations/downloads", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
     folder = world.tmp / "manual"
     folder.mkdir()
     world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
@@ -302,7 +314,7 @@ def test_pages_disable_htmx_eval(world: World) -> None:
 
 
 def test_cleanup_page(world: World) -> None:
-    world.post("/settings/general", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
+    world.post("/destinations/downloads", data={"staging": str(world.tmp / "s"), "timezone": "UTC"})
     (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").write_bytes(b"zip")
     page = world.client.get("/cleanup").text
     assert "Not imported completely yet." in page
@@ -332,13 +344,15 @@ def test_smb_download_folder_saved_through_the_form(
         "smb_password": SMB_LOGIN,
         "smb_port": "445",
     }
-    assert world.post("/settings/general", data=form).status_code == 303
-    page = world.client.get("/settings").text
+    assert world.post("/destinations/downloads", data=form).status_code == 303
+    page = world.client.get("/destinations").text
     assert SMB_LOGIN not in page
     assert 'value="smb" checked' in page
-    assert "Can write to \\\\nas.local\\Photos\\takeout" in world.htmx("/settings/storage/test")
+    assert "Can write to \\\\nas.local\\Photos\\takeout" in world.htmx(
+        "/destinations/downloads/test"
+    )
 
-    bad = world.post("/settings/general", data={**form, "smb_password": "wrong"})
+    bad = world.post("/destinations/downloads", data={**form, "smb_password": "wrong"})
     assert bad.status_code == 400
     assert "LOGON_FAILURE" in bad.text
 
@@ -361,7 +375,7 @@ def test_update_banner_and_setting(world: World) -> None:
             datetime.now(UTC),
         )
     assert "Version 9.9.9 is available" in world.client.get("/").text
-    world.post("/settings/updates", data={})  # switch the check off
+    world.post("/updates/daily", data={})  # switch the check off
     assert "Version 9.9.9 is available" not in world.client.get("/").text
 
 
@@ -378,20 +392,19 @@ def test_failed_smb_save_keeps_what_was_typed_except_the_password(
         "smb_share": "GoogichDump", "smb_folder": "takeout", "smb_username": "googich",
         "smb_password": "typed-but-wrong", "smb_domain": "HOME", "smb_port": "4455",
     }  # fmt: skip
-    response = world.post("/settings/general", data=form)
+    response = world.post("/destinations/downloads", data=form)
     assert response.status_code == 400
     page = response.text
     for value in ("optimus.local", "GoogichDump", "takeout", "googich", "HOME", "4455"):
         assert f'value="{value}"' in page
     assert 'value="smb" checked' in page
-    assert '<option value="Australia/Melbourne" selected>' in page
     assert "typed-but-wrong" not in page
     assert "Enter the password again" in page
 
 
 def test_failed_schedule_save_keeps_what_was_typed(world: World) -> None:
     response = world.post(
-        "/settings/schedule",
+        "/schedule",
         data={
             "mode": "weekly",
             "at": "25:99",
@@ -440,7 +453,7 @@ def test_no_helper_means_no_update_button(world: World) -> None:
     page = world.client.get("/").text
     assert "Version 9.9.9 is available" in page
     assert "Update now" not in page
-    assert world.post("/updates/apply").headers["location"].endswith("no-helper#updates")
+    assert world.post("/updates/apply").headers["location"].endswith("/updates?saved=no-helper")
 
 
 def test_update_button_requests_the_version_the_app_found(world: World) -> None:
@@ -455,7 +468,7 @@ def test_update_button_requests_the_version_the_app_found(world: World) -> None:
         },  # a browser-supplied version is ignored
         headers=ORIGIN,
     )
-    assert response.headers["location"].endswith("update-requested#updates")
+    assert response.headers["location"].endswith("/updates?saved=update-requested")
     assert (folder / "request.json").read_text() == '{"version": "9.9.9"}'
 
 
@@ -473,3 +486,137 @@ def test_update_needs_csrf(world: World) -> None:
     folder = _helper(world)
     assert world.client.post("/updates/apply", headers=ORIGIN).status_code == 403
     assert not (folder / "request.json").exists()
+
+
+def _ready(world: World) -> None:
+    world.post(
+        "/destinations/immich",
+        data={"url": "http://immich.test", "public_url": "https://photos.example", "api_key": KEY},
+    )
+    world.post("/destinations/downloads", data={"staging": str(world.tmp / "s")})
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    world.post("/sources/local", data={"name": "Manual", "path": str(folder)})
+
+
+def test_check_now_from_settings(world: World) -> None:
+    response = world.post("/updates/check")
+    assert response.headers["location"].endswith("/updates?saved=check-newer")
+    assert world.github.calls == 1
+    page = world.client.get("/updates?saved=check-newer").text
+    assert "Version 9.9.9 is available." in page
+    assert "Update to 9.9.9" not in page  # no helper on this host
+    assert "<code>compose.yaml</code> to <code>9.9.9</code>" in page
+    _helper(world)
+    assert "Update to 9.9.9" in world.client.get("/updates").text
+    again = world.post("/updates/check")
+    assert again.headers["location"].endswith("/updates?saved=check-wait")
+    assert world.github.calls == 1
+
+
+def test_check_now_reports_failure_and_needs_csrf(world: World) -> None:
+    assert world.client.post("/updates/check", headers=ORIGIN).status_code == 403
+    assert world.github.calls == 0
+    world.github.status = 500
+    response = world.post("/updates/check")
+    assert response.headers["location"].endswith("/updates?saved=check-failed")
+    assert (
+        "Could not get the latest release" in world.client.get("/updates?saved=check-failed").text
+    )
+
+
+def test_time_zone_saved_in_settings(world: World) -> None:
+    response = world.post("/settings/timezone", data={"timezone": "Australia/Melbourne"})
+    assert response.status_code == 303
+    assert '<option value="Australia/Melbourne" selected>' in world.client.get("/settings").text
+    assert world.post("/settings/timezone", data={"timezone": "Mars/Base"}).status_code == 400
+
+
+def test_menus(world: World) -> None:
+    page = world.client.get("/destinations").text
+    assert 'id="immich"' in page
+    assert 'id="downloads"' in page
+    nav = page[page.index('<nav aria-label="Main">') : page.index("</nav>")]
+    configuration, help_menu = nav.split('<details class="nav-menu" name="nav-menus">')[1:3]
+    for path in ("/sources", "/destinations", "/schedule", "/notifications"):
+        assert f'href="{path}"' in configuration
+    for path in ("/dashboard/configure", "/cleanup", "/settings"):
+        assert f'href="{path}"' in configuration
+    for path in ("/help", "/updates", "/logs", "/about"):
+        assert f'href="{path}"' in help_menu
+    assert "/help/takeout" not in help_menu
+    assert "Immich ↗" not in nav
+    assert nav.count('name="nav-menus"') == 2  # one menu open at a time
+    settings = world.client.get("/settings").text
+    for section in ("timezone", "look"):
+        assert f'id="{section}"' in settings
+    for section in ("immich", "schedule", "notifications", "updates"):
+        assert f'id="{section}"' not in settings
+    for path, section in (("/schedule", "schedule"), ("/notifications", "services")):
+        assert f'id="{section}"' in world.client.get(path).text
+    assert 'id="updates"' in world.client.get("/updates").text
+
+
+def test_dashboard_defaults(world: World) -> None:
+    _ready(world)
+    page = world.client.get("/").text
+    assert 'class="journey"' in page
+    assert (
+        '<a class="station-icon" href="https://photos.example" target="_blank" '
+        'rel="noopener noreferrer"' in page
+    )  # the Immich icon opens Immich
+    assert page.count('<a href="/cleanup#') == 2  # under Google Drive and the download folder
+    assert '<a class="station-icon" href="/sources"' in page
+    assert '<a class="station-icon" href="/destinations#downloads"' in page
+    assert (
+        'href="https://photos.example" target="_blank" rel="noopener noreferrer">Open Immich'
+        in page
+    )
+    assert "<h2>Recent runs</h2>" in page
+    for summary in ("sum-sources", "sum-destinations", "sum-cleanup"):
+        assert f'id="{summary}"' not in page
+    assert page.index("<h2>Recent runs</h2>") < page.index("<summary>Configure</summary>")
+
+
+def test_dashboard_items_can_be_chosen(world: World) -> None:
+    _ready(world)
+    form = {"items": ["sources", "destinations", "cleanup"]}
+    assert world.post("/dashboard/items", data=form).status_code == 303
+    page = world.client.get("/").text
+    assert 'class="journey"' not in page
+    assert "<h2>Recent runs</h2>" not in page
+    for summary in ("sum-sources", "sum-destinations", "sum-cleanup"):
+        assert f'id="{summary}"' in page
+    assert 'href="/cleanup">Go to Cleanup' in page
+    assert "Run now" in page  # always there
+    assert 'name="items" value="journey" >' in page
+    assert 'name="items" value="cleanup" checked>' in page
+    assert world.post("/dashboard/items", data={"items": ["nope"]}).status_code == 400
+    saved = world.post("/dashboard/items", data={"items": ["runs"], "back": "/dashboard/configure"})
+    assert saved.headers["location"] == "/dashboard/configure?saved=1"
+    configure = world.client.get("/dashboard/configure").text
+    assert 'name="items" value="runs" checked>' in configure
+    assert (
+        world.post("/dashboard/items", data={"back": "https://evil.example"}).headers["location"]
+        == "/"
+    )
+    world.post("/dashboard/items", data={})
+    page = world.client.get("/").text
+    assert 'id="sum-cleanup"' not in page
+    assert "Run now" in page
+
+
+def test_dashboard_counts_what_can_be_cleaned_up(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    _ready(world)
+    world.post("/dashboard/items", data={"items": ["cleanup"]})
+    name = "takeout-20261001T010203Z-001.zip"
+    (world.tmp / "s" / name).write_bytes(b"z" * 2_500_000)
+    assert "Nothing</p>" in world.client.get("/").text
+    with State(world.tmp / "state.db") as state:
+        key = cleanup.export_key("20261001T010203Z", [(name, 2_500_000)])
+        state.mark_export_complete(key, "20261001T010203Z", "{}", datetime.now(UTC))
+    page = world.client.get("/").text
+    assert '<p class="summary-big">2.5 MB</p>' in page
+    assert "2.5 MB in the download folder (1 export)" in page

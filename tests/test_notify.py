@@ -57,3 +57,49 @@ def test_bad_url_rejected_without_echoing_it(config: Config) -> None:
     with pytest.raises(ConfigError, match="line 2") as caught:
         config.save_notifications("ntfys://example.invalid/t\nbogus://secret-token", ["failed"])
     assert "secret-token" not in str(caught.value)
+
+
+def test_named_notifications(tmp_path: Path) -> None:
+    config = Config(State(tmp_path / "state.db"), SecretBox(b"k" * 32), lambda: NOW)
+    first = config.add_notification_target("Phone", "ntfys://ntfy.sh/topic-one")
+    config.add_notification_target("Home Assistant", "hassio://ha.local:8123/abc.def.ghi")
+    listed = config.notification_targets()
+    assert [(t.name, t.service) for t in listed] == [
+        ("Phone", "ntfy"),
+        ("Home Assistant", "HomeAssistant"),
+    ]
+    assert config.remove_notification_target(first)
+    assert [t.name for t in config.notification_targets()] == ["Home Assistant"]
+    with pytest.raises(ConfigError, match="hassio://"):
+        config.add_notification_target("Web", "https://ha.local:8123/api")
+    with pytest.raises(ConfigError, match="short name"):
+        config.add_notification_target(" ", "ntfys://ntfy.sh/t")
+
+
+def test_saved_urls_from_before_names_are_kept_and_named(tmp_path: Path) -> None:
+    box = SecretBox(b"k" * 32)
+    state = State(tmp_path / "state.db")
+    urls = "ntfys://ntfy.sh/a\nntfys://ntfy.sh/b\nhassio://ha.local:8123/abc.def.ghi"
+    state.set_sealed("notify.urls", box.seal("notify.urls", urls.encode()), NOW)
+    config = Config(state, box, lambda: NOW)
+    names = [t.name for t in config.notification_targets()]
+    assert names == ["ntfy", "ntfy 2", "HomeAssistant"]
+    assert state.get_sealed("notify.urls") is None
+    assert config.notifier().configured
+
+
+def test_failed_delivery_gives_the_services_reason() -> None:
+    from googich_takeaway.notify import deliver
+
+    ok, reasons = deliver(["json://127.0.0.1:9/"], Message(Outcome.SUCCESS, "Test"))
+    assert ok is False
+    assert reasons
+
+
+def test_home_assistant_test_says_where_it_went() -> None:
+    from googich_takeaway.notify import delivery_note
+
+    assert "mobile_app_pixel" in delivery_note("hassio://ha.local:8123/a.b.c/mobile_app_pixel")
+    assert "mobile_app_pixel" in delivery_note("hassio://ha.local:8123/a.b.c?to=mobile_app_pixel")
+    assert "the bell" in delivery_note("hassio://ha.local:8123/a.b.c")
+    assert delivery_note("ntfys://ntfy.sh/topic") == ""

@@ -388,6 +388,21 @@ class State:
             )
         return len(gone)
 
+    def download_times(self) -> list[datetime]:
+        """When each archive was downloaded, oldest first."""
+        rows = self._db.execute("SELECT DISTINCT downloaded_at FROM downloads ORDER BY 1")
+        return [datetime.fromisoformat(row[0]) for row in rows]
+
+    def download_dates(self) -> tuple[datetime | None, datetime | None]:
+        """When the first and the latest archive were downloaded, from any source."""
+        row = self._db.execute(
+            "SELECT min(downloaded_at), max(downloaded_at) FROM downloads"
+        ).fetchone()
+        return (
+            datetime.fromisoformat(row[0]) if row[0] else None,
+            datetime.fromisoformat(row[1]) if row[1] else None,
+        )
+
     def downloads(self, source: str) -> list[DownloadRecord]:
         rows = self._db.execute(
             "SELECT * FROM downloads WHERE source = ? ORDER BY downloaded_at, name", (source,)
@@ -438,6 +453,11 @@ class State:
 
     def delete_all_sessions(self) -> None:
         self._db.execute("DELETE FROM web_sessions")
+
+    def clear_password(self) -> None:
+        """Forget the web password and log everyone out; the next start offers setup again."""
+        self._db.execute("DELETE FROM web_user")
+        self.delete_all_sessions()
 
     # --- settings, secrets and sources ----------------------------------------------------------
 

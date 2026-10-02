@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Destinations | Googich Takeaway{% endblock %}
+{% block content %}
+{%- set di = draft if failed == 'immich' else {} -%}
+{%- set dd = draft if failed == 'downloads' else {} -%}
+{%- set smb = general.smb -%}
+<div class="page-head"><h1>Destinations</h1>
+  <p class="page-links">{% if immich_link %}<a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Immich ↗</a> {% endif %}<a href="/help/destinations">Guide: Immich and the download folder</a></p>
+</div>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
+
+<section class="settings-group" id="immich">
+  <header><h2>Immich</h2><p>Where photos go. The app adds only what Immich does not already have.</p><p><a href="/help/destinations#immich">Guide: connecting Immich</a></p></header>
+  <div class="card">
+  <form method="post" action="/destinations/immich">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Immich address
+      <input name="url" value="{{ di.get('url', immich.url or '') }}" placeholder="http://immich:2283" required>
+      <small>The address this app uses to reach Immich. A local network address is fine.</small>
+    </label>
+    <label>Public address (optional)
+      <input name="public_url" value="{{ di.get('public_url', immich.public_url or '') }}" placeholder="https://photos.example.com">
+      <small>Used only for links in this interface, if you open Immich at a different address.</small>
+    </label>
+    <label>API key
+      <input name="api_key" type="password" autocomplete="off" placeholder="{{ 'Enter the key again: it is not kept after a failed save.' if di and not immich.has_key else ('Saved. Leave blank to keep it.' if immich.has_key else 'Paste a new API key') }}">
+      <small>In Immich: Account Settings → API Keys. It needs the <code>asset.upload</code> and <code>asset.read</code> permissions. Stored encrypted; it is never shown again.</small>
+    </label>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/destinations/immich/test" hx-target="#immich-test" hx-swap="innerHTML">Test connection</button>
+    </div>
+    <div id="immich-test" aria-live="polite"></div>
+  </form>
+  </div>
+</section>
+
+<section class="settings-group" id="downloads">
+  <header><h2>Download folder</h2><p>Where Takeout archives wait between download and import. It needs room for one complete export.</p><p><a href="/help/destinations#download-folder">Guide: the download folder</a></p></header>
+  <div class="card">
+  <form method="post" action="/destinations/downloads">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <fieldset>
+      <legend>Keep downloaded archives in</legend>
+      <label class="check"><input type="radio" name="storage" value="local" {{ 'checked' if dd.get('storage', general.storage) == 'local' }}> A folder on this server</label>
+      <label class="check"><input type="radio" name="storage" value="smb" {{ 'checked' if dd.get('storage', general.storage) == 'smb' }}> A folder on an SMB share (NAS or file server)</label>
+    </fieldset>
+    <div class="storage-local">
+      <label>Local folder
+        <input name="staging" value="{{ dd.get('staging', general.staging or '') }}" placeholder="/data/staging">
+        <small>A folder on the server running this app. It needs room for one complete export.</small>
+      </label>
+    </div>
+    <div class="storage-smb">
+      <div class="row">
+        <label>Server <input name="smb_server" value="{{ dd.get('smb_server', smb.server if smb else '') }}" placeholder="nas.local"></label>
+        <label>Share <input name="smb_share" value="{{ dd.get('smb_share', smb.share if smb else '') }}" placeholder="Photos"></label>
+        <label>Folder in the share <input name="smb_folder" value="{{ dd.get('smb_folder', smb.folder if smb else '') }}" placeholder="takeout"></label>
+      </div>
+      <div class="row">
+        <label>User name <input name="smb_username" value="{{ dd.get('smb_username', smb.username if smb else '') }}" autocomplete="off"></label>
+        <label>Password <input name="smb_password" type="password" autocomplete="off" placeholder="{{ 'Enter the password again: it is not kept after a failed save.' if dd and not has_smb_password else ('Saved. Leave blank to keep it.' if has_smb_password else '') }}"></label>
+      </div>
+      <div class="row">
+        <label>Domain (optional) <input name="smb_domain" value="{{ dd.get('smb_domain', smb.domain if smb else '') }}"></label>
+        <label>Port <input name="smb_port" type="number" min="1" max="65535" value="{{ dd.get('smb_port', smb.port if smb else 445) }}"></label>
+      </div>
+      <small>The app connects to the share itself; nothing needs mounting. The folder is created if missing, and a test file is written and removed before the settings are saved. The password is stored encrypted and never shown again. Use an account that can reach only this folder.</small>
+    </div>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="button" class="secondary" hx-post="/destinations/downloads/test" hx-target="#storage-test">Test download folder</button>
+    </div>
+    <div id="storage-test" aria-live="polite"></div>
+  </form>
+  </div>
+</section>
+{% endblock %}

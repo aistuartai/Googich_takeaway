@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | Googich Takeaway{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+{% if saved %}<p class="result ok" role="status">Saved. <a href="/">Open the dashboard</a>.</p>{% endif %}
+<section class="card narrow-wide">
+  <p>Choose what the dashboard shows. The same choices are under <strong>Configure</strong> at the foot of the dashboard.</p>
+  <form method="post" action="/dashboard/items">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <input type="hidden" name="back" value="/dashboard/configure">
+      <fieldset>
+        <legend>Show on the dashboard</legend>
+        {% for value, label in dashboard_items.items() %}
+        <label class="check"><input type="checkbox" name="items" value="{{ value }}" {{ 'checked' if value in items }}> {{ label }}</label>
+        {% endfor %}
+      </fieldset>
+      <small>The run controls are always shown.</small>
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
+</section>
+{% endblock %}

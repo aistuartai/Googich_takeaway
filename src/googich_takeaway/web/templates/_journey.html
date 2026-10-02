@@ -1,32 +1,52 @@
-{%- from "_icons.html" import cloud, folder, gallery -%}
-{#- The journey: Google Drive to the download folder to Immich. The legs animate while files move. -#}
+{%- from "_icons.html" import cloud, folder, gallery, prints -%}
+{#- The journey: Google Photos to Google Drive (Takeout), to the download folder, to Immich.
+    The legs animate while files move. -#}
 {%- set moving_down = status.running and progress.stage and progress.stage.value == 'download' -%}
 {%- set moving_up = status.running and progress.stage and progress.stage.value == 'upload' -%}
+{%- set photos = journey.photos -%}
 <section class="journey" aria-label="Where your photos are">
+  <div class="station station-photos">
+    <a class="station-icon" href="https://photos.google.com/" target="_blank" rel="noopener noreferrer" title="Open Google Photos">{{ prints() }}<span class="visually-hidden">Open Google Photos (new tab)</span></a>
+    <p class="station-name">Google Photos</p>
+    {% if photos %}
+    <p class="station-figure">{{ '{:,}'.format(photos['items']) }}</p>
+    <p class="station-note">{{ 'item' if photos['items'] == 1 else 'items' }} in the latest export, {{ photos.export_id[:8]|export_date }}</p>
+    {% else %}
+    <p class="station-figure">?</p>
+    <p class="station-note">counted when the first export is imported</p>
+    {% endif %}
+    <p class="station-link"><a href="/help/takeout">Takeout setup</a></p>
+  </div>
+  <div class="leg leg-0" aria-hidden="true">
+    <span class="leg-label">Takeout</span>
+  </div>
   <div class="station station-drive">
-    <div class="station-icon">{{ cloud() }}</div>
+    <a class="station-icon" href="/sources" title="Sources">{{ cloud() }}<span class="visually-hidden">Sources</span></a>
     <p class="station-name">Google Drive</p>
     <p class="station-figure">{{ journey.drive_count }}</p>
     <p class="station-note">{{ 'archive' if journey.drive_count == 1 else 'archives' }} downloaded so far{% if journey.drive_bytes %}, {{ journey.drive_bytes|size }}{% endif %}</p>
+    <p class="station-link"><a href="/cleanup#drive">Cleanup</a></p>
   </div>
   <div class="leg leg-1{{ ' flowing' if moving_down }}" aria-hidden="true">
     <span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
     {% if moving_down %}<span class="leg-label">downloading</span>{% endif %}
   </div>
   <div class="station station-folder">
-    <div class="station-icon">{{ folder() }}</div>
+    <a class="station-icon" href="/destinations#downloads" title="Download folder settings">{{ folder() }}<span class="visually-hidden">Download folder settings</span></a>
     <p class="station-name">Download folder</p>
     <p class="station-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }}</p>
     <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% endif %}</p>
+    <p class="station-link"><a href="/cleanup#folder">Cleanup</a></p>
   </div>
   <div class="leg leg-2{{ ' flowing' if moving_up }}" aria-hidden="true">
     <span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
     {% if moving_up %}<span class="leg-label">uploading</span>{% endif %}
   </div>
   <div class="station station-immich">
-    <div class="station-icon">{{ gallery() }}</div>
+    {% if immich_link %}<a class="station-icon" href="{{ immich_link }}" target="_blank" rel="noopener noreferrer" title="Open Immich">{{ gallery() }}<span class="visually-hidden">Open Immich (new tab)</span></a>{% else %}<div class="station-icon">{{ gallery() }}</div>{% endif %}
     <p class="station-name">Immich</p>
     <p class="station-figure">{{ '{:,}'.format(journey.immich_count) }}</p>
-    <p class="station-note">{{ 'photo or video' if journey.immich_count == 1 else 'photos and videos' }} from Takeout in Immich</p>
+    <p class="station-note">{{ 'photo or video' if journey.immich_count == 1 else 'photos and videos' }} from Takeout in Immich{% if photos %}; {{ '{:,}'.format(photos.in_immich) }} of the latest export's {{ '{:,}'.format(photos['items']) }}{% endif %}</p>
+    {% if immich_link %}<p class="station-link"><a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Open Immich ↗</a></p>{% endif %}
   </div>
 </section>

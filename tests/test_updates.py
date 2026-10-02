@@ -116,3 +116,30 @@ def test_damaged_status_file_means_no_helper(tmp_path: Path) -> None:
     (tmp_path / "updater").mkdir()
     (tmp_path / "updater" / "status.json").write_text("not json")
     assert updates.helper_status(tmp_path) is None
+
+
+def test_check_now_asks_straight_away_but_at_most_once_a_minute(state: State) -> None:
+    github = FakeGitHub()
+    updates.check_if_due(state, lambda: NOW, github.transport())
+    later = NOW + timedelta(minutes=5)
+    assert updates.check_now(state, lambda: later, github.transport()) is updates.CheckResult.NEWER
+    assert github.calls == 2  # the daily check's result did not stop it
+    soon = later + timedelta(seconds=30)
+    assert updates.check_now(state, lambda: soon, github.transport()) is updates.CheckResult.WAIT
+    assert github.calls == 2
+
+
+def test_check_now_says_when_up_to_date_or_unreachable(state: State) -> None:
+    from googich_takeaway import __version__
+
+    current = FakeGitHub({"tag_name": f"v{__version__}", "prerelease": False, "draft": False})
+    result = updates.check_now(state, lambda: NOW, current.transport())
+    assert result is (
+        updates.CheckResult.CURRENT
+        if updates.parse_version(__version__)
+        else updates.CheckResult.NEWER
+    )
+    broken = FakeGitHub(status=500)
+    later = NOW + timedelta(minutes=2)
+    assert updates.check_now(state, lambda: later, broken.transport()) is updates.CheckResult.FAILED
+    assert updates.cached(state) is not None  # the last good answer is kept

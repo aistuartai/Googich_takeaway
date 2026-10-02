@@ -3,9 +3,12 @@
 Self-hosted tool that moves your Google Photos library into [Immich](https://immich.app/), using
 Google Takeout archives, and keeps it topped up on a schedule.
 
-> **Status: early releases (0.2).** It works end to end and has been tested against real Google
+> **Status: early releases (0.3).** It works end to end and has been tested against real Google
 > Drive, Immich and SMB, but it is young. Try it on a test Immich user first, and back up your
 > Immich database before the first real import.
+
+![The dashboard: Google Photos, Google Drive, the download folder and Immich, with run
+controls, a cleanup summary and recent runs](assets/dashboard.png)
 
 ## What it does
 
@@ -31,7 +34,7 @@ Requirements: Docker with Compose, an Immich server, and space for one full Take
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.2.1/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.0/docker/compose.yaml
 less compose.yaml   # read what you are about to run
 
 # A data folder, and a master key that encrypts the credentials you enter later. Both belong to
@@ -71,58 +74,29 @@ The app logs a reminder when it sees a proxy it has not been told about. In `com
 
 Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are believed.
 
-## First-time setup in the web interface
+## Setting it up
 
-The dashboard shows a checklist until these are done.
+The dashboard shows a checklist until the essentials are done, and **Help → Guide** in the app
+explains every part. The same guide is in [`src/googich_takeaway/docs`](src/googich_takeaway/docs/README.md):
 
-1. **Settings → Immich.** Enter the Immich address the app can reach, for example
-   `http://immich:2283`, and an API key. Create the key in Immich under *Account Settings → API
-   Keys* with the `asset.upload` and `asset.read` permissions (`stack.create` is optional). Press
-   **Test connection**.
-2. **Settings → Downloads.** Choose a local folder (for example `/data/staging`) or an SMB share,
-   and your time zone. The folder is tested before it is saved.
-3. **Sources.** Add your Google Drive Takeout folder (see below), or a local folder of archives
-   you downloaded yourself. Press **Test**.
-4. **Settings → Schedule and Notifications.** Choose how often to run, and where to send
-   notifications. Or press **Run now** on the dashboard.
-
-### Connecting Google Drive
-
-The app reads your Takeout folder with a Google Cloud *service account* that can see only the one
-folder you share with it.
-
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable
-   the **Google Drive API** for it.
-2. Under **IAM & Admin → Service Accounts**, create a service account. It needs no roles.
-3. On its **Keys** tab, add a JSON key. Upload this file in the web interface (Sources → Add a
-   Google Drive folder), then delete your downloaded copy. Treat it like a password.
-4. In Google Drive, open the folder Takeout writes to, choose **Share**, and add the service
-   account's address (shown on the Sources page; it ends in `iam.gserviceaccount.com`) as
-   **Viewer**. Keep *General access* set to *Restricted*.
-5. The folder ID is the last part of the folder's address, after `/folders/`.
-
-If Google says key creation is disabled, your account belongs to a Google Cloud organisation that
-blocks service account keys. Use a project under a personal account, or ask the organisation's
-administrator.
-
-### Scheduling Google Takeout
-
-In [Google Takeout](https://takeout.google.com/), select only **Google Photos**, choose **Add to
-Drive** as the delivery method and a **scheduled export**, and pick `.tgz` or `.zip`. `.tgz` suits
-SMB shares better. Each scheduled export is a complete copy of your library; the app imports only
-what is new.
+- [First-time setup](src/googich_takeaway/docs/first-setup.md), in order
+- [Setting up Google Takeout](src/googich_takeaway/docs/takeout.md): a scheduled export to Drive
+- [Connecting Google Drive](src/googich_takeaway/docs/google-drive.md): a read-only service account
+- [Immich and the download folder](src/googich_takeaway/docs/destinations.md), including SMB shares
+- [Troubleshooting](src/googich_takeaway/docs/troubleshooting.md)
 
 ## Updating
 
-The app checks GitHub once a day and shows a banner when a new release is out (switch this off in
-Settings → Updates). It never updates itself on its own.
+The app checks GitHub once a day and shows a banner on every page when a new release is out
+(switch this off in Help → Updates). **Check now** in Help → Updates asks GitHub straight
+away. The app never updates itself on its own.
 
 To update by hand, pull the new image and restart. If `compose.yaml` names a fixed version, such
-as `ghcr.io/aistuartai/googich_takeaway:0.1.1` (recommended, so updates happen only when you
+as `ghcr.io/aistuartai/googich_takeaway:0.3.0` (recommended, so updates happen only when you
 choose), change that version first:
 
 ```bash
-sed -i 's/googich_takeaway:0.2.0/googich_takeaway:0.2.1/' compose.yaml
+sed -i 's/googich_takeaway:0.2.1/googich_takeaway:0.3.0/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 
@@ -139,14 +113,14 @@ then:
 4. pulls the image, restarts the container and waits for it to report the new version,
 5. restores the previous version automatically if anything fails.
 
-Progress and the result appear in the banner and under Settings → Updates.
+Progress and the result appear in the banner and under Help → Updates.
 
 To install it, as root on the Docker host, in the folder holding `compose.yaml` (for example
 `/opt/googich`), using the release you are running:
 
 ```bash
 cd /opt/googich
-V=0.2.1
+V=0.3.0
 base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
 install -d -m 755 /usr/local/lib/googich-updater
 curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
@@ -204,12 +178,6 @@ as a backup, but not someone who can read the whole data folder.
 
 Logs are written as JSON lines in `data/logs/` and pass through a filter that removes keys,
 tokens and passwords before anything is written.
-
-## Download folder on a NAS
-
-Settings → Downloads can keep downloaded archives in a folder on an SMB share (a NAS or Windows
-file server). The app connects to the share itself, so nothing has to be mounted and the container
-needs no extra privileges. Use an account that can reach only that folder.
 
 ## Command-line tools
 

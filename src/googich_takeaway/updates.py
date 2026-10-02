@@ -1,10 +1,11 @@
 """Checking GitHub for a newer release.
 
-Once a day, while the update check is switched on, the app asks GitHub for the latest release of
-this project and compares it with its own version. A newer release shows a banner with the
-release notes link and how to update. Nothing is ever downloaded or installed automatically: an
-app holding Google and Immich credentials should not replace its own code. Pre-releases are
-ignored. The request is anonymous and sends nothing but a User-Agent naming the app version.
+Once a day while the update check is switched on, and whenever the user presses Check now, the
+app asks GitHub for the latest release of this project and compares it with its own version. A
+newer release shows a banner with the release notes link and how to update. Nothing is ever
+downloaded or installed automatically: an app holding Google and Immich credentials should not
+replace its own code. Pre-releases are ignored. The request is anonymous and sends nothing but a
+User-Agent naming the app version.
 """
 
 import json
@@ -12,6 +13,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
 
 import httpx
@@ -22,6 +24,7 @@ from googich_takeaway.state import State
 REPOSITORY = "aistuartai/Googich_takeaway"
 LATEST_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 CHECK_EVERY = timedelta(hours=24)
+MANUAL_GAP = timedelta(minutes=1)
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -88,6 +91,39 @@ def check_if_due(
     if attempted and now - datetime.fromisoformat(attempted) < timedelta(hours=1):
         return known  # failed recently; do not hammer GitHub
     state.set_setting("updates.attempted", now.isoformat(), now)
+    return _fetch(state, now, transport) or known
+
+
+class CheckResult(StrEnum):
+    NEWER = "newer"
+    CURRENT = "current"
+    FAILED = "failed"
+    WAIT = "wait"
+
+
+def check_now(
+    state: State,
+    clock: Callable[[], datetime],
+    transport: httpx.BaseTransport | None = None,
+) -> CheckResult:
+    """Ask GitHub straight away, when the user presses Check now. Never raises.
+
+    At most one manual check a minute, so repeated presses cannot use up GitHub's limit of 60
+    anonymous requests an hour, which is shared by everything on this network's address.
+    """
+    now = clock()
+    last = state.get_setting("updates.manual")
+    if last and now - datetime.fromisoformat(last) < MANUAL_GAP:
+        return CheckResult.WAIT
+    state.set_setting("updates.manual", now.isoformat(), now)
+    info = _fetch(state, now, transport)
+    if info is None:
+        return CheckResult.FAILED
+    return CheckResult.NEWER if info.newer else CheckResult.CURRENT
+
+
+def _fetch(state: State, now: datetime, transport: httpx.BaseTransport | None) -> UpdateInfo | None:
+    """The latest release, saved for the banner; None if GitHub could not say."""
     try:
         with httpx.Client(timeout=10.0, transport=transport) as client:
             response = client.get(
@@ -98,17 +134,17 @@ def check_if_due(
                 },
             )
         if response.status_code == 404:
-            return known  # no release published yet
+            return None  # no release published yet
         response.raise_for_status()
         data = response.json()
     except (httpx.HTTPError, ValueError):
-        return known
+        return None
     if (
         data.get("prerelease")
         or data.get("draft")
         or not parse_version(str(data.get("tag_name", "")))
     ):
-        return known
+        return None
     url = str(data.get("html_url") or f"https://github.com/{REPOSITORY}/releases")
     if not url.startswith(f"https://github.com/{REPOSITORY}/"):
         url = f"https://github.com/{REPOSITORY}/releases"  # only ever link to this project

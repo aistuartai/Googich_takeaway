@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Cleanup | Googich Takeaway{% endblock %}
 {% block content %}
-<h1>Cleanup</h1>
+<div class="page-head"><h1>Cleanup</h1><a class="help-link" href="/help/cleanup">Guide: Cleanup</a></div>
 {% if message %}<p class="result ok" role="status">{{ message }}</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if running %}<p class="muted">A run is going; deleting is paused until it finishes.</p>{% endif %}
 
-<section class="card">
+<section class="card" id="folder">
   <h2>Download folder</h2>
   <p class="muted">Archives here are copies. Once an export is imported completely they can be deleted to free space; the app remembers them and will not download them again.</p>
   {% if staged %}
@@ -60,7 +60,7 @@
   {% endif %}
 </section>
 
-<section class="card">
+<section class="card" id="drive">
   <h2>Google Drive</h2>
   <p>This app never deletes anything in Google Drive. Below are the Takeout archives it downloaded, and whether each export is safe to remove. To remove one: press <strong>Check Immich now</strong>, open each archive's link, delete it in Drive, then <strong>empty Drive's trash</strong>, because trashed files still count against your storage.</p>
   <p class="warn-text">Removing archives from Drive does not touch Google Photos. Once removed, your copies are Google Photos and Immich's storage: make sure Immich's storage is backed up.</p>

@@ -92,6 +92,8 @@ class GoogleDriveSource:
     ) -> None:
         self.name = f"gdrive:{folder_id}"
         self.folder_id = folder_id
+        self.folder_name: str | None = None
+        """The folder's name in Drive, once it has been listed."""
         self._client = httpx.Client(timeout=TIMEOUT, transport=transport, follow_redirects=True)
         try:
             self._credentials = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
@@ -115,10 +117,10 @@ class GoogleDriveSource:
         """Service account email, to share the Drive folder with."""
         return str(self._credentials.service_account_email)
 
-    def check_folder(self) -> None:
-        """Fail clearly if the folder is missing or not shared with the service account."""
+    def check_folder(self) -> str:
+        """The folder's name. Fails clearly if it is missing or not shared with the account."""
         url = f"{API}/files/{_path_segment(self.folder_id)}"
-        params = {"fields": "id,mimeType,trashed", "supportsAllDrives": "true"}
+        params = {"fields": "id,name,mimeType,trashed", "supportsAllDrives": "true"}
         try:
             response = self._client.get(url, params=params, headers=self._headers())
         except httpx.HTTPError as error:
@@ -136,9 +138,10 @@ class GoogleDriveSource:
             raise SourceError("the Drive folder ID points to a file, not a folder")
         if data.get("trashed"):
             raise SourceError("the Drive folder is in the trash")
+        return str(data.get("name") or "")
 
     def list_archives(self) -> list[RemoteFile]:
-        self.check_folder()
+        self.folder_name = self.check_folder()
         found: list[RemoteFile] = []
         page: str | None = None
         query = f"'{_quote(self.folder_id)}' in parents and trashed = false"

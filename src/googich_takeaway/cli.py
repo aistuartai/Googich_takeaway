@@ -79,6 +79,8 @@ def main(
         return _fetch(args, out, err, drive_factory)
     if args.command == "serve":
         return _serve(args)
+    if args.command == "reset-password":
+        return _reset_password(args, out)
     parser.print_help(err)
     return 2
 
@@ -159,6 +161,12 @@ def _parser() -> argparse.ArgumentParser:
         "--port", type=int, default=int(os.environ.get("GOOGICH_PORT", "8080")), help="port"
     )
     serve.add_argument("--state", type=Path, default=_default_state(), help="state database")
+
+    reset = commands.add_parser(
+        "reset-password",
+        help="forget the web password, so the next start asks for a new one",
+    )
+    reset.add_argument("--state", type=Path, default=_default_state(), help="state database")
     return parser
 
 
@@ -340,6 +348,20 @@ def _fetch(args: argparse.Namespace, out: TextIO, err: TextIO, drive_factory: Dr
     for file, detail in result.failed:
         out.write(f"  failed: {file.name}: {detail}; run again to resume\n")
     return 1 if result.failed else 0
+
+
+def _reset_password(args: argparse.Namespace, out: TextIO) -> int:
+    if not args.state.exists():
+        out.write(f"No state database at {args.state}.\n")
+        return 1
+    with State(args.state) as state:
+        state.clear_password()
+    out.write(
+        "The web password is forgotten and every session is logged out. Restart the app, then "
+        "open /setup with the new setup token from its log to choose a password. Settings and "
+        "credentials are kept.\n"
+    )
+    return 0
 
 
 def _serve(args: argparse.Namespace) -> int:

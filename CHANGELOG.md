@@ -7,6 +7,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-02
+
+### Added
+
+- A **Help** menu with a built-in guide to every part of the app: how it works, first-time setup,
+  Google Takeout, Google Drive, Immich and the download folder, schedule and notifications, dates
+  and time zones, cleanup, updates, security and backups, and troubleshooting. The same pages
+  are in the repository under `src/googich_takeaway/docs`. Updates and Logs moved into this
+  menu, and an About page shows the version, an update check and the licence.
+- A step-by-step guide to setting up a scheduled Google Takeout export to Google Drive.
+- **Takeout reminders.** The dashboard warns, and a notification is sent once, when no new export
+  has arrived for 10 days longer than expected, and three weeks before a Takeout schedule ends if
+  you note its start date and frequency (monthly or every 2 months) on the Schedule page.
+- **Follow my Takeout schedule**, a new schedule choice: the app runs on each expected export day
+  and, if the export has not arrived, tries again every day (or every few days) until it does, for
+  up to 14 days, and runs on no other days. A weekly run between exports is optional. The Schedule page shows a
+  table of planned checks with each export's status, what the schedule is doing now, and the next
+  runs.
+- A **Google Photos** figure on the dashboard: how many photos and videos the latest Takeout
+  export held, and how many of them are in Immich. Google offers no way to count a Google Photos
+  library directly, so the latest export is the measure.
+- `googich reset-password`, for a forgotten web password. Settings and credentials are kept.
+- **Named notifications.** Each notification service is added with a name, listed by name and
+  kind of service, and tested or removed on its own. A failed test shows the reason the service
+  gave, such as a wrong token. Notification URLs saved before 0.3.0 are kept and named after their
+  service. A URL starting with `http://` gets a hint to use `hassio://` or `json://`. A Home
+  Assistant test says which notify service it went through, or that it is in the bell.
+- **Check now** under Help → Updates asks GitHub for the latest release straight away (at most
+  once a minute), and offers the update button there when a newer release is out.
+- **Configure**, at the foot of the dashboard, chooses what it shows. Besides the journey strip
+  and recent runs, it can show summaries of sources, destinations and how much space cleanup can
+  free, with a button to the Cleanup page.
+- On the dashboard, the Google Drive and download folder icons open their settings and have a
+  Cleanup link under them; the Google Photos and Immich icons open those apps.
+- The Sources and Destinations pages link to their guides, and to Google Drive and Immich. Each
+  Drive source has an Open in Google Drive link.
+- The Sources page shows each Google Drive folder's own name next to its full folder ID.
+
+### Changed
+
+- Immich and the download folder moved from Settings to a new **Destinations** page. The time
+  zone for undated photos has its own section in Settings.
+- Only one of the Configuration and Help menus is open at a time.
+- A **Configuration** menu holds Sources, Destinations, Schedule, Notifications, Dashboard,
+  Cleanup and Settings. Schedule and Notifications have their own pages; Settings keeps the time
+  zone and the look and feel. The Immich link left the top bar, and Log out is a clearer button.
+- The README is shorter and points to the guide.
+
 ## [0.2.1] - 2026-10-02
 
 ### Fixed
@@ -183,7 +231,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...v0.1.1

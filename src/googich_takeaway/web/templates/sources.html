@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Sources | Googich Takeaway{% endblock %}
 {% block content %}
-<h1>Sources</h1>
+<div class="page-head"><h1>Sources</h1>
+  <p class="page-links"><a href="https://drive.google.com/" target="_blank" rel="noopener noreferrer">Google Drive ↗</a> <a href="/help/google-drive">Guide: Connecting Google Drive</a> <a href="/help/takeout">Guide: Setting up Google Takeout</a></p>
+</div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 
 <section class="card">
@@ -15,7 +17,8 @@
         <td>{{ 'Google Drive' if source.kind == 'gdrive' else 'Local folder' }}</td>
         <td>
           {% if source.kind == 'gdrive' %}
-            Folder <code>{{ source.location[:6] }}…</code>
+            {% if folder_names[source.id] %}<strong>{{ folder_names[source.id] }}</strong><br>{% else %}<span class="muted">Press Test to show the folder's name.</span><br>{% endif %}
+            <small>Folder ID <code>{{ source.location }}</code> <a href="https://drive.google.com/drive/folders/{{ source.location|urlencode }}" target="_blank" rel="noopener noreferrer">Open in Google Drive ↗</a></small>
             {% if accounts[source.id] %}<br><small>Share the folder with <code>{{ accounts[source.id] }}</code> as Viewer.</small>{% endif %}
           {% else %}<code>{{ source.location }}</code>{% endif %}
           <div id="test-{{ source.id }}" aria-live="polite"></div>
@@ -47,7 +50,7 @@
 </section>
 
 <section class="card">
-  <h2>Add a Google Drive folder</h2>
+  <div class="summary-head"><h2>Add a Google Drive folder</h2><a href="/help/google-drive">How to set this up</a></div>
   <form method="post" action="/sources/drive" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label>Name <input name="name" placeholder="Google Takeout" required maxlength="60"></label>

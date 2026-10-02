@@ -1,4 +1,4 @@
-{%- from "_icons.html" import mark -%}
+{%- from "_icons.html" import leave, mark -%}
 {%- set look = look if look is defined and look else default_look -%}
 <!doctype html>
 <html lang="en" data-theme="{{ look.theme }}" data-colours="{{ look.colours }}" data-bars="{{ look.bars }}" data-motion="{{ look.motion }}">
@@ -25,14 +25,27 @@
     <nav aria-label="Main">
       {% set here = request.url.path %}
       <a href="/" {{ 'aria-current="page"'|safe if here == '/' }}>Dashboard</a>
-      <a href="/sources" {{ 'aria-current="page"'|safe if here.startswith('/sources') }}>Sources</a>
-      <a href="/cleanup" {{ 'aria-current="page"'|safe if here.startswith('/cleanup') }}>Cleanup</a>
-      <a href="/logs" {{ 'aria-current="page"'|safe if here.startswith('/logs') }}>Logs</a>
-      <a href="/settings" {{ 'aria-current="page"'|safe if here.startswith('/settings') }}>Settings</a>
-      {% if immich_link %}<a class="nav-out" href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Immich ↗</a>{% endif %}
+      {% set config_pages = ('/sources', '/destinations', '/schedule', '/notifications', '/dashboard', '/cleanup', '/settings') %}
+      <details class="nav-menu" name="nav-menus">
+        <summary{{ ' class="current"'|safe if here.startswith(config_pages) }}>Configuration</summary>
+        <div class="nav-menu-panel">
+          {% for path, label in [('/sources', 'Sources'), ('/destinations', 'Destinations'), ('/schedule', 'Schedule'), ('/notifications', 'Notifications'), ('/dashboard/configure', 'Dashboard'), ('/cleanup', 'Cleanup'), ('/settings', 'Settings')] %}
+          <a href="{{ path }}" {{ 'aria-current="page"'|safe if here.startswith(path) }}>{{ label }}</a>
+          {% endfor %}
+        </div>
+      </details>
+      {% set help_pages = ('/help', '/updates', '/logs', '/about') %}
+      <details class="nav-menu" name="nav-menus">
+        <summary{{ ' class="current"'|safe if here.startswith(help_pages) }}>Help</summary>
+        <div class="nav-menu-panel">
+          {% for path, label in [('/help', 'Guide'), ('/updates', 'Updates'), ('/logs', 'Logs'), ('/about', 'About')] %}
+          <a href="{{ path }}" {{ 'aria-current="page"'|safe if here.startswith(path) }}>{{ label }}</a>
+          {% endfor %}
+        </div>
+      </details>
       <form method="post" action="/logout" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-        <button type="submit" class="link">Log out</button>
+        <button type="submit" class="logout">{{ leave("logout-icon") }}Log out</button>
       </form>
     </nav>
     {% endif %}
@@ -49,7 +62,7 @@
       <button type="submit" class="link">Update now</button>
     </form>
     {% else %}
-    Update with <code>docker compose pull &amp;&amp; docker compose up -d</code>, after changing the version in <code>compose.yaml</code> if it is pinned.
+    <a href="/updates">How to update</a>
     {% endif %}
   </div>
   {% endif %}

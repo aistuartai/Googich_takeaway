@@ -269,3 +269,22 @@ def test_fetch_refuses_readable_key_file(tmp_path: Path) -> None:
     assert code == 1
     assert "chmod 600" in err
     assert "PRIVATE KEY" not in err
+
+
+def test_reset_password(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from googich_takeaway.state import State
+
+    path = tmp_path / "state.db"
+    now = datetime.now(UTC)
+    with State(path) as state:
+        state.set_password_hash("hash", now)
+        state.set_setting("immich.url", "http://immich.test", now)
+    out = io.StringIO()
+    assert main(["reset-password", "--state", str(path)], out=out) == 0
+    assert "Restart the app" in out.getvalue()
+    with State(path) as state:
+        assert state.password_hash() is None
+        assert state.get_setting("immich.url") == "http://immich.test"
+    assert main(["reset-password", "--state", str(tmp_path / "none.db")], out=out) == 1

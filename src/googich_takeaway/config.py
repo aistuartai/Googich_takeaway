@@ -6,9 +6,10 @@ are only ever unsealed to be used: the web interface can replace or remove them,
 
 import json
 import re
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -23,8 +24,22 @@ from googich_takeaway.locations import (
     probe_smb,
     shared_smb,
 )
-from googich_takeaway.notify import DEFAULT_OUTCOMES, Notifier, Outcome, invalid_urls
-from googich_takeaway.schedule import Mode, Schedule, parse_time
+from googich_takeaway.notify import (
+    DEFAULT_OUTCOMES,
+    Message,
+    Notifier,
+    Outcome,
+    deliver,
+    delivery_note,
+    invalid_urls,
+    service_name,
+)
+from googich_takeaway.schedule import (
+    DEFAULT_TAKEOUT_MONTHS,
+    Mode,
+    Schedule,
+    parse_time,
+)
 from googich_takeaway.state import SourceRecord, State, StateError
 
 MAX_KEY_FILE_BYTES = 64 * 1024
@@ -89,7 +104,26 @@ COLOUR_SCHEMES = {
     "sunset": "Sunset: magenta, orange and gold",
 }
 BAR_STYLES = {"striped": "Striped bars", "segmented": "Segmented capsules"}
+DASHBOARD_ITEMS = {
+    "journey": "Where your photos are: Google Drive, download folder and Immich",
+    "sources": "Sources",
+    "destinations": "Destinations",
+    "cleanup": "Cleanup: how much space can be freed",
+    "runs": "Recent runs",
+}
+DEFAULT_DASHBOARD_ITEMS = ("journey", "runs")
 MOTION = {"auto": "Animate unless this device asks for reduced motion", "off": "No animation"}
+
+
+_TARGETS = "notify.targets"
+
+
+@dataclass(frozen=True)
+class NotificationTarget:
+    id: str
+    name: str
+    service: str
+    """What Apprise calls the service, such as ``HomeAssistant``; the URL itself stays sealed."""
 
 
 @dataclass(frozen=True)
@@ -158,14 +192,14 @@ class Config:
             return shared_smb(self._smb_settings(general.smb, self._smb_password()))
         return LocalLocation(general.staging) if general.staging else None
 
-    def save_general(self, staging: str, timezone: str) -> None:
-        """Use a local download folder."""
+    def save_general(self, staging: str, timezone: str | None = None) -> None:
+        """Use a local download folder. ``timezone`` None keeps the saved time zone."""
         path = Path(staging.strip())
         if not staging.strip() or not path.is_absolute():
             raise ConfigError("The download folder must be a full path, starting with /.")
         if ".." in path.parts:
             raise ConfigError("The download folder must not contain '..'.")
-        zone = _zone_name(timezone)
+        zone = _zone_name(timezone) if timezone is not None else None
         try:
             LocalLocation(path).prepare()
         except LocationError as error:
@@ -173,7 +207,8 @@ class Config:
         now = self._clock()
         self._state.set_setting("staging.path", str(path), now)
         self._state.set_setting("staging.storage", "local", now)
-        self._state.set_setting("timezone", zone, now)
+        if zone:
+            self._state.set_setting("timezone", zone, now)
 
     def save_smb(
         self,
@@ -182,7 +217,7 @@ class Config:
         folder: str,
         username: str,
         password: str | None,
-        timezone: str,
+        timezone: str | None = None,
         port: str = "445",
         domain: str = "",
         test: Callable[[SmbSettings], None] | None = None,
@@ -206,7 +241,7 @@ class Config:
         secret = password if password else self._smb_password()
         if not secret:
             raise ConfigError("Enter the SMB password.")
-        zone = _zone_name(timezone)
+        zone = _zone_name(timezone) if timezone is not None else None
         settings = self._smb_settings(public, secret)
         try:
             (test or probe_smb)(settings)
@@ -221,7 +256,12 @@ class Config:
                 now,
             )
         self._state.set_setting("staging.storage", "smb", now)
-        self._state.set_setting("timezone", zone, now)
+        if zone:
+            self._state.set_setting("timezone", zone, now)
+
+    def save_timezone(self, timezone: str) -> None:
+        """The time zone for photos with no time zone information of their own."""
+        self._state.set_setting("timezone", _zone_name(timezone), self._clock())
 
     def has_smb_password(self) -> bool:
         return self._state.get_sealed("staging.smb.password") is not None
@@ -273,21 +313,29 @@ class Config:
     # --- schedule --------------------------------------------------------------------------------
 
     def schedule(self) -> Schedule:
-        stored = self._state.get_setting("schedule")
-        if not stored:
-            return Schedule()
-        data = json.loads(stored)
+        data = json.loads(self._state.get_setting("schedule") or "{}")
+        _, latest = self._state.download_dates()
+        zone = ZoneInfo(_zone_name(self.general().timezone))
+        defaults = Schedule()
         return Schedule(
-            mode=Mode(data["mode"]),
-            at=parse_time(data["at"]),
-            weekday=int(data["weekday"]),
-            every_hours=int(data["every_hours"]),
-            pause_after=int(data["pause_after"]),
+            mode=Mode(data.get("mode", defaults.mode.value)),
+            at=parse_time(data.get("at", f"{defaults.at:%H:%M}")),
+            weekday=int(data.get("weekday", defaults.weekday)),
+            every_hours=int(data.get("every_hours", defaults.every_hours)),
+            pause_after=int(data.get("pause_after", defaults.pause_after)),
+            takeout_started=self.takeout_schedule_started(),
+            takeout_months=self.takeout_months(),
+            retry_days=int(data.get("retry_days", defaults.retry_days)),
+            wait_days=int(data.get("wait_days", defaults.wait_days)),
+            fallback_weekly=bool(data.get("weekly_between", defaults.fallback_weekly)),
+            fallback_weekday=int(data.get("fallback_weekday", defaults.fallback_weekday)),
+            latest_download=latest.astimezone(zone).date() if latest else None,
         )
 
     def save_schedule(
         self, mode: str, at: str, weekday: str, every_hours: str, pause_after: str
     ) -> None:
+        """How often to run. The options for following Takeout are kept."""
         try:
             chosen = Mode(mode)
         except ValueError:
@@ -306,14 +354,43 @@ class Config:
             raise ConfigError("Run every 1 to 168 hours.")
         if not 1 <= pause <= 20:
             raise ConfigError("Pause after 1 to 20 failed runs in a row.")
-        value = {
-            "mode": chosen.value,
-            "at": f"{local_time:%H:%M}",
-            "weekday": day,
-            "every_hours": hours,
-            "pause_after": pause,
-        }
-        self._state.set_setting("schedule", json.dumps(value), self._clock())
+        if chosen is Mode.TAKEOUT and self.takeout_schedule_started() is None:
+            raise ConfigError(
+                "To follow your Takeout schedule, first note the day you set it up, above."
+            )
+        self._update_schedule(
+            mode=chosen.value,
+            at=f"{local_time:%H:%M}",
+            weekday=day,
+            every_hours=hours,
+            pause_after=pause,
+        )
+
+    def save_follow_options(
+        self, retry_days: str, wait_days: str, fallback_weekly: bool, fallback_weekday: str
+    ) -> None:
+        """How following Takeout waits for each export, and whether it runs between them."""
+        try:
+            retry, wait, day = int(retry_days), int(wait_days), int(fallback_weekday)
+        except ValueError:
+            raise ConfigError("Use whole numbers for the days.") from None
+        if not 1 <= retry <= 7:
+            raise ConfigError("Try again every 1 to 7 days.")
+        if not 1 <= wait <= 30:
+            raise ConfigError("Keep trying for 1 to 30 days.")
+        if not 0 <= day <= 6:
+            raise ConfigError("Choose a day of the week.")
+        self._update_schedule(
+            retry_days=retry,
+            wait_days=wait,
+            weekly_between=fallback_weekly,
+            fallback_weekday=day,
+        )
+
+    def _update_schedule(self, **values: object) -> None:
+        data = json.loads(self._state.get_setting("schedule") or "{}")
+        data.update(values)
+        self._state.set_setting("schedule", json.dumps(data), self._clock())
 
     def schedule_paused(self) -> bool:
         return self._state.get_setting("schedule.paused") is not None
@@ -339,10 +416,56 @@ class Config:
         return frozenset(Outcome(o) for o in json.loads(stored) if o in Outcome)
 
     def has_notification_urls(self) -> bool:
-        return self._state.get_sealed("notify.urls") is not None
+        return bool(self._targets())
+
+    def notification_targets(self) -> list[NotificationTarget]:
+        """Saved notification services, by name. Their URLs are never returned."""
+        return [
+            NotificationTarget(t["id"], t["name"], service_name(t["url"])) for t in self._targets()
+        ]
+
+    def add_notification_target(self, name: str, url: str) -> str:
+        clean = name.strip()
+        if not clean or len(clean) > 60 or not clean.isprintable():
+            raise ConfigError("Give the notification a short name (up to 60 characters).")
+        address = url.strip()
+        if not address:
+            raise ConfigError("Enter the Apprise URL.")
+        if invalid_urls([address]):
+            raise ConfigError(_url_hint(address))
+        targets = self._targets()
+        if len(targets) >= 20:
+            raise ConfigError("Use at most 20 notifications.")
+        if any(t["name"].casefold() == clean.casefold() for t in targets):
+            raise ConfigError(f"There is already a notification called {clean!r}.")
+        target_id = secrets.token_hex(4)
+        targets.append({"id": target_id, "name": clean, "url": address})
+        self._save_targets(targets)
+        return target_id
+
+    def remove_notification_target(self, target_id: str) -> bool:
+        targets = self._targets()
+        kept = [t for t in targets if t["id"] != target_id]
+        self._save_targets(kept)
+        return len(kept) < len(targets)
+
+    def test_notification(self, target_id: str | None = None) -> tuple[bool, list[str], str]:
+        """Send a test to one saved notification, or to all of them.
+
+        Returns whether it was delivered, the services' reasons if not, and for a single one, a
+        note on where it went when that is not obvious."""
+        urls = [t["url"] for t in self._targets() if target_id in (None, t["id"])]
+        if not urls:
+            return False, ["no such notification"], ""
+        message = Message(Outcome.SUCCESS, "Test notification", ["Notifications are working."])
+        ok, reasons = deliver(urls, message)
+        note = delivery_note(urls[0]) if target_id is not None else ""
+        return ok, reasons, note
 
     def save_notifications(self, urls: str | None, outcomes: list[str]) -> None:
-        """``urls`` None keeps the stored URLs; an empty string removes them."""
+        """Choose what to be told about. ``urls`` (one per line) replaces every saved
+        notification, each named after its service; None keeps them, an empty string removes
+        them."""
         chosen = sorted({Outcome(o).value for o in outcomes if o in Outcome})
         now = self._clock()
         if urls is not None:
@@ -356,14 +479,28 @@ class Config:
                     + ", ".join(str(n) for n in bad)
                     + ". See the Apprise documentation for URL formats."
                 )
-            sealed = self._box.seal("notify.urls", "\n".join(lines).encode()) if lines else None
-            self._state.set_sealed("notify.urls", sealed, now)
+            self._save_targets(_named(lines))
         self._state.set_setting("notify.outcomes", json.dumps(chosen), now)
 
     def notifier(self) -> Notifier:
-        sealed = self._state.get_sealed("notify.urls")
-        urls = self._box.open("notify.urls", sealed).decode().splitlines() if sealed else []
-        return Notifier(urls, self.notification_outcomes())
+        return Notifier([t["url"] for t in self._targets()], self.notification_outcomes())
+
+    def _targets(self) -> list[dict[str, str]]:
+        sealed = self._state.get_sealed(_TARGETS)
+        if sealed:
+            data = json.loads(self._box.open(_TARGETS, sealed))
+            return [t for t in data if isinstance(t, dict)] if isinstance(data, list) else []
+        old = self._state.get_sealed("notify.urls")  # before 0.3.0: URLs one per line, no names
+        if not old:
+            return []
+        targets = _named(self._box.open("notify.urls", old).decode().splitlines())
+        self._save_targets(targets)
+        self._state.set_sealed("notify.urls", None, self._clock())
+        return targets
+
+    def _save_targets(self, targets: list[dict[str, str]]) -> None:
+        sealed = self._box.seal(_TARGETS, json.dumps(targets).encode()) if targets else None
+        self._state.set_sealed(_TARGETS, sealed, self._clock())
 
     # --- sources ---------------------------------------------------------------------------------
 
@@ -423,9 +560,67 @@ class Config:
         except StateError as error:
             raise ConfigError(str(error)) from None
 
+    def drive_folder_name(self, source_id: int) -> str | None:
+        """The Drive folder's own name, as last seen by a test or a run."""
+        return self._state.get_setting(f"source.{source_id}.folder_name")
+
+    def set_drive_folder_name(self, source_id: int, name: str) -> None:
+        clean = " ".join(name.split())[:200]
+        self._state.set_setting(f"source.{source_id}.folder_name", clean or None, self._clock())
+
     def delete_source(self, source_id: int) -> None:
         self._state.delete_source(source_id)
         self._state.set_sealed(_drive_key_name(source_id), None, self._clock())
+        self._state.set_setting(f"source.{source_id}.folder_name", None, self._clock())
+
+    # --- Takeout schedule ----------------------------------------------------------------------
+
+    def takeout_schedule_started(self) -> date | None:
+        """When the user set up their scheduled Takeout export, if they noted it."""
+        stored = self._state.get_setting("takeout.schedule_started")
+        return date.fromisoformat(stored) if stored else None
+
+    def takeout_months(self) -> int:
+        """How often the Takeout schedule exports: every 1 or 2 months."""
+        stored = self._state.get_setting("takeout.every_months")
+        return int(stored) if stored in ("1", "2") else DEFAULT_TAKEOUT_MONTHS
+
+    def save_takeout_schedule(self, started: str, every_months: str) -> None:
+        if every_months not in ("1", "2"):
+            raise ConfigError("Choose how often Takeout exports.")
+        self.save_takeout_schedule_started(started)
+        self._state.set_setting("takeout.every_months", every_months, self._clock())
+
+    def save_takeout_schedule_started(self, value: str) -> None:
+        """``value`` is YYYY-MM-DD, or empty to forget it."""
+        text = value.strip()
+        if not text:
+            self._state.set_setting("takeout.schedule_started", None, self._clock())
+            return
+        try:
+            started = date.fromisoformat(text)
+        except ValueError:
+            raise ConfigError("Enter the date as year-month-day, for example 2026-10-01.") from None
+        if started > self._clock().date() or started.year < 2010:
+            raise ConfigError("That date is not possible for a Takeout schedule.")
+        self._state.set_setting("takeout.schedule_started", started.isoformat(), self._clock())
+
+    # --- dashboard -------------------------------------------------------------------------------
+
+    def dashboard_items(self) -> list[str]:
+        """What the dashboard shows, besides the run controls, which are always there."""
+        stored = self._state.get_setting("dashboard.items")
+        if stored is None:
+            return list(DEFAULT_DASHBOARD_ITEMS)
+        chosen = set(stored.split(","))
+        return [item for item in DASHBOARD_ITEMS if item in chosen]
+
+    def save_dashboard_items(self, items: list[str]) -> None:
+        unknown = set(items) - set(DASHBOARD_ITEMS)
+        if unknown:
+            raise ConfigError("Unknown dashboard item.")
+        chosen = ",".join(item for item in DASHBOARD_ITEMS if item in items)
+        self._state.set_setting("dashboard.items", chosen, self._clock())
 
 
 def parse_service_account(data: bytes) -> dict[str, Any]:
@@ -481,6 +676,35 @@ def _port(value: str) -> int:
 
 def _drive_key_name(source_id: int) -> str:
     return f"source.{source_id}.service_account"
+
+
+def _named(urls: list[str]) -> list[dict[str, str]]:
+    """Name unnamed URLs after their service: ``ntfy``, ``ntfy 2``, ``HomeAssistant``."""
+    targets: list[dict[str, str]] = []
+    for url in (u.strip() for u in urls):
+        if not url:
+            continue
+        base = service_name(url)
+        taken = {t["name"] for t in targets}
+        name = base
+        number = 2
+        while name in taken:
+            name = f"{base} {number}"
+            number += 1
+        targets.append({"id": secrets.token_hex(4), "name": name, "url": url})
+    return targets
+
+
+def _url_hint(url: str) -> str:
+    scheme = url.split("://", 1)[0].lower() if "://" in url else ""
+    if scheme in ("http", "https"):
+        return (
+            "Apprise does not recognise that URL: it chooses the service by the start of the "
+            "address, so it does not begin with http:// or https://. Home Assistant addresses "
+            "start with hassio:// (or hassios:// for HTTPS), and a plain web request (a "
+            "webhook) with json://."
+        )
+    return "Apprise does not recognise that URL. See the Apprise documentation for URL formats."
 
 
 def _name(value: str) -> str:

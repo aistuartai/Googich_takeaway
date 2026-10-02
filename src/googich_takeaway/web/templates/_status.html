@@ -1,6 +1,6 @@
 {%- from "_meters.html" import meter -%}
 <div id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
-  {% include "_journey.html" %}
+  {% if 'journey' in items %}{% include "_journey.html" %}{% endif %}
   <section class="card">
     <div class="status-head">
       <div>
@@ -10,7 +10,6 @@
         {% else %}
         <p class="status-line">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
         {% endif %}
-        <p class="muted">Downloads go to <code>{{ general.describe() }}</code>.</p>
       </div>
       <div class="run-controls">
         <form method="post" action="/runs">

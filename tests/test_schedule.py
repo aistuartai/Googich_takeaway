@@ -71,3 +71,83 @@ def test_parse_time() -> None:
     for bad in ("3pm", "25:00", "03"):
         with pytest.raises(ValueError, match="24-hour"):
             parse_time(bad)
+
+
+def test_following_the_takeout_schedule() -> None:
+    from dataclasses import replace
+    from datetime import date
+
+    from googich_takeaway.schedule import Mode, Schedule, next_run, takeout_exports
+
+    started = date(2025, 12, 31)
+    assert takeout_exports(started) == [
+        date(2025, 12, 31),
+        date(2026, 2, 28),  # no 31 February: the month's last day
+        date(2026, 4, 30),
+        date(2026, 6, 30),
+        date(2026, 8, 31),
+        date(2026, 10, 31),
+    ]
+    schedule = Schedule(Mode.TAKEOUT, time(3, 0), takeout_started=started)
+    zone = ZoneInfo("Australia/Melbourne")
+    # Inside a window (from 28 Feb for two weeks): every day.
+    inside = datetime(2026, 3, 2, 12, 0, tzinfo=zone).astimezone(UTC)
+    assert next_run(schedule, inside, zone, None) == datetime(2026, 3, 3, 3, 0, tzinfo=zone)
+    # Outside a window: nothing until the next expected export (30 April)...
+    outside = datetime(2026, 3, 18, 12, 0, tzinfo=zone).astimezone(UTC)
+    assert next_run(schedule, outside, zone, None) == datetime(2026, 4, 30, 3, 0, tzinfo=zone)
+    assert schedule.describe() == (
+        "Following Takeout: on each expected export day at 03:00, trying again every day "
+        "until it arrives"
+    )
+    # ...unless the optional weekly run is chosen (Sunday 22 March).
+    weekly = replace(schedule, fallback_weekly=True)
+    assert next_run(weekly, outside, zone, None) == datetime(2026, 3, 22, 3, 0, tzinfo=zone)
+    assert weekly.describe().endswith(", plus every Sunday between exports")
+
+
+def test_takeout_retries_stop_once_the_export_arrives() -> None:
+    from dataclasses import replace
+    from datetime import date
+
+    from googich_takeaway.schedule import Mode, Schedule, upcoming_runs
+
+    zone = ZoneInfo("UTC")
+    schedule = Schedule(
+        Mode.TAKEOUT, time(3, 0), takeout_started=date(2026, 10, 1), retry_days=2, wait_days=7,
+        fallback_weekly=True, fallback_weekday=6,
+    )  # fmt: skip
+    now = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+    runs = [r.date() for r in upcoming_runs(schedule, now, zone, None, count=4)]
+    # Thursday 1, Saturday 3, Sunday 4 (the weekly day), Monday 5 October; then weekly.
+    assert runs == [date(2026, 10, 1), date(2026, 10, 3), date(2026, 10, 4), date(2026, 10, 5)]
+    assert schedule.waiting_on(date(2026, 10, 3)) == date(2026, 10, 1)
+    assert "Waiting for the export expected on 01 October" in schedule.takeout_status(
+        date(2026, 10, 2)
+    )
+    arrived = replace(schedule, latest_download=date(2026, 10, 2))
+    later = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
+    runs = [r.date() for r in upcoming_runs(arrived, later, zone, None, count=2)]
+    assert runs == [date(2026, 10, 4), date(2026, 10, 11)]  # back to Sundays
+    assert "has arrived" in arrived.takeout_status(date(2026, 10, 3))
+    ended = arrived.takeout_status(date(2027, 9, 1))
+    assert "Takeout schedule ended" in ended
+
+
+def test_following_takeout_without_weekly_runs_waits_for_the_next_export() -> None:
+    from dataclasses import replace
+    from datetime import date
+
+    from googich_takeaway.schedule import Mode, Schedule, next_run
+
+    schedule = Schedule(
+        Mode.TAKEOUT, time(3, 0), takeout_started=date(2026, 1, 10), takeout_months=1,
+        wait_days=3, fallback_weekly=False,
+    )  # fmt: skip
+    assert len(schedule.exports()) == 12
+    after_window = datetime(2026, 1, 20, tzinfo=UTC)
+    assert next_run(schedule, after_window, ZoneInfo("UTC"), None) == datetime(
+        2026, 2, 10, 3, 0, tzinfo=UTC
+    )
+    finished = replace(schedule, takeout_started=date(2024, 1, 10))
+    assert next_run(finished, after_window, ZoneInfo("UTC"), None) is None

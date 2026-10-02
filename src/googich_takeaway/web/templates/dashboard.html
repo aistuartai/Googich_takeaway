@@ -6,8 +6,8 @@
   <h1>Bring your Google Photos home</h1>
   <p>Three things to set up, then Googich Takeaway fetches your Takeout exports and adds anything new to Immich, on the schedule you choose.</p>
   <ol class="checklist">
-    <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/settings">Connect Immich</a>: its address and an API key.</li>
-    <li class="{{ 'done' if general.configured }}"><a href="/settings">Choose the download folder</a> for Takeout archives, on this server or a network share.</li>
+    <li class="{{ 'done' if immich.url and immich.has_key }}"><a href="/destinations#immich">Connect Immich</a>: its address and an API key.</li>
+    <li class="{{ 'done' if general.configured }}"><a href="/destinations#downloads">Choose the download folder</a> for Takeout archives, on this server or a network share.</li>
     <li class="{{ 'done' if sources }}"><a href="/sources">Add a source</a>: your Google Drive Takeout folder, or a local folder of archives.</li>
   </ol>
 </section>
@@ -22,7 +22,69 @@
   </form>
 </section>
 {% endif %}
+{% for reminder in reminders %}
+<section class="card warn" role="status">
+  <h2>{{ reminder.title }}</h2>
+  {% for line in reminder.lines %}<p>{{ line }}</p>{% endfor %}
+  <p><a href="/help/takeout">Setting up Google Takeout</a></p>
+</section>
+{% endfor %}
 {% include "_status.html" %}
+{% if 'sources' in items or 'destinations' in items or 'cleanup' in items %}
+<div class="overview">
+  {% if 'sources' in items %}
+  <section class="card summary summary-sources" aria-labelledby="sum-sources">
+    <div class="summary-head"><h2 id="sum-sources">Sources</h2><a href="/sources">Manage</a></div>
+    {% for card in source_cards %}
+    <div class="summary-item">
+      <p class="summary-name">{{ card.source.name }}</p>
+      <p class="muted">{% if card.source.kind == 'gdrive' %}Google Drive{% if card.folder_name %}, folder “{{ card.folder_name }}”{% endif %}{% else %}Local folder <code>{{ card.source.location }}</code>{% endif %}</p>
+      <p class="summary-figure">{{ '{:,}'.format(card.archives) }} <span>{{ 'archive' if card.archives == 1 else 'archives' }} downloaded{% if card.bytes %}, {{ card.bytes|size }}{% endif %}</span></p>
+      {% if card.last %}<p class="muted">Latest on {{ card.last.astimezone(zone).strftime('%d %b %Y') }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% if 'destinations' in items %}
+  {%- set d = destinations -%}
+  <section class="card summary summary-destinations" aria-labelledby="sum-destinations">
+    <div class="summary-head"><h2 id="sum-destinations">Destinations</h2><a href="/destinations">Manage</a></div>
+    <div class="summary-item">
+      <p class="summary-name">Immich</p>
+      <p class="muted">{% if d.immich.link %}<a href="{{ d.immich.link }}" target="_blank" rel="noopener noreferrer">{{ d.immich.link }}</a>{% else %}{{ d.immich.url }}{% endif %}</p>
+      <p class="summary-figure">{{ '{:,}'.format(d.uploaded) }} <span>{{ 'photo or video' if d.uploaded == 1 else 'photos and videos' }} uploaded</span></p>
+      {% if d.awaiting %}<p class="muted">{{ '{:,}'.format(d.awaiting) }} waiting for Immich to confirm their dates</p>{% endif %}
+    </div>
+    <div class="summary-item">
+      <p class="summary-name">Download folder</p>
+      <p class="muted"><code>{{ d.general.describe() }}</code></p>
+      {% if journey %}<p class="summary-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }} <span>{{ 'archive' if journey.folder_count == 1 else 'archives' }} here{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}</span></p>{% endif %}
+      {% if d.free is not none %}<p class="muted">{{ d.free|size }} free</p>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+  {% if 'cleanup' in items %}
+  {%- set c = cleanable -%}
+  <section class="card summary summary-cleanup" aria-labelledby="sum-cleanup">
+    <div class="summary-head"><h2 id="sum-cleanup">Cleanup</h2></div>
+    {% if c.total %}
+    <p class="summary-big">{{ c.total|size }}</p>
+    <p>can be freed now, from exports already in Immich.</p>
+    <ul class="summary-list">
+      {% if c.folder_bytes %}<li>{{ c.folder_bytes|size }} in the download folder ({{ c.folder_exports }} {{ 'export' if c.folder_exports == 1 else 'exports' }})</li>{% endif %}
+      {% if c.drive_bytes %}<li>{{ c.drive_bytes|size }} in Google Drive ({{ c.drive_exports }} {{ 'export' if c.drive_exports == 1 else 'exports' }}), for you to remove there</li>{% endif %}
+    </ul>
+    {% else %}
+    <p class="summary-big summary-none">Nothing</p>
+    <p>to clean up right now. Archives become safe to remove once their export is fully in Immich.</p>
+    {% endif %}
+    {% if c.folder_unreadable %}<p class="error">Cannot read the download folder right now, so its archives are not counted.</p>{% endif %}
+    <a class="button" href="/cleanup">Go to Cleanup</a>
+  </section>
+  {% endif %}
+</div>
+{% endif %}
+{% if 'runs' in items %}
 <section class="card">
   <h2>Recent runs</h2>
   {% if runs %}
@@ -43,8 +105,26 @@
     </tbody>
   </table>
   {% else %}
-  <p>No runs yet. Press <strong>Run now</strong>, or set a schedule in <a href="/settings">Settings</a>.</p>
+  <p>No runs yet. Press <strong>Run now</strong>, or <a href="/schedule">set a schedule</a>.</p>
   {% endif %}
 </section>
+{% endif %}
+<div class="dash-tools">
+  <details class="configure">
+    <summary>Configure</summary>
+    <form method="post" action="/dashboard/items" class="configure-panel">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <input type="hidden" name="back" value="/">
+      <fieldset>
+        <legend>Show on the dashboard</legend>
+        {% for value, label in dashboard_items.items() %}
+        <label class="check"><input type="checkbox" name="items" value="{{ value }}" {{ 'checked' if value in items }}> {{ label }}</label>
+        {% endfor %}
+      </fieldset>
+      <small>The run controls are always shown.</small>
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
+  </details>
+</div>
 {% endif %}
 {% endblock %}

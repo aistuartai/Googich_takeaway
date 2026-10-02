@@ -83,6 +83,18 @@ def test_full_run_then_nothing_new(world: World) -> None:
     assert len(world.immich.assets) == 13
 
 
+def test_latest_export_is_counted_for_the_dashboard(world: World) -> None:
+    import json
+
+    world.configure()
+    world.pipeline().run()
+    counts = json.loads(world.state.get_setting("photos.latest_export") or "{}")
+    assert counts["in_immich"] == 13
+    assert counts["not_imported"] == 1
+    assert counts["items"] >= 14
+    assert counts["export_id"]
+
+
 def test_local_folder_source(world: World) -> None:
     world.configure(drive=False)
     folder = world.tmp / "manual"

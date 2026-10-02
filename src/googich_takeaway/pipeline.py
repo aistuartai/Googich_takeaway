@@ -21,7 +21,14 @@ from googich_takeaway.cleanup import export_key
 from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
 from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
-from googich_takeaway.importer import Decision, plan_import, run_import, verify_pending
+from googich_takeaway.importer import (
+    Decision,
+    ImportPlan,
+    ImportResult,
+    plan_import,
+    run_import,
+    verify_pending,
+)
 from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
@@ -31,13 +38,14 @@ from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.takeout.archives import ArchiveError, group_exports
 from googich_takeaway.takeout.dates import DateResolver
-from googich_takeaway.takeout.scan import scan_export
+from googich_takeaway.takeout.scan import ExportScan, scan_export
 
 log = logging.getLogger("googich.run")
 
 # Takeout may still be writing parts to Drive. An export whose newest part changed more recently
 # than this waits for a later run, so it is never imported without parts that were not yet listed.
 SETTLE_TIME = timedelta(hours=1)
+LATEST_EXPORT_SETTING = "photos.latest_export"
 
 ImmichFactory = Callable[[str, str], ImmichClient]
 DriveFactory = Callable[[str, dict[str, object]], GoogleDriveSource]
@@ -295,6 +303,7 @@ class Pipeline:
             verify_attempts=1,  # one quick pass; verify_pending catches up on later runs
         )
         report.exports_imported += 1
+        self._remember_export(export_id, scan, plan, result)
         report.uploaded += len(result.uploaded)
         report.already_present += len(plan.with_decision(Decision.IN_IMMICH)) + len(result.adopted)
         report.needs_review += len(plan.with_decision(Decision.NO_DATE))
@@ -320,6 +329,31 @@ class Pipeline:
             self.state.mark_export_complete(
                 export_key, export_id, json.dumps(summary), self.clock()
             )
+
+    def _remember_export(
+        self, export_id: str, scan: ExportScan, plan: ImportPlan, result: ImportResult
+    ) -> None:
+        """What the newest export held, for the Google Photos figure on the dashboard.
+
+        Google offers no way to count a Google Photos library, so each Takeout export is the
+        best measure there is: a complete copy of the library on the day it was made."""
+        stored = json.loads(self.state.get_setting(LATEST_EXPORT_SETTING) or "{}")
+        if str(stored.get("export_id", "")) > export_id:
+            return  # an older export, imported again
+        counts = {
+            "export_id": export_id,
+            "items": len(scan.unique_items()),
+            "in_immich": len(plan.with_decision(Decision.IN_IMMICH))
+            + len(result.uploaded)
+            + len(result.adopted),
+            "in_trash": len(plan.with_decision(Decision.IN_IMMICH_TRASH)),
+            "deleted": len(plan.with_decision(Decision.DELETED_IN_IMMICH)),
+            "not_imported": len(plan.with_decision(Decision.NO_DATE))
+            + len(plan.with_decision(Decision.UNSUPPORTED)),
+            "failed": len(result.failed),
+            "at": self.clock().isoformat(),
+        }
+        self.state.set_setting(LATEST_EXPORT_SETTING, json.dumps(counts), self.clock())
 
     def _scan_progress(self, amount: int) -> None:
         if self.progress:

@@ -1,154 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Settings | Googich Takeaway{% endblock %}
 {% block content %}
-{%- set di = draft if failed == 'immich' else {} -%}
-{%- set dd = draft if failed == 'downloads' else {} -%}
-{%- set ds = draft if failed == 'schedule' else {} -%}
-{%- set smb = general.smb -%}
-<h1>Settings</h1>
+<div class="page-head"><h1>Settings</h1><a class="help-link" href="/help/dates">Guide: Dates and time zones</a></div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
 
-<section class="settings-group" id="immich">
-  <header><h2>Immich</h2><p>Where photos go. The app adds only what Immich does not already have.</p></header>
+<section class="settings-group" id="timezone">
+  <header><h2>Time zone</h2><p>For photos that carry no time zone of their own, so their dates come out right in Immich.</p></header>
   <div class="card">
-  <form method="post" action="/settings/immich">
+  <form method="post" action="/settings/timezone">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label>Immich address
-      <input name="url" value="{{ di.get('url', immich.url or '') }}" placeholder="http://immich:2283" required>
-      <small>The address this app uses to reach Immich. A local network address is fine.</small>
-    </label>
-    <label>Public address (optional)
-      <input name="public_url" value="{{ di.get('public_url', immich.public_url or '') }}" placeholder="https://photos.example.com">
-      <small>Used only for links in this interface, if you open Immich at a different address.</small>
-    </label>
-    <label>API key
-      <input name="api_key" type="password" autocomplete="off" placeholder="{{ 'Enter the key again: it is not kept after a failed save.' if di and not immich.has_key else ('Saved. Leave blank to keep it.' if immich.has_key else 'Paste a new API key') }}">
-      <small>In Immich: Account Settings → API Keys. It needs the <code>asset.upload</code> and <code>asset.read</code> permissions. Stored encrypted; it is never shown again.</small>
-    </label>
-    <div class="actions">
-      <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/settings/immich/test" hx-target="#immich-test" hx-swap="innerHTML">Test connection</button>
-    </div>
-    <div id="immich-test" aria-live="polite"></div>
-  </form>
-  </div>
-</section>
-
-<section class="settings-group" id="downloads">
-  <header><h2>Downloads</h2><p>Where Takeout archives wait between download and import, and the time zone for undated photos.</p></header>
-  <div class="card">
-  <form method="post" action="/settings/general">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <fieldset>
-      <legend>Keep downloaded archives in</legend>
-      <label class="check"><input type="radio" name="storage" value="local" {{ 'checked' if dd.get('storage', general.storage) == 'local' }}> A folder on this server</label>
-      <label class="check"><input type="radio" name="storage" value="smb" {{ 'checked' if dd.get('storage', general.storage) == 'smb' }}> A folder on an SMB share (NAS or file server)</label>
-    </fieldset>
-    <div class="storage-local">
-      <label>Local folder
-        <input name="staging" value="{{ dd.get('staging', general.staging or '') }}" placeholder="/data/staging">
-        <small>A folder on the server running this app. It needs room for one complete export.</small>
-      </label>
-    </div>
-    <div class="storage-smb">
-      <div class="row">
-        <label>Server <input name="smb_server" value="{{ dd.get('smb_server', smb.server if smb else '') }}" placeholder="nas.local"></label>
-        <label>Share <input name="smb_share" value="{{ dd.get('smb_share', smb.share if smb else '') }}" placeholder="Photos"></label>
-        <label>Folder in the share <input name="smb_folder" value="{{ dd.get('smb_folder', smb.folder if smb else '') }}" placeholder="takeout"></label>
-      </div>
-      <div class="row">
-        <label>User name <input name="smb_username" value="{{ dd.get('smb_username', smb.username if smb else '') }}" autocomplete="off"></label>
-        <label>Password <input name="smb_password" type="password" autocomplete="off" placeholder="{{ 'Enter the password again: it is not kept after a failed save.' if dd and not has_smb_password else ('Saved. Leave blank to keep it.' if has_smb_password else '') }}"></label>
-      </div>
-      <div class="row">
-        <label>Domain (optional) <input name="smb_domain" value="{{ dd.get('smb_domain', smb.domain if smb else '') }}"></label>
-        <label>Port <input name="smb_port" type="number" min="1" max="65535" value="{{ dd.get('smb_port', smb.port if smb else 445) }}"></label>
-      </div>
-      <small>The app connects to the share itself; nothing needs mounting. The folder is created if missing, and a test file is written and removed before the settings are saved. The password is stored encrypted and never shown again. Use an account that can reach only this folder.</small>
-    </div>
-    <label>Default time zone
+    <label>Time zone
       <select name="timezone" required>
-        {% for zone in timezones %}<option value="{{ zone }}" {{ 'selected' if zone == dd.get('timezone', general.timezone) }}>{{ zone.replace('_', ' ') }}</option>{% endfor %}
+        {% for zone in timezones %}<option value="{{ zone }}" {{ 'selected' if zone == general.timezone }}>{{ zone.replace('_', ' ') }}</option>{% endfor %}
       </select>
       <small>Used only for photos with no time zone information of their own.</small>
     </label>
-    <div class="actions">
-      <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/settings/storage/test" hx-target="#storage-test">Test download folder</button>
-    </div>
-    <div id="storage-test" aria-live="polite"></div>
-  </form>
-  </div>
-</section>
-<section class="settings-group" id="schedule">
-  <header><h2>Schedule</h2><p>How often to check for new exports. Failed runs never retry endlessly.</p></header>
-  <div class="card">
-  <form method="post" action="/settings/schedule">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label>Run
-      <select name="mode">
-        {% for value, label in [('off', 'Off (manual runs only)'), ('hourly', 'Every few hours'), ('daily', 'Daily'), ('weekly', 'Weekly')] %}
-        <option value="{{ value }}" {{ 'selected' if ds.get('mode', schedule.mode.value) == value }}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <div class="row">
-      <label>At (24-hour time) <input name="at" value="{{ ds.get('at', schedule.at.strftime('%H:%M')) }}" pattern="[0-2]?[0-9]:[0-5][0-9]"></label>
-      <label>On (weekly)
-        <select name="weekday">
-          {% for day in weekdays %}<option value="{{ loop.index0 }}" {{ 'selected' if ds.get('weekday', schedule.weekday|string) == loop.index0|string }}>{{ day }}</option>{% endfor %}
-        </select>
-      </label>
-      <label>Every … hours <input name="every_hours" type="number" min="1" max="168" value="{{ ds.get('every_hours', schedule.every_hours) }}"></label>
-    </div>
-    <label>Pause after this many failed runs in a row
-      <input name="pause_after" type="number" min="1" max="20" value="{{ ds.get('pause_after', schedule.pause_after) }}">
-      <small>Scheduled runs never retry endlessly: a failed run ends and notifies, and after this many failures in a row the schedule pauses until you resume it.</small>
-    </label>
-    <div class="actions"><button type="submit">Save</button></div>
-  </form>
-  </div>
-</section>
-
-<section class="settings-group" id="notifications">
-  <header><h2>Notifications</h2><p>Messages after each run, through any service Apprise supports.</p></header>
-  <div class="card">
-  <form method="post" action="/settings/notifications">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label>Apprise URLs, one per line
-      <textarea name="urls" rows="3" autocomplete="off" spellcheck="false" placeholder="{{ 'Saved. Leave blank to keep them.' if has_urls else 'ntfys://ntfy.sh/your-topic' }}"></textarea>
-      <small>Any service Apprise supports: ntfy, email (<code>mailtos://</code>), Home Assistant (<code>hassio://</code>), Discord, Pushover and more. URLs often contain passwords, so they are stored encrypted and never shown again.</small>
-    </label>
-    {% if has_urls %}<label class="check"><input type="checkbox" name="remove" value="1"> Remove the saved URLs</label>{% endif %}
-    <fieldset>
-      <legend>Send a notification when a run…</legend>
-      {% for value, label in [('success', 'imports new files'), ('no-new-data', 'finds nothing new'), ('failed', 'fails'), ('paused', 'pauses the schedule')] %}
-      <label class="check"><input type="checkbox" name="outcomes" value="{{ value }}" {{ 'checked' if value in outcomes }}> {{ label }}</label>
-      {% endfor %}
-    </fieldset>
-    <div class="actions">
-      <button type="submit">Save</button>
-      <button type="button" class="secondary" hx-post="/settings/notifications/test" hx-target="#notify-test">Send a test</button>
-    </div>
-    <div id="notify-test" aria-live="polite"></div>
-  </form>
-  </div>
-</section>
-<section class="settings-group" id="updates">
-  <header><h2>Updates</h2><p>A notice when a new release is out. Nothing installs itself.</p></header>
-  <div class="card">
-  <form method="post" action="/settings/updates">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
-    {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
-    {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
-    {% if helper %}
-    <p>One-click updates are on. The update helper on the host last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.strftime('%d %b %H:%M') }} UTC){% endif %}</p>
-    {% else %}
-    <p class="muted">One-click updates are off: the optional update helper is not installed on the host. See "One-click updates" in the README.</p>
-    {% endif %}
-    <small>The daily check only shows a notice. With the update helper, <strong>Update now</strong> installs a release when you press it; nothing installs on its own. The check asks GitHub anonymously for the latest release of this project. You are running version {{ version }}.{% if update_known %} Latest release seen: {{ update_known.latest }}, checked {{ update_known.checked_at.strftime('%d %b %H:%M') }} UTC.{% endif %}</small>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>

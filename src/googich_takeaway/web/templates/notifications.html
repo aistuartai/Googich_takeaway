@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Notifications | Googich Takeaway{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Notifications</h1>
+  <p class="page-links"><a href="/help/schedule#notifications">Guide: Notifications</a> <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener noreferrer">Apprise services ↗</a></p>
+</div>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if saved == 'added' %}<p class="result ok" role="status">Notification added. Press Test to check it.</p>{% endif %}
+{% if saved == 'removed' %}<p class="result ok" role="status">Notification removed.</p>{% endif %}
+{% if saved == 'outcomes' %}<p class="result ok" role="status">Saved.</p>{% endif %}
+
+<section class="settings-group" id="services">
+  <header><h2>Your notifications</h2><p>Every run's message goes to each of these.</p></header>
+  <div class="card">
+  {% if targets %}
+  <table class="targets">
+    <thead><tr><th>Name</th><th>Service</th><th></th></tr></thead>
+    <tbody>
+    {% for target in targets %}
+      <tr>
+        <td><strong>{{ target.name }}</strong><div id="test-{{ target.id }}" aria-live="polite"></div></td>
+        <td class="muted">{{ target.service }}</td>
+        <td class="target-actions">
+          <button type="button" class="secondary" hx-post="/notifications/{{ target.id }}/test" hx-target="#test-{{ target.id }}">Test</button>
+          <form method="post" action="/notifications/{{ target.id }}/remove" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <button type="submit" class="danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if targets|length > 1 %}
+  <div class="actions">
+    <button type="button" class="secondary" hx-post="/notifications/test" hx-target="#test-all">Test all</button>
+  </div>
+  <div id="test-all" aria-live="polite"></div>
+  {% endif %}
+  {% else %}
+  <p>No notifications yet. Add one below.</p>
+  {% endif %}
+  </div>
+</section>
+
+<section class="settings-group" id="add">
+  <header><h2>Add a notification</h2><p>Any service <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener noreferrer">Apprise</a> supports: ntfy, email, Home Assistant, Discord, Pushover, Telegram and more.</p><p><a href="/help/schedule#home-assistant">Guide: Home Assistant</a></p></header>
+  <div class="card">
+  <form method="post" action="/notifications/add">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <div class="row">
+      <label>Name <input name="name" value="{{ draft_name }}" placeholder="Home Assistant" required maxlength="60"></label>
+    </div>
+    <label>Apprise URL
+      <input name="url" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required placeholder="hassio://homeassistant.local:8123/token/mobile_app_yourphone">
+      <small>For example <code>ntfys://ntfy.sh/your-topic</code>, <code>hassio://homeassistant.local:8123/token</code> or <code>mailtos://user:password@example.com</code>. The URL is visible while you type it so you can check it. Once added it is stored encrypted and never shown again: only the name and the kind of service are listed.</small>
+    </label>
+    <div class="actions"><button type="submit">Add</button></div>
+  </form>
+  </div>
+</section>
+
+<section class="settings-group" id="outcomes">
+  <header><h2>When to send them</h2><p>The same choices apply to every notification above.</p></header>
+  <div class="card">
+  <form method="post" action="/notifications">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <fieldset>
+      <legend>Send a notification when…</legend>
+      {% for value, label in [('success', 'a run imports new files'), ('no-new-data', 'a run finds nothing new'), ('failed', 'a run fails'), ('paused', 'the schedule pauses after failed runs'), ('reminder', 'the Takeout schedule needs attention')] %}
+      <label class="check"><input type="checkbox" name="outcomes" value="{{ value }}" {{ 'checked' if value in outcomes }}> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</section>
+{% endblock %}

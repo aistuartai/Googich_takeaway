@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Guide | Googich Takeaway{% endblock %}
+{% block content %}
+<div class="help-intro">
+  <h1>Guide</h1>
+  <p>How Googich Takeaway works, how to set up each part, and what to do when something goes wrong. New here? Start with <a href="/help/first-setup">First-time setup</a>.</p>
+</div>
+<ol class="topic-list">
+  {% for topic in topics %}
+  <li>
+    <a href="/help/{{ topic.slug }}">{{ topic.title }}</a>
+    <span>{{ topic.summary }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% endblock %}

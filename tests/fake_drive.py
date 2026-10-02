@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105 - a URL, not a secret
 FOLDER = "folder-123"
+FOLDER_NAME = "Takeout exports"
 ACCOUNT = "googich@test-project.iam.gserviceaccount.com"
 
 
@@ -126,6 +127,7 @@ class FakeDrive:
                 200,
                 json={
                     "id": FOLDER,
+                    "name": FOLDER_NAME,
                     "mimeType": "application/vnd.google-apps.folder",
                     "trashed": False,
                 },

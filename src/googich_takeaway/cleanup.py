@@ -20,7 +20,13 @@ from datetime import datetime
 from pathlib import Path
 
 from googich_takeaway.destinations.immich import CheckAction, ImmichClient
-from googich_takeaway.locations import LocalLocation, Location, LocationError, archives
+from googich_takeaway.locations import (
+    LocalLocation,
+    Location,
+    LocationError,
+    StoredFile,
+    archives,
+)
 from googich_takeaway.state import State, UploadStatus
 from googich_takeaway.takeout.archives import group_exports
 
@@ -109,12 +115,17 @@ def _staging(staging: Location | Path | None) -> Location | None:
     return staging
 
 
-def staged_exports(staging: Location | Path | None, state: State) -> list[ExportCopy]:
+def staged_exports(
+    staging: Location | Path | None, state: State, found: list[StoredFile] | None = None
+) -> list[ExportCopy]:
+    """``found`` is a listing of the folder's archives already made, to save reading it again."""
     location = _staging(staging)
     if location is None:
         return []
     copies = []
-    for export_id, files in group_exports(archives(location)).items():
+    for export_id, files in group_exports(
+        found if found is not None else archives(location)
+    ).items():
         parts = [Part(f.name, f.size) for f in files]
         copies.append(_describe(ExportCopy(export_id, parts), state))
     return copies

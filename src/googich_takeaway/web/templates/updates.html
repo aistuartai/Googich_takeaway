@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Updates | Googich Takeaway{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Updates</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if saved == 'updates' %}<p class="result ok" role="status">Saved.</p>{% endif %}
+
+<section class="settings-group" id="updates">
+  <header><h2>Updates</h2><p>A notice when a new release is out. Nothing installs itself.</p></header>
+  <div class="card">
+  <div class="update-status">
+    <p>You are running version <strong>{{ version }}</strong>.{% if update_known %} Latest release: <strong>{{ update_known.latest }}</strong>, checked {{ update_known.checked_at.astimezone(zone).strftime('%d %b at %H:%M') }}.{% endif %}</p>
+    {% if saved == 'check-current' %}<p class="result ok" role="status">You have the latest release.</p>{% endif %}
+    {% if saved == 'check-newer' %}<p class="result ok" role="status">Version {{ update_known.latest }} is available.</p>{% endif %}
+    {% if saved == 'check-failed' %}<p class="error" role="alert">Could not get the latest release from GitHub. Try again later; GitHub allows a limited number of checks an hour from each network.</p>{% endif %}
+    {% if saved == 'check-wait' %}<p class="error" role="alert">Checked less than a minute ago. Try again in a minute.</p>{% endif %}
+    {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
+    {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
+    <div class="actions">
+      <form method="post" action="/updates/check" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+        <button type="submit" class="secondary">Check now</button>
+      </form>
+      {% if update_available %}
+      <a class="button secondary" href="{{ update_available.url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
+      {% if helper and helper.state != 'updating' %}
+      <form method="post" action="/updates/apply" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+        <button type="submit">Update to {{ update_available.latest }}</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% if update_available and not helper %}
+    <small>To install it, change the version in <code>compose.yaml</code> to <code>{{ update_available.latest }}</code>, then run <code>docker compose pull &amp;&amp; docker compose up -d</code>.</small>
+    {% endif %}
+    {% if helper %}
+    <p class="muted">One-click updates are on. The update helper on the host last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.astimezone(zone).strftime('%d %b %H:%M') }}){% endif %}</p>
+    {% else %}
+    <p class="muted">One-click updates are off: the optional update helper is not installed on the host. See "One-click updates" in the README.</p>
+    {% endif %}
+  </div>
+  <form method="post" action="/updates/daily">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
+    <small>The daily check only shows a notice. With the update helper, the update button installs a release when you press it; nothing installs on its own. Checks ask GitHub anonymously for the latest release of this project.</small>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</section>
+{% endblock %}

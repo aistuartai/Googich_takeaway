@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Schedule | Googich Takeaway{% endblock %}
+{% block content %}
+{%- set ds = draft -%}
+{%- set following = schedule.mode.value == 'takeout' -%}
+<div class="page-head"><h1>Schedule</h1>
+  <p class="page-links"><a href="/help/schedule">Guide: Schedule and notifications</a> <a href="/help/takeout">Guide: Setting up Google Takeout</a></p>
+</div>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
+
+<section class="settings-group" id="takeout">
+  <header><h2>Google Takeout schedule</h2><p>How your scheduled export is set up at takeout.google.com. The app cannot see it, so note it here.</p></header>
+  <div class="card">
+  <form method="post" action="/schedule/takeout">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <div class="row">
+      <label>Set up on
+        <input type="date" name="started" value="{{ schedule.takeout_started.isoformat() if schedule.takeout_started else '' }}">
+      </label>
+    </div>
+    <fieldset>
+      <legend>Takeout exports</legend>
+      {% for value, label in takeout_frequencies.items() %}
+      <label class="check"><input type="radio" name="every_months" value="{{ value }}" {{ 'checked' if schedule.takeout_months == value }}> {{ label }}, for one year</label>
+      {% endfor %}
+    </fieldset>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  {% if schedule.takeout_started %}
+  <p>{{ checks|length }} exports, from {{ schedule.takeout_started.strftime('%d %B %Y') }}. The schedule ends around <strong>{{ takeout_ends.strftime('%d %B %Y') }}</strong>{% if next_export %}; the next export is expected on <strong>{{ next_export.strftime('%d %B') }}</strong>{% endif %}.</p>
+  {% endif %}
+  <small>With this noted, the app reminds you three weeks before the Takeout schedule ends, and can follow it. Either way, it warns you when no new export has arrived for 10 days longer than expected.</small>
+  </div>
+</section>
+
+<section class="settings-group" id="schedule">
+  <header><h2>Googich schedule</h2><p>When this app checks for new exports. Now: <strong>{{ schedule.describe() }}</strong>.</p></header>
+  <div class="card">
+  <form method="post" action="/schedule" class="schedule-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Run
+      <select name="mode">
+        {% for value, label in [('off', 'Off (manual runs only)'), ('hourly', 'Every few hours'), ('daily', 'Daily'), ('weekly', 'Weekly'), ('takeout', 'Follow my Takeout schedule')] %}
+        <option value="{{ value }}" {{ 'selected' if ds.get('mode', schedule.mode.value) == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="mode-note mode-takeout">Runs only when each Takeout export is expected, and tries again if it has not arrived. Once saved, <a href="#follow">Following Takeout</a> below sets how it tries again, and an optional weekly run.</p>
+    <div class="row">
+      <label class="mode-field mode-daily mode-weekly mode-takeout">At (24-hour time) <input name="at" value="{{ ds.get('at', schedule.at.strftime('%H:%M')) }}" pattern="[0-2]?[0-9]:[0-5][0-9]"></label>
+      <label class="mode-field mode-weekly">On
+        <select name="weekday">
+          {% for day in weekdays %}<option value="{{ loop.index0 }}" {{ 'selected' if ds.get('weekday', schedule.weekday|string) == loop.index0|string }}>{{ day }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="mode-field mode-hourly">Every … hours <input name="every_hours" type="number" min="1" max="168" value="{{ ds.get('every_hours', schedule.every_hours) }}"></label>
+    </div>
+    <label>Pause after this many failed runs in a row
+      <input name="pause_after" type="number" min="1" max="20" value="{{ ds.get('pause_after', schedule.pause_after) }}">
+      <small>A failed run ends and notifies; after this many failures in a row the schedule pauses until you resume it.</small>
+    </label>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</section>
+
+{% if following %}
+<section class="settings-group" id="follow">
+  <header><h2>Following Takeout</h2><p>How the app waits for each export, and what it does between exports.</p></header>
+  <div class="card">
+  {% if not schedule.takeout_started %}<p class="error">No Takeout date is noted above, so there is nothing to follow.</p>{% endif %}
+  <form method="post" action="/schedule/follow">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <p>The app checks for each export on the day it is expected, at {{ schedule.at.strftime('%H:%M') }}. If it has not arrived yet, the app tries again, as set here, and stops as soon as it arrives. It runs on no other days unless you add the optional weekly run.</p>
+    <fieldset>
+      <legend>If the export has not arrived</legend>
+      <div class="row">
+        <label>Try again every … days
+          <input name="retry_days" type="number" min="1" max="7" value="{{ schedule.retry_days }}">
+        </label>
+        <label>Stop trying after … days
+          <input name="wait_days" type="number" min="1" max="30" value="{{ schedule.wait_days }}">
+        </label>
+      </div>
+    </fieldset>
+    <fieldset class="between">
+      <legend>Optional: a weekly run between exports</legend>
+      <label class="check"><input type="checkbox" name="fallback_weekly" value="1" {{ 'checked' if schedule.fallback_weekly }}> Also run once a week, in case an export comes late or the dates above are slightly off</label>
+      <label class="between-day">On
+        <select name="fallback_weekday">
+          {% for day in weekdays %}<option value="{{ loop.index0 }}" {{ 'selected' if schedule.fallback_weekday == loop.index0 }}>{{ day }}</option>{% endfor %}
+        </select>
+      </label>
+    </fieldset>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+
+  {% if checks %}
+  <h3>Planned checks</h3>
+  <table class="checks">
+    <thead><tr><th>Export expected</th><th>Checks</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for expected, days, state in checks %}
+      <tr class="check-{{ state|lower|replace(' ', '-') }}">
+        <td>{{ expected.strftime('%a %d %b %Y') }}</td>
+        <td>{{ days[0].strftime('%d %b') }}{% if days|length > 1 %}; if not there yet, {% if schedule.retry_days == 1 %}every day to {{ days[-1].strftime('%d %b') }}{% else %}again on {% for day in days[1:] %}{{ day.strftime('%d %b') }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}{% endif %}</td>
+        <td>{{ state }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <small>Checks stop as soon as an archive from that export has been downloaded.</small>
+  {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="settings-group" id="upcoming">
+  <header><h2>Coming up</h2><p>When the saved schedule runs next.</p></header>
+  <div class="card">
+  {% if paused %}<p class="error">The schedule is paused after failed runs. Resume it on the dashboard.</p>{% endif %}
+  {% if following %}<p><strong>{{ takeout_status }}</strong></p>{% endif %}
+  {% if upcoming %}
+  <ol class="upcoming">
+    {% for when in upcoming %}
+    {%- set local = when.astimezone(zone) -%}
+    {%- set waiting = schedule.waiting_on(local.date()) if following else none -%}
+    <li>{{ local.strftime('%A %d %B, %H:%M') }}{% if waiting and waiting == local.date() %} <span class="muted">check for the export expected that day</span>{% elif waiting %} <span class="muted">try again, if the export of {{ waiting.strftime('%d %B') }} has not arrived</span>{% elif following %} <span class="muted">optional weekly run</span>{% endif %}</li>
+    {% endfor %}
+  </ol>
+  {% if following %}<small>Tries again only while an export has not arrived: once it does, its remaining tries are skipped.</small>{% endif %}
+  {% elif schedule.mode.value == 'off' %}
+  <p>Scheduled runs are off. Press <strong>Run now</strong> on the dashboard to run.</p>
+  {% else %}
+  <p>Nothing is scheduled.</p>
+  {% endif %}
+  </div>
+</section>
+{% endblock %}

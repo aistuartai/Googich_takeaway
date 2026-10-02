@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.topic.title }} | Googich Takeaway{% endblock %}
+{% block content %}
+<div class="help-layout">
+  <aside class="help-side" aria-label="Guide topics">
+    <a class="help-back" href="/help">Guide</a>
+    <ol>
+      {% for topic in topics %}
+      <li><a href="/help/{{ topic.slug }}" {{ 'aria-current="page"'|safe if topic.slug == doc.topic.slug }}>{{ topic.title }}</a></li>
+      {% endfor %}
+    </ol>
+  </aside>
+  <article class="card prose">
+    {% if doc.contents|length > 2 %}
+    <nav class="on-this-page" aria-label="On this page">
+      <p>On this page</p>
+      <ul>{% for anchor, title in doc.contents %}<li><a href="#{{ anchor }}">{{ title|safe }}</a></li>{% endfor %}</ul>
+    </nav>
+    {% endif %}
+    {{ doc.html }}
+  </article>
+</div>
+{% endblock %}
