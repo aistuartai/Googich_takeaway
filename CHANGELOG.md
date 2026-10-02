@@ -16,6 +16,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A saved Immich API key is only sent to the address it was entered for, and a saved SMB
+  password only to its server and user: changing those asks for the secret again. Someone who
+  got hold of a session can no longer point the app at their own machine to collect them.
 - After a large import only the first 200 uploads are checked against Immich straight away;
   the rest are checked on later runs, once Immich has processed them, instead of asking about
   every file while it is still busy.

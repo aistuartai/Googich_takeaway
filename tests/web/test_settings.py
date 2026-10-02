@@ -90,7 +90,7 @@ def test_immich_settings_saved_tested_and_key_never_shown(world: World) -> None:
     assert response.status_code == 303
     page = world.client.get("/destinations").text
     assert KEY not in page
-    assert "Saved. Leave blank to keep it." in page
+    assert "Saved. Leave blank to keep it, unless you change the address." in page
     assert 'href="https://photos.example"' in page  # header link uses the public address
     assert "Connected to Immich 2.7.5. The API key is fine." in world.htmx(
         "/destinations/immich/test"

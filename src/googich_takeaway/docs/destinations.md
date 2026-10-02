@@ -21,7 +21,10 @@ whose library should receive the photos. Give it these permissions:
 | `stack.create` | optional: kept for stacking edited copies in a later release |
 
 **Test connection** shows the Immich version and any missing permission. The key is encrypted
-before it is stored, and never shown again; leave the field empty to keep the saved key.
+before it is stored, and never shown again; leave the field empty to keep the saved key. If
+you change the Immich address, enter the key again: a saved key is only ever sent to the
+address it was entered for. The same goes for the SMB password when the server or user
+changes.
 
 ## Download folder
 

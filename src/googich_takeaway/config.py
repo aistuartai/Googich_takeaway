@@ -166,8 +166,13 @@ class Config:
         key = (api_key or "").strip()
         if key and (len(key) > 512 or not key.isprintable() or " " in key):
             raise ConfigError("That does not look like an Immich API key.")
-        if not key and not self.immich().has_key:
+        current = self.immich()
+        if not key and not current.has_key:
             raise ConfigError("Enter an API key.")
+        if not key and current.url and _netloc(current.url) != _netloc(clean_url):
+            # The stored key is only ever sent to the server it was entered for: anyone who
+            # got hold of a session could otherwise point the app at their own machine.
+            raise ConfigError("The Immich address changed: enter the API key again.")
         now = self._clock()
         self._state.set_setting("immich.url", clean_url, now)
         self._state.set_setting("immich.public_url", clean_public, now)
@@ -247,6 +252,15 @@ class Config:
         )
         if not public.username or len(public.username) > 256:
             raise ConfigError("Enter the SMB user name.")
+        stored = self.general().smb
+        moved = stored is not None and (
+            (stored.server.lower(), stored.port, stored.username, stored.domain.lower())
+            != (public.server.lower(), public.port, public.username, public.domain.lower())
+        )
+        if not password and moved:
+            # As for Immich: the stored password only goes to the server and account it was
+            # entered for.
+            raise ConfigError("The server or user changed: enter the SMB password again.")
         secret = password if password else self._smb_password()
         if not secret:
             raise ConfigError("Enter the SMB password.")
@@ -795,3 +809,9 @@ def _http_url(value: str, label: str) -> str:
     if text.endswith("/api"):
         text = text.removesuffix("/api")
     return text
+
+
+def _netloc(url: str) -> str:
+    """Scheme, host and port: where a URL sends things."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{(parts.hostname or '').lower()}:{parts.port or ''}"

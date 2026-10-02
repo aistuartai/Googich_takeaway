@@ -123,3 +123,24 @@ def test_new_dashboard_items_show_for_choices_made_before_them(tmp_path: Path) -
     assert config.dashboard_items() == ["journey", "schedule", "cleanup"]
     config.save_dashboard_items(["cleanup"])  # a choice made now is kept exactly
     assert config.dashboard_items() == ["cleanup"]
+
+
+def test_saved_secrets_only_go_where_they_were_entered_for(tmp_path: Path) -> None:
+    config = Config(State(tmp_path / "state.db"), SecretBox(b"k" * 32), lambda: NOW)
+    config.save_immich("http://immich.lan:2283", "", "key-123")
+    config.save_immich("http://immich.lan:2283/", "https://photos.example", "")  # same server
+    assert config.immich_key() == "key-123"
+    with pytest.raises(ConfigError, match="enter the API key again"):
+        config.save_immich("http://attacker.example:2283", "", "")
+    assert str(config.immich().url).startswith("http://immich.lan")  # nothing changed
+    config.save_immich("http://new.lan:2283", "", "key-456")  # with the key: fine
+
+    def ok(_: object) -> None:
+        return None
+
+    config.save_smb("nas.lan", "Photos", "takeout", "photos", "pw", test=ok)
+    config.save_smb("nas.lan", "Photos", "other", "photos", "", test=ok)  # same server and user
+    with pytest.raises(ConfigError, match="enter the SMB password again"):
+        config.save_smb("evil.example", "Photos", "takeout", "photos", "", test=ok)
+    with pytest.raises(ConfigError, match="enter the SMB password again"):
+        config.save_smb("nas.lan", "Photos", "takeout", "admin", "", test=ok)

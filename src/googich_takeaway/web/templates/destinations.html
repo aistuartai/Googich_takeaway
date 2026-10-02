@@ -24,7 +24,7 @@
       <small>Used only for links in this interface, if you open Immich at a different address.</small>
     </label>
     <label>API key
-      <input name="api_key" type="password" autocomplete="off" placeholder="{{ 'Enter the key again: it is not kept after a failed save.' if di and not immich.has_key else ('Saved. Leave blank to keep it.' if immich.has_key else 'Paste a new API key') }}">
+      <input name="api_key" type="password" autocomplete="off" placeholder="{{ 'Enter the key again: it is not kept after a failed save.' if di and not immich.has_key else ('Saved. Leave blank to keep it, unless you change the address.' if immich.has_key else 'Paste a new API key') }}">
       <small>In Immich: Account Settings → API Keys. It needs the <code>asset.upload</code> and <code>asset.read</code> permissions. Stored encrypted; it is never shown again.</small>
     </label>
     <div class="actions">
@@ -60,7 +60,7 @@
       </div>
       <div class="row">
         <label>User name <input name="smb_username" value="{{ dd.get('smb_username', smb.username if smb else '') }}" autocomplete="off"></label>
-        <label>Password <input name="smb_password" type="password" autocomplete="off" placeholder="{{ 'Enter the password again: it is not kept after a failed save.' if dd and not has_smb_password else ('Saved. Leave blank to keep it.' if has_smb_password else '') }}"></label>
+        <label>Password <input name="smb_password" type="password" autocomplete="off" placeholder="{{ 'Enter the password again: it is not kept after a failed save.' if dd and not has_smb_password else ('Saved. Leave blank to keep it, unless you change the server or user.' if has_smb_password else '') }}"></label>
       </div>
       <div class="row">
         <label>Domain (optional) <input name="smb_domain" value="{{ dd.get('smb_domain', smb.domain if smb else '') }}"></label>
