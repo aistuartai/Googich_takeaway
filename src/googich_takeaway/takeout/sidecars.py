@@ -137,17 +137,24 @@ def _match_folder(
 ) -> dict[str, SidecarMatch]:
     results: dict[str, SidecarMatch] = {}
     used: set[str] = set()
+    # Indexes, so a folder of tens of thousands of photos is matched in linear time.
+    by_stem: dict[tuple[int, str], list[_Sidecar]] = defaultdict(list)
+    by_title: dict[str, list[_Sidecar]] = defaultdict(list)
+    for sidecar in sidecars:
+        by_stem[(sidecar.duplicate, sidecar.stem)].append(sidecar)
+        if sidecar.path in titles:
+            by_title[titles[sidecar.path]].append(sidecar)
 
     # Pass 1: names derived from the media name.
     for media in media_paths:
-        found = _by_name(_name(media), sidecars)
+        found = _by_name(_name(media), by_stem)
         if found:
             results[media] = SidecarMatch(media, found.path, MatchRule.NAME)
             used.add(found.path)
 
     # Pass 2: truncated media names, using only sidecars nobody claimed.
     for media in media_paths:
-        if media in results:
+        if media in results or len(_name(media)) < MIN_TRUNCATED_MEDIA:
             continue
         found = _by_truncated_media(
             _name(media), [s for s in sidecars if s.path not in used], titles
@@ -161,14 +168,19 @@ def _match_folder(
         if media in results:
             continue
         name = _name(media)
-        for sidecar in sidecars:
-            if sidecar.path not in used and titles.get(sidecar.path) == name:
+        for sidecar in by_title.get(name, ()):
+            if sidecar.path not in used:
                 results[media] = SidecarMatch(media, sidecar.path, MatchRule.TITLE)
                 used.add(sidecar.path)
                 break
 
     # Pass 4: files that share another file's sidecar.
     by_name = {_name(m): m for m in media_paths}
+    photos_by_stem: dict[str, list[str]] = defaultdict(list)
+    for other in media_paths:
+        candidate = PurePosixPath(other)
+        if candidate.suffix.lower().removeprefix(".") in PHOTO_EXTENSIONS:
+            photos_by_stem[candidate.stem].append(other)
     for media in media_paths:
         if media in results:
             continue
@@ -176,7 +188,7 @@ def _match_folder(
         if shared:
             results[media] = SidecarMatch(media, shared, MatchRule.EDITED)
             continue
-        shared = _live_photo_image(media, media_paths, results)
+        shared = _live_photo_image(media, photos_by_stem, results)
         if shared:
             results[media] = SidecarMatch(media, shared, MatchRule.LIVE_PHOTO)
             continue
@@ -184,9 +196,12 @@ def _match_folder(
     return results
 
 
-def _by_name(name: str, sidecars: list[_Sidecar]) -> _Sidecar | None:
+def _by_name(name: str, by_stem: Mapping[tuple[int, str], list[_Sidecar]]) -> _Sidecar | None:
     """Sidecar whose stem is the media name, plain or with ``.supplemental-metadata``,
-    possibly truncated. Tries the ``(n)`` duplicate reading first."""
+    possibly truncated (the longest such stem wins). Tries the ``(n)`` duplicate reading first.
+
+    Every acceptable stem is a prefix of ``<name>.supplemental-metadata`` (see ``_stem_fits``),
+    so the candidates are looked up prefix by prefix, longest first."""
     readings: list[tuple[str, int]] = []
     duplicate = _DUPLICATE.match(name)
     if duplicate:
@@ -194,14 +209,12 @@ def _by_name(name: str, sidecars: list[_Sidecar]) -> _Sidecar | None:
     readings.append((name, 0))
 
     for base, n in readings:
-        best: _Sidecar | None = None
-        for sidecar in sidecars:
-            if sidecar.duplicate != n or not _stem_fits(sidecar.stem, base):
-                continue
-            if best is None or len(sidecar.stem) > len(best.stem):
-                best = sidecar
-        if best:
-            return best
+        full = base + SUPPLEMENTAL
+        shortest = min(len(base), MIN_TRUNCATED_STEM)
+        for length in range(len(full), max(shortest, 1) - 1, -1):
+            found = by_stem.get((n, full[:length]))
+            if found:
+                return found[0]
     return None
 
 
@@ -250,19 +263,13 @@ def _edited_original(
 
 
 def _live_photo_image(
-    media: str, media_paths: list[str], results: Mapping[str, SidecarMatch]
+    media: str, photos_by_stem: Mapping[str, list[str]], results: Mapping[str, SidecarMatch]
 ) -> str | None:
     path = PurePosixPath(media)
     if path.suffix.lower().removeprefix(".") not in VIDEO_EXTENSIONS:
         return None
-    for other in media_paths:
-        candidate = PurePosixPath(other)
-        if (
-            candidate.stem == path.stem
-            and candidate.suffix.lower().removeprefix(".") in PHOTO_EXTENSIONS
-            and other in results
-            and results[other].sidecar
-        ):
+    for other in photos_by_stem.get(path.stem, ()):
+        if other in results and results[other].sidecar:
             return results[other].sidecar
     return None
 

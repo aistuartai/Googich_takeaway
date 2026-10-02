@@ -2,6 +2,7 @@
 and curl commands, so its refusals and rollback are checked on every change."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -54,7 +55,11 @@ pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash
 
 
 def run(
-    tmp_path: Path, request: str, broken: str = "none", rate_limited: bool = False
+    tmp_path: Path,
+    request: str,
+    broken: str = "none",
+    rate_limited: bool = False,
+    link_request_to: Path | None = None,
 ) -> tuple[dict[str, str], str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -64,11 +69,15 @@ def run(
     compose_dir = tmp_path / "opt"
     updater = compose_dir / "data" / "updater"
     updater.mkdir(parents=True, exist_ok=True)
+    updater.chmod(0o1770)  # as installed: owned by root (here, the test user) and sticky
     (compose_dir / "compose.yaml").write_text(
         'services:\n  googich:\n    image: "ghcr.io/aistuartai/googich_takeaway:0.1.1"\n'
     )
     (tmp_path / "running").write_text("0.1.1\n")
-    (updater / "request.json").write_text(request)
+    if link_request_to is not None:
+        (updater / "request.json").symlink_to(link_request_to)
+    else:
+        (updater / "request.json").write_text(request)
     env = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",
         "STUB_LOG": str(tmp_path / "log"),
@@ -76,6 +85,8 @@ def run(
         "STUB_BROKEN": broken,
         "GOOGICH_COMPOSE_DIR": str(compose_dir),
         "STUB_RATE_LIMITED": "1" if rate_limited else "",
+        "GOOGICH_UPDATER_OWNER": str(os.getuid()),
+        "GOOGICH_RUNTIME_DIR": str(tmp_path / "run"),
     }
     subprocess.run(["bash", str(SCRIPT)], env=env, check=False, timeout=60)  # noqa: S603, S607
     status = json.loads((updater / "status.json").read_text())
@@ -124,3 +135,136 @@ def test_rate_limited_github_is_not_mistaken_for_an_unpublished_release(tmp_path
     assert "not a published release" not in status["message"]
     assert "googich_takeaway:0.1.1" in compose
     assert running.strip() == "0.1.1"
+
+
+def test_planted_links_are_not_followed(tmp_path: Path) -> None:
+    """The container owns <data>: links it plants must never make root write elsewhere."""
+    victim = tmp_path / "victim"
+    victim.write_text("precious\n")
+    updater = tmp_path / "opt" / "data" / "updater"
+    updater.mkdir(parents=True)
+    for name in (".lock", ".release.json", "lock", "release.json"):  # old and new scratch names
+        (updater / name).symlink_to(victim)
+    status, _, _ = run(tmp_path, '{"version": "0.1.2"}')
+    assert status["state"] == "done"
+    assert victim.read_text() == "precious\n"
+
+
+def test_request_through_a_link_is_refused(tmp_path: Path) -> None:
+    """request.json is the container's file: a link to a root-only file is not read."""
+    secret = tmp_path / "secret"
+    secret.write_text('{"version": "0.1.2"}')
+    status, _, running = run(tmp_path, "", link_request_to=secret)
+    assert status["state"] == "failed"
+    assert "not a plain version number" in status["message"]
+    assert running.strip() == "0.1.1"
+
+
+def test_refuses_an_updater_folder_the_container_could_tamper_with(tmp_path: Path) -> None:
+    updater = tmp_path / "opt" / "data" / "updater"
+    updater.mkdir(parents=True)
+    (updater / "status.json").write_text('{"helper": "1", "state": "idle"}')
+    # Not sticky: the container could rename or replace root's files.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "GOOGICH_COMPOSE_DIR": str(tmp_path / "opt"),
+        "GOOGICH_UPDATER_OWNER": str(os.getuid()),
+        "GOOGICH_RUNTIME_DIR": str(tmp_path / "run"),
+    }
+    (updater / "request.json").write_text('{"version": "0.1.2"}')
+    updater.chmod(0o770)
+    result = subprocess.run(  # noqa: S603
+        ["bash", str(SCRIPT)],  # noqa: S607
+        env=env,
+        check=False,
+        timeout=60,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "must be owned by root with the sticky bit" in result.stderr
+    assert (updater / "request.json").exists()  # untouched
+
+
+INSTALL = SCRIPT.parent / "install-updater.sh"
+
+
+def test_installer_sets_everything_up_from_the_running_release(tmp_path: Path) -> None:
+    """install-updater.sh, with stand-ins for the commands that need root or the network."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "log"
+    stubs = {
+        "id": "#!/bin/bash\necho 0\n",
+        "curl": f"""#!/bin/bash
+out=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in -o) out="$2"; shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac
+done
+echo "curl $url" >> "{log}"
+cp "{SCRIPT.parent}/$(basename "$url")" "$out"
+""",
+        "systemctl": f'#!/bin/bash\necho "systemctl $*" >> "{log}"\n',
+        "chown": f'#!/bin/bash\necho "chown $*" >> "{log}"\n',
+        "install": """#!/bin/bash
+args=()
+while [ $# -gt 0 ]; do case "$1" in -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done
+exec /usr/bin/install "${args[@]}"
+""",
+    }
+    for name, body in stubs.items():
+        (bin_dir / name).write_text(body)
+        (bin_dir / name).chmod(0o755)
+    site = tmp_path / "srv" / "googich"
+    (site / "data" / "updater").mkdir(parents=True)
+    (site / "data" / "updater" / ".lock").write_text("")  # left by helper version 1
+    (site / "compose.yaml").write_text("    image: ghcr.io/aistuartai/googich_takeaway:0.3.4\n")
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "GOOGICH_LIB_DIR": str(tmp_path / "lib"),
+        "GOOGICH_UNIT_DIR": str(tmp_path / "units"),
+    }
+    (tmp_path / "units").mkdir()
+    result = subprocess.run(  # noqa: S603
+        ["bash", str(INSTALL), str(site)],  # noqa: S607
+        env=env,
+        check=False,
+        timeout=60,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text()
+    assert "Googich_takeaway/v0.3.4/deploy/updater/googich-updater.sh" in calls
+    assert "systemctl enable --now googich-updater.path" in calls
+    assert (tmp_path / "lib" / "googich-updater.sh").stat().st_mode & 0o777 == 0o755
+    path_unit = (tmp_path / "units" / "googich-updater.path").read_text()
+    assert f"PathChanged={site}/data/updater/request.json" in path_unit
+    assert (
+        f"GOOGICH_COMPOSE_DIR={site}"
+        in (tmp_path / "units" / "googich-updater.service").read_text()
+    )
+    assert (site / "data" / "updater").stat().st_mode & 0o7777 == 0o1770
+    assert not (site / "data" / "updater" / ".lock").exists()
+
+
+def test_installer_needs_a_fixed_version(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "id").write_text("#!/bin/bash\necho 0\n")
+    (bin_dir / "id").chmod(0o755)
+    site = tmp_path / "site"
+    (site / "data").mkdir(parents=True)
+    (site / "compose.yaml").write_text("    image: ghcr.io/aistuartai/googich_takeaway:latest\n")
+    result = subprocess.run(  # noqa: S603
+        ["bash", str(INSTALL), str(site)],  # noqa: S607
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        check=False,
+        timeout=60,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "should name a fixed version" in result.stderr

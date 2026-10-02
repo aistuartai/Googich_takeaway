@@ -201,19 +201,19 @@ def _mismatch_detail(expected: str, dates: AssetDates) -> str:
 def _record_known(
     plan: ImportPlan, state: State, destination: str, clock: Callable[[], datetime]
 ) -> None:
-    """Files Immich already has become known, so deleting them later is respected."""
-    for planned in plan.with_decision(Decision.IN_IMMICH):
-        if planned.existing_asset and state.get_upload(destination, planned.item.sha1) is None:
-            state.record_upload(
-                _record(
-                    destination,
-                    plan,
-                    planned.item,
-                    planned.existing_asset,
-                    UploadStatus.ADOPTED,
-                    clock(),
-                )
-            )
+    """Files Immich already has become known, so deleting them later is respected.
+
+    One lookup for the lot and one commit: a re-scanned export can hold tens of thousands."""
+    known = [p for p in plan.with_decision(Decision.IN_IMMICH) if p.existing_asset]
+    recorded = state.uploaded_hashes(destination, (p.item.sha1 for p in known))
+    now = clock()
+    with state.transaction():
+        for planned in known:
+            if planned.item.sha1 in recorded or planned.existing_asset is None:
+                continue
+            asset = planned.existing_asset
+            record = _record(destination, plan, planned.item, asset, UploadStatus.ADOPTED, now)
+            state.record_upload(record)
 
 
 def _upload(
@@ -242,10 +242,7 @@ def _upload(
 
     consecutive_failures = 0
     for archive in sorted(archives, key=lambda a: a.name):
-        paths = archives[archive]
-        for entry in iter_entries(archive):
-            if entry.path not in paths:
-                continue
+        for entry in iter_entries(archive, only=archives[archive]):
             item = wanted[entry.path]
             if item.date is None:
                 raise RuntimeError(f"planned upload without a date: {item.path}")

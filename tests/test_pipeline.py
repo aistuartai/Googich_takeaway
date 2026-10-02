@@ -450,3 +450,20 @@ def test_download_folder_as_a_source(world: World) -> None:
     report = world.pipeline().run()
     assert report.problems == []
     assert report.uploaded == 13
+
+
+def test_a_damaged_export_does_not_stop_the_others(world: World) -> None:
+    import os
+
+    world.configure(drive=False)
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    quirks_export().write(folder)
+    (folder / "takeout-20250101T000000Z-001.zip").write_bytes(b"PK\x03\x04 not really a zip")
+    old = (NOW - timedelta(hours=2)).timestamp()
+    for p in folder.iterdir():
+        os.utime(p, (old, old))
+    world.config.add_local_source("Manual", str(folder))
+    report = world.pipeline().run()
+    assert report.uploaded == 13  # the good export still went in
+    assert any("20250101T000000Z not imported" in p for p in report.problems)

@@ -197,6 +197,10 @@ def _fetch(
 # banner with the manual command.
 
 
+HELPER_VERSION = 2
+"""The update helper this release ships (``HELPER_VERSION`` in googich-updater.sh)."""
+
+
 @dataclass(frozen=True)
 class HelperStatus:
     state: str
@@ -204,6 +208,12 @@ class HelperStatus:
     message: str
     version: str
     at: datetime | None
+    helper: int = 0
+    """Which helper version reported this."""
+
+    @property
+    def outdated(self) -> bool:
+        return self.helper < HELPER_VERSION
 
 
 def helper_status(data_dir: Path) -> HelperStatus | None:
@@ -224,6 +234,7 @@ def helper_status(data_dir: Path) -> HelperStatus | None:
         message=str(data.get("message", ""))[:300],
         version=str(data.get("version", ""))[:20],
         at=at,
+        helper=int(str(data.get("helper", "0"))) if str(data.get("helper", "0")).isdigit() else 0,
     )
 
 

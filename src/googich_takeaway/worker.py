@@ -260,6 +260,8 @@ class Worker:
         with self._lock:
             if self._manual_requested is not None:
                 options, self._manual_requested = self._manual_requested, None
+                # Busy from this moment, so a second press of Run now is refused, not queued.
+                self._run_started = self._clock()
                 return Trigger.MANUAL, options
         with State(self._state_path) as state:
             config = self._config(state)

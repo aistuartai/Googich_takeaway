@@ -5,16 +5,18 @@ every upgrade step runs in a transaction. Times are stored as UTC ISO 8601 strin
 passed in by the caller, so behaviour is reproducible in tests.
 """
 
+import contextlib
 import json
 import os
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
+SESSION_SEEN_EVERY = timedelta(minutes=1)
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -122,6 +124,9 @@ _MIGRATIONS: dict[int, str] = {
         DROP TABLE sources;
         ALTER TABLE sources_new RENAME TO sources;
     """,
+    8: """
+        CREATE INDEX uploads_by_export ON uploads (destination, export_id, status);
+    """,
 }
 
 
@@ -205,6 +210,9 @@ class State:
         self._db.execute("PRAGMA journal_mode = WAL")
         self._db.execute("PRAGMA foreign_keys = ON")
         self._db.execute("PRAGMA busy_timeout = 5000")
+        # The usual setting with WAL: no fsync per commit, still crash-safe; a power cut can
+        # lose only the last moments of work, which the next run redoes.
+        self._db.execute("PRAGMA synchronous = NORMAL")
         self._migrate()
 
     def close(self) -> None:
@@ -237,6 +245,20 @@ class State:
             except BaseException:
                 self._db.execute("ROLLBACK")
                 raise
+
+    @contextlib.contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Group many writes into one commit (each statement commits on its own otherwise)."""
+        if self._db.in_transaction:
+            yield  # already inside one
+            return
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+        self._db.execute("COMMIT")
 
     def record_upload(self, record: UploadRecord) -> None:
         self._db.execute(
@@ -314,17 +336,12 @@ class State:
 
     def record_seen_items(self, export_id: str, sha1s: Iterable[str], at: datetime) -> None:
         """Remember every distinct photo or video found in any export."""
-        self._db.execute("BEGIN IMMEDIATE")  # one transaction: an export holds thousands
-        try:
+        with self.transaction():  # an export holds thousands
             self._db.executemany(
                 "INSERT OR IGNORE INTO seen_items (sha1, first_export, first_seen_at) "
                 "VALUES (?, ?, ?)",
                 ((sha1, export_id, _to_text(at)) for sha1 in sha1s),
             )
-            self._db.execute("COMMIT")
-        except BaseException:
-            self._db.execute("ROLLBACK")
-            raise
 
     def seen_item_count(self) -> int:
         return int(self._db.execute("SELECT count(*) FROM seen_items").fetchone()[0])
@@ -419,11 +436,11 @@ class State:
             "SELECT file_id FROM downloads WHERE source = ? AND removed_at IS NULL", (source,)
         ).fetchall()
         gone = {row[0] for row in rows} - present
-        for file_id in sorted(gone):
-            self._db.execute(
+        with self.transaction():
+            self._db.executemany(
                 "UPDATE downloads SET removed_at = ? WHERE source = ? AND file_id = ? "
                 "AND removed_at IS NULL",
-                (_to_text(at), source, file_id),
+                ((_to_text(at), source, file_id) for file_id in sorted(gone)),
             )
         return len(gone)
 
@@ -467,6 +484,7 @@ class State:
     def create_session(
         self, token_hash: str, csrf_token: str, at: datetime, expires: datetime
     ) -> None:
+        self._db.execute("DELETE FROM web_sessions WHERE expires_at <= ?", (_to_text(at),))
         self._db.execute(
             "INSERT INTO web_sessions (token_hash, csrf_token, created_at, last_seen, expires_at) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -474,18 +492,23 @@ class State:
         )
 
     def get_session(self, token_hash: str, at: datetime) -> str | None:
-        """CSRF token of a live session, or None. Expired sessions are removed."""
-        self._db.execute("DELETE FROM web_sessions WHERE expires_at <= ?", (_to_text(at),))
+        """CSRF token of a live session, or None.
+
+        Called on every request, including pages polling every few seconds, so it only reads,
+        and writes ``last_seen`` at most once a minute. Expired sessions are removed at login."""
         row = self._db.execute(
-            "SELECT csrf_token FROM web_sessions WHERE token_hash = ?", (token_hash,)
+            "SELECT csrf_token, last_seen FROM web_sessions "
+            "WHERE token_hash = ? AND expires_at > ?",
+            (token_hash, _to_text(at)),
         ).fetchone()
         if row is None:
             return None
-        self._db.execute(
-            "UPDATE web_sessions SET last_seen = ? WHERE token_hash = ?",
-            (_to_text(at), token_hash),
-        )
-        return str(row[0])
+        if at - _from_text(row["last_seen"]) > SESSION_SEEN_EVERY:
+            self._db.execute(
+                "UPDATE web_sessions SET last_seen = ? WHERE token_hash = ?",
+                (_to_text(at), token_hash),
+            )
+        return str(row["csrf_token"])
 
     def delete_session(self, token_hash: str) -> None:
         self._db.execute("DELETE FROM web_sessions WHERE token_hash = ?", (token_hash,))

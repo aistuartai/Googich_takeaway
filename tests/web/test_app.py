@@ -312,3 +312,74 @@ def test_origin_check(tmp_path: Path, clock: Clock, origin: str, host: str, allo
     )
     response = client.post("/login", data={"password": "x"}, headers={"Origin": origin})
     assert (response.status_code != 403) is allowed
+
+
+def test_throttle_counts_attempts_as_they_start() -> None:
+    """Guesses sent together all count: the sixth waits even if none has finished."""
+    now = [0.0]
+    throttle = LoginThrottle(clock=lambda: now[0])
+    assert [throttle.attempt("a") for _ in range(6)] == [0.0] * 6  # 5 free, the 6th sets a lock
+    assert throttle.attempt("a") == 30.0
+    assert throttle.attempt("b") == 0.0  # per address
+    throttle.succeeded("a")
+    assert throttle.attempt("a") == 0.0
+
+
+def test_throttle_forgets_old_addresses() -> None:
+    now = [0.0]
+    throttle = LoginThrottle(clock=lambda: now[0], forget_after=60.0)
+    for n in range(1001):
+        throttle.attempt(f"10.0.{n // 256}.{n % 256}")
+    now[0] = 120.0
+    throttle.attempt("fresh")
+    assert len(throttle._failures) == 1
+
+
+def test_password_checks_are_limited() -> None:
+    from googich_takeaway.web import auth
+
+    stored = auth.hash_password("a long enough password")
+    assert auth.verify_password_limited(stored, "a long enough password") is True
+    for _ in range(auth.HASHING_AT_ONCE):
+        auth._hashing.acquire()
+    try:
+        assert auth.verify_password_limited(stored, "x", wait=0.01) is None  # too busy
+    finally:
+        for _ in range(auth.HASHING_AT_ONCE):
+            auth._hashing.release()
+
+
+def test_large_or_unsized_bodies_are_refused_before_sign_in(tmp_path: Path, clock: Clock) -> None:
+    client = make(tmp_path, clock)
+    set_up(client)
+    big = client.post("/login", content=b"password=" + b"x" * 20_000, headers={
+        **ORIGIN, "Content-Type": "application/x-www-form-urlencoded"})  # fmt: skip
+    assert big.status_code == 413
+    chunked = client.post(
+        "/login",
+        content=iter([b"password=x"]),  # streamed: no Content-Length
+        headers={**ORIGIN, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert chunked.status_code == 411
+
+
+def test_only_exact_paths_are_open(tmp_path: Path, clock: Clock) -> None:
+    client = make(tmp_path, clock)
+    set_up(client)
+    client.cookies.clear()
+    for path in ("/login-anything", "/setupx", "/healthz/extra"):
+        assert client.get(path).status_code in (303, 404)
+        assert client.get(path).headers.get("location", "/login") == "/login"
+
+
+def test_dismiss_never_redirects_off_site(tmp_path: Path, clock: Clock) -> None:
+    client = make(tmp_path, clock)
+    set_up(client)
+    csrf = csrf_of(client)
+    for referer in ("http://testserver//evil.example/x", "http://testserver/\\evil.example"):
+        response = client.post(
+            "/updates/dismiss",
+            data={"csrf_token": csrf},
+            headers={**ORIGIN, "Referer": referer},
+        )
+        assert response.headers["location"] == "/"

@@ -8,7 +8,7 @@
 </div>
 {%- elif kind == 'done' -%}
 <div id="update-banner" class="update-banner done" role="status">
-  <strong>Update complete.</strong> {{ banner['helper'].message }} You are running {{ version }}.
+  <strong>Update complete.</strong> {{ banner['helper'].message }} You are running {{ version }}.{% if banner['helper'].outdated %} <a href="/updates#helper-upgrade">Upgrade the update helper</a> too: one command.{% endif %}
   <a href="/">Reload the page</a>
   {% if request.state.csrf is defined %}<form method="post" action="/updates/dismiss" class="inline"><input type="hidden" name="csrf_token" value="{{ request.state.csrf }}"><button type="submit" class="link">Dismiss</button></form>{% endif %}
 </div>

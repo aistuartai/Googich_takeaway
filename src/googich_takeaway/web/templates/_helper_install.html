@@ -1,0 +1,4 @@
+{#- The one command that installs or upgrades the update helper, for this release. -#}
+<pre class="command"><code>curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v{{ version }}/deploy/updater/install-updater.sh
+sudo bash install-updater.sh /opt/googich</code></pre>
+<small>Run it on the Docker host, in any folder; change <code>/opt/googich</code> if <code>compose.yaml</code> is elsewhere. Read the script first if you like: it is short, and it runs as root.</small>

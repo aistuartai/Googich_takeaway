@@ -9,3 +9,8 @@ ExecStart=/usr/local/lib/googich-updater/googich-updater.sh
 # Change these if your install is not in /opt/googich:
 Environment=GOOGICH_COMPOSE_DIR=/opt/googich
 TimeoutStartSec=10min
+# Lock and scratch files live here, out of the container's reach.
+RuntimeDirectory=googich-updater
+RuntimeDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes

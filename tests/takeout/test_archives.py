@@ -109,3 +109,23 @@ def test_group_exports_orders_parts_and_keeps_strangers_apart() -> None:
         ],
         "my-own-backup.zip": [Path("my-own-backup.zip")],
     }
+
+
+@pytest.mark.parametrize("kind", ["zip", "tgz"])
+def test_only_the_wanted_entries_are_read(tmp_path: Path, kind: str) -> None:
+    names = [f"Takeout/Google Photos/p{n}.jpg" for n in range(5)]
+    path = tmp_path / f"takeout-x-001.{kind}"
+    if kind == "zip":
+        with zipfile.ZipFile(path, "w") as archive:
+            for name in names:
+                archive.writestr(name, name.encode())
+    else:
+        with tarfile.open(path, "w:gz") as archive:
+            for name in names:
+                data = name.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+    found = [(e.path, e.stream.read()) for e in iter_entries(path, only={names[1], names[3]})]
+    assert found == [(names[1], names[1].encode()), (names[3], names[3].encode())]
+    assert list(iter_entries(path, only=set())) == []

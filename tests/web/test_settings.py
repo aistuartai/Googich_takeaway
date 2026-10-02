@@ -1031,3 +1031,27 @@ def test_choose_how_exports_arrive(world: World) -> None:
     dashboard = world.client.get("/").text
     assert "Bring your Google Photos home" not in dashboard  # setup complete without Drive
     assert '<div class="station station-drive station-off">' in dashboard
+
+
+def test_an_old_update_helper_is_offered_a_one_command_upgrade(world: World) -> None:
+    from googich_takeaway import __version__
+
+    _helper(world)  # reports helper version 1
+    page = world.client.get("/updates").text
+    assert "The update helper can be upgraded." in page
+    assert (
+        f"raw.githubusercontent.com/aistuartai/Googich_takeaway/v{__version__}/deploy/updater/"
+        "install-updater.sh" in page
+    )
+    assert "sudo bash install-updater.sh /opt/googich" in page
+    folder = world.tmp / "updater"
+    (folder / "status.json").write_text(
+        '{"helper": "2", "state": "idle", "message": "Ready for updates.", "version": "", "at": ""}'
+    )
+    assert "can be upgraded" not in world.client.get("/updates").text
+
+
+def test_without_the_helper_the_install_command_is_shown(world: World) -> None:
+    page = world.client.get("/updates").text
+    assert "One-click updates are off" in page
+    assert "sudo bash install-updater.sh /opt/googich" in page

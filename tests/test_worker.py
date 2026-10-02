@@ -356,3 +356,10 @@ def test_old_log_files_are_deleted_and_history_kept(world: World) -> None:
     world.config().save_log_retention("7")
     world.worker.prune_logs()
     assert sorted(p.name for p in logs.iterdir()) == ["googich.log"]
+
+
+def test_a_second_run_now_is_refused_while_the_first_is_starting(world: World) -> None:
+    assert world.worker.request_run()
+    assert world.worker._due_trigger() is not None  # the loop has taken the request...
+    assert not world.worker.request_run()  # ...so a double click does not queue another run
+    assert world.worker.run_pending_or_going()

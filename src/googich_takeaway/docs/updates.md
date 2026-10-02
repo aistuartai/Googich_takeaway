@@ -44,24 +44,29 @@ Progress and the result appear in the banner and under Help → Updates.
 
 ## Installing the update helper
 
-As root on the Docker host, in the folder holding `compose.yaml` (for example `/opt/googich`),
-using the release you are running:
+On the Docker host, run:
 
 ```bash
-cd /opt/googich
-V=0.3.3
-base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
-install -d -m 755 /usr/local/lib/googich-updater
-curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
-chmod 755 /usr/local/lib/googich-updater/googich-updater.sh
-curl -fsSL "$base/googich-updater.path" -o /etc/systemd/system/googich-updater.path
-curl -fsSL "$base/googich-updater.service" -o /etc/systemd/system/googich-updater.service
-install -d -m 770 -o "$(stat -c %u data)" -g "$(stat -c %g data)" data/updater
-systemctl daemon-reload
-systemctl enable --now googich-updater.path
-systemctl start googich-updater.service   # reports "Ready for updates." to the app
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.4/deploy/updater/install-updater.sh
+sudo bash install-updater.sh /opt/googich
 ```
 
-Read the script before installing it: it runs as root. If your install is not in
-`/opt/googich`, change the path in both systemd files. To remove the helper, run
-`systemctl disable --now googich-updater.path` and delete the three files.
+Change `/opt/googich` if `compose.yaml` is somewhere else. Help → Updates shows the same
+command, for the version you are running.
+
+**The same command upgrades it.** When a release brings a newer helper, Help → Updates (and the
+*Update complete* banner) says so; run the command again.
+
+What it does, as root:
+
+1. reads the version you run from `compose.yaml`, and downloads that release's helper files from
+   GitHub;
+2. installs the script in `/usr/local/lib/googich-updater/` and two systemd units that watch
+   for requests from the app;
+3. makes `data/updater` belong to root with the sticky bit set (mode `1770`): the app can add
+   its request there, but cannot replace or redirect the files root writes;
+4. starts watching, and reports *Ready for updates.* to the app.
+
+Read the script first if you like: it is short. To remove the helper, run
+`systemctl disable --now googich-updater.path` and delete
+`/usr/local/lib/googich-updater` and the two `googich-updater` files in `/etc/systemd/system`.

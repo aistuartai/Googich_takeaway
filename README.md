@@ -42,7 +42,7 @@ or an SMB share).
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.3/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.4/docker/compose.yaml
 less compose.yaml                  # read what you are about to run
 
 mkdir -p data secrets && chmod 700 data secrets
@@ -77,11 +77,11 @@ The same guide is built into the app under **Help → Guide**, with search.
 ## Updating
 
 The app tells you when a new release is out, and never updates itself. With the optional
-[update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper) on the Docker
-host, **Update now** installs it in one click, pausing a running run first. By hand:
+[update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper), installed with
+one command on the Docker host, **Update now** installs it in one click, pausing a running run first. By hand:
 
 ```bash
-sed -i 's/googich_takeaway:0.3.2/googich_takeaway:0.3.3/' compose.yaml
+sed -i 's/googich_takeaway:0.3.3/googich_takeaway:0.3.4/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 

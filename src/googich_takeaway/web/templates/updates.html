@@ -37,8 +37,15 @@
     {% endif %}
     {% if helper %}
     <p class="muted">One-click updates are on. The update helper on the host last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.astimezone(zone).strftime('%d %b %H:%M') }}){% endif %}</p>
+    {% if helper.outdated %}
+    <div class="helper-upgrade" id="helper-upgrade">
+      <p><strong>The update helper can be upgraded.</strong> This release has a safer one. It keeps working as it is until then, but upgrade it soon. On the Docker host, run:</p>
+      {% include "_helper_install.html" %}
+    </div>
+    {% endif %}
     {% else %}
-    <p class="muted">One-click updates are off: the optional update helper is not installed on the host. See "One-click updates" in the README.</p>
+    <p class="muted">One-click updates are off: the optional update helper is not installed on the host. To turn them on, run this once on the Docker host (<a href="/help/updates#installing-the-update-helper">what it does</a>):</p>
+    {% include "_helper_install.html" %}
     {% endif %}
   </div>
   <form method="post" action="/updates/daily">

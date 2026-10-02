@@ -7,8 +7,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-02
+
+### Security
+
+- **Update helper:** it runs as root, but kept its lock and scratch files in a folder the
+  container can write to, so a compromised app could have made root overwrite host files through
+  planted links. It now keeps them in a root-only runtime folder, refuses to work unless
+  `data/updater` belongs to root with the sticky bit, never reads the request through a link,
+  and runs with `NoNewPrivileges` and a private `/tmp`.
+
+### Added
+
+- **One command installs or upgrades the update helper** (`install-updater.sh`): it reads the
+  version you run from `compose.yaml` and sets everything up. Help → Updates shows the command,
+  and says when the installed helper is older than the one in the release, as does the
+  *Update complete* banner. A helper installed before 0.3.4 keeps working until upgraded.
+- **Login throttling** counts each attempt the moment it starts, so simultaneous guesses can no
+  longer slip past it, and at most two passwords are checked at once (each check uses 64 MB).
+  Old entries are forgotten.
+- Requests before sign-in are limited to 16 KB and must state their length; others to 1 MB.
+- Only the exact login, setup and health paths skip sign-in.
+- A crafted video can no longer crash a scan, and one damaged export no longer stops the others
+  from importing.
+- The banner's Dismiss never redirects to another site.
+
 ### Changed
 
+- Faster: the database no longer waits for the disk on every save (the usual safe setting for
+  its journal mode), sessions are checked without writing on every page refresh, and bulk
+  records are saved in one go. Re-scanning a large export is minutes quicker.
+- Uploads open only the files being sent and stop reading an archive once they are all sent,
+  instead of reading every archive to the end (a `.tgz` was unpacked whole for one new photo).
+- Downloads are checked against Drive's checksum while they arrive, instead of being read back
+  afterwards (half the traffic on an SMB share).
+- Matching photos to their metadata files is linear: 4,000 photos in one folder take 0.2 s, not
+  5 s.
+- Pages stay responsive while a Drive source is added or its key replaced.
+- A second press of Run now while a run is starting is refused instead of queuing another run.
+- State database schema 8 (an index for Cleanup and the dashboard).
 - README rewritten to be short: highlights, quick start and a guide table. Installing the update
   helper, reverse proxy settings and keeping the master key out of Proxmox backups moved into the
   guide (Updates, and Security and backups), with a new Command-line tools guide.
@@ -333,7 +370,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...v0.3.1

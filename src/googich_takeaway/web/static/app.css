@@ -688,3 +688,7 @@ ol.steps li { margin: .35rem 0; }
 .station-off .station-icon { filter: grayscale(1); opacity: .45; }
 .station-off .station-icon:hover, .station-off .station-icon:focus-visible { opacity: .8; }
 .station-off .station-name, .station-off .station-figure { color: var(--muted); }
+/* Commands to copy, such as installing the update helper. */
+pre.command { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: .75rem .9rem; overflow-x: auto; margin: .5rem 0 .3rem; }
+pre.command code { background: none; padding: 0; color: var(--ink); white-space: pre; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .8125rem; }
+.helper-upgrade { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1rem 0; }

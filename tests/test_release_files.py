@@ -28,3 +28,19 @@ def test_changelog_has_a_section_for_released_versions() -> None:
     version = _version()
     if version.count(".") == 2 and "dev" not in version:
         assert f"## [{version}]" in (ROOT / "CHANGELOG.md").read_text()
+
+
+def test_every_versioned_link_names_the_current_release() -> None:
+    """Install and update commands point at this release's files."""
+    version = _version()
+    for path in ("README.md", "src/googich_takeaway/docs/updates.md"):
+        found = set(re.findall(r"Googich_takeaway/v(\d+\.\d+\.\d+)/", (ROOT / path).read_text()))
+        assert found == {version}, f"bump the version in links in {path}"
+    assert f"googich_takeaway:{version}/" in (ROOT / "README.md").read_text().replace("'", "/")
+
+
+def test_helper_version_matches_the_app() -> None:
+    from googich_takeaway.updates import HELPER_VERSION
+
+    script = (ROOT / "deploy" / "updater" / "googich-updater.sh").read_text()
+    assert f'HELPER_VERSION="{HELPER_VERSION}"' in script

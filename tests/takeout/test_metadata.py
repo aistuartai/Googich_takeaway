@@ -115,3 +115,12 @@ def test_sidecar_prefers_exif_location_over_google_estimate() -> None:
 )
 def test_invalid_sidecars_return_none(data: bytes) -> None:
     assert parse_sidecar(data) is None
+
+
+def test_deeply_nested_video_boxes_do_not_crash() -> None:
+    """A crafted video nests thousands of moov boxes; reading it must not recurse."""
+    import struct
+
+    depth = 20_000
+    data = b"".join(struct.pack(">I4s", 8 * (depth - n), b"moov") for n in range(depth))
+    assert read_media_metadata(".mp4", data[:262_144]).video_utc is None

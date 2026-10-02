@@ -49,10 +49,13 @@ class SidecarData:
 def read_media_metadata(extension: str, head: bytes, tail: bytes = b"") -> MediaMetadata:
     """Best-effort metadata from a file's first and last bytes. Never raises on bad input."""
     extension = extension.lower().removeprefix(".")
-    if extension in _PILLOW_EXTENSIONS:
-        return _read_image(head)
-    if extension in _QUICKTIME_EXTENSIONS:
-        return MediaMetadata(video_utc=_read_quicktime_created(head, tail))
+    try:
+        if extension in _PILLOW_EXTENSIONS:
+            return _read_image(head)
+        if extension in _QUICKTIME_EXTENSIONS:
+            return MediaMetadata(video_utc=_read_quicktime_created(head, tail))
+    except Exception:  # a malformed file must never stop a scan
+        return MediaMetadata()
     return MediaMetadata()
 
 
@@ -156,8 +159,9 @@ def _walk_for_mvhd(data: bytes, offset: int = 0, end: int | None = None) -> date
             size = end - offset
         if size < header:
             return None
-        if kind == b"moov":
-            return _walk_for_mvhd(data, offset + header, min(offset + size, end))
+        if kind == b"moov":  # step inside, without recursion: nesting is attacker-controlled
+            offset, end = offset + header, min(offset + size, end)
+            continue
         if kind == b"mvhd":
             return _mvhd_time(data[offset + header : offset + size])
         offset += size

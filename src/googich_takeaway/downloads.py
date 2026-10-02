@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 from googich_takeaway.locations import LocalLocation, Location, LocationError, StoredFile
 from googich_takeaway.progress import ItemState, Stage, Tracker
@@ -161,12 +161,22 @@ class Downloader:
             self.tracker.already_have(have)  # resuming: show the bytes already downloaded
         self._check_space(location, file.size - have, file.name)
 
+        # The checksum is worked out while the file is written, so it is not read back over the
+        # network afterwards. A resumed part is hashed once, up to where it stopped.
+        check = _expected_digest(file)
+        digest = _hash_part(location, part, check[0], have) if check and have else None
+        if check and digest is None:
+            digest = hashlib.new(check[0], usedforsecurity=False)
+        hashed = have
         delay = BACKOFF_START
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 with location.open_append(part) as handle:
                     for chunk in source.read(file, start=have):
                         handle.write(chunk)
+                        if digest is not None:
+                            digest.update(chunk)
+                            hashed += len(chunk)
                         have += len(chunk)
                         if self.progress:
                             self.progress(len(chunk))
@@ -179,6 +189,8 @@ class Downloader:
                 break
             except TransientSourceError:
                 have = location.size(part) or 0
+                if check and have != hashed:  # the part holds more or less than was hashed
+                    digest, hashed = _hash_part(location, part, check[0], have), have
                 if attempt == ATTEMPTS:
                     raise
                 self.sleep(delay)
@@ -186,7 +198,9 @@ class Downloader:
 
         if have != file.size:
             raise SourceError(f"{file.name}: got {have} bytes, expected {file.size}; will resume")
-        _verify(location, part, file)
+        if check and digest is not None and digest.hexdigest() != check[1]:
+            location.delete(part)
+            raise SourceError(f"{file.name}: {check[0]} does not match the source; discarded")
         location.replace(part, target)
         location.delete(marker)
         self.state.record_download(
@@ -216,20 +230,24 @@ class Downloader:
             )
 
 
-def _verify(location: Location, part: str, file: RemoteFile) -> None:
+def _expected_digest(file: RemoteFile) -> tuple[str, str] | None:
+    """The checksum the source gives for ``file``: (algorithm, lowercase hex)."""
     if file.sha256:
-        algorithm, expected = "sha256", file.sha256
-    elif file.md5:
-        algorithm, expected = "md5", file.md5
-    else:
-        return  # nothing to check against; size already matched
+        return "sha256", file.sha256.lower()
+    if file.md5:
+        return "md5", file.md5.lower()
+    return None  # nothing to check against; the size is still checked
+
+
+def _hash_part(location: Location, part: str, algorithm: str, length: int) -> Any:
+    """A running hash of the first ``length`` bytes of a partial download."""
     digest = hashlib.new(algorithm, usedforsecurity=False)
+    remaining = length
     with location.open_read(part) as handle:
-        while chunk := handle.read(HASH_CHUNK):
+        while remaining > 0 and (chunk := handle.read(min(HASH_CHUNK, remaining))):
             digest.update(chunk)
-    if digest.hexdigest() != expected.lower():
-        location.delete(part)
-        raise SourceError(f"{file.name}: {algorithm} does not match the source; discarded")
+            remaining -= len(chunk)
+    return digest
 
 
 def _marker(data: bytes | None) -> str | None:

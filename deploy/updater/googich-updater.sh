@@ -10,6 +10,11 @@
 #   4. pulls and restarts the container, then waits for /healthz to report the new version
 #   5. on any failure, restores the previous compose.yaml and restarts the old version
 # Progress and the result go to <data>/updater/status.json, which the web interface shows.
+#
+# The container can write to <data>, so nothing there is trusted. The script works inside
+# <data>/updater only after checking it is a real directory owned by root with the sticky bit
+# (the container may add request.json but cannot replace or redirect root's files), and keeps
+# its lock and scratch files in a root-only runtime directory.
 set -euo pipefail
 
 COMPOSE_DIR="${GOOGICH_COMPOSE_DIR:-/opt/googich}"
@@ -18,12 +23,33 @@ IMAGE="${GOOGICH_IMAGE:-ghcr.io/aistuartai/googich_takeaway}"
 REPOSITORY="${GOOGICH_REPOSITORY:-aistuartai/Googich_takeaway}"
 SERVICE="${GOOGICH_SERVICE:-googich}"
 HEALTH_URL="${GOOGICH_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-HELPER_VERSION="1"
+HELPER_VERSION="2"
+OWNER_UID="${GOOGICH_UPDATER_OWNER:-0}"   # tests run as an ordinary user
+RUNTIME="${GOOGICH_RUNTIME_DIR:-${RUNTIME_DIRECTORY:-/run/googich-updater}}"
 
 UPDATER_DIR="$DATA_DIR/updater"
-REQUEST="$UPDATER_DIR/request.json"
-STATUS="$UPDATER_DIR/status.json"
 COMPOSE="$COMPOSE_DIR/compose.yaml"
+
+fail_setup() {
+  echo "googich-updater: $1" >&2
+  exit 1
+}
+
+# Scratch space nobody else can touch.
+umask 077
+mkdir -p "$RUNTIME"
+[ -d "$RUNTIME" ] && [ ! -L "$RUNTIME" ] && [ "$(stat -c %u "$RUNTIME")" = "$OWNER_UID" ] \
+  || fail_setup "$RUNTIME is not a private directory"
+chmod 700 "$RUNTIME"
+
+# Work from inside the updater directory, so swapping a path component later changes nothing.
+cd "$UPDATER_DIR" 2>/dev/null || fail_setup "no $UPDATER_DIR; see the install steps"
+read -r dir_uid dir_mode < <(stat -c '%u %a' .)
+if [ "$dir_uid" != "$OWNER_UID" ] || [ "${#dir_mode}" -lt 4 ] || (( (8#$dir_mode & 01000) == 0 )); then
+  fail_setup "$UPDATER_DIR must be owned by root with the sticky bit (mode 1770); see the install steps"
+fi
+REQUEST="request.json"
+STATUS="status.json"
 
 json_text() {  # escape for a JSON string; messages are this script's own text
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'
@@ -31,23 +57,26 @@ json_text() {  # escape for a JSON string; messages are this script's own text
 
 status() {  # state message [version]
   local tmp
-  tmp=$(mktemp "$UPDATER_DIR/.status.XXXXXX")
+  tmp=$(mktemp ./.status.XXXXXX)   # in the sticky directory: only root can rename or remove it
   printf '{"helper": "%s", "state": "%s", "message": "%s", "version": "%s", "at": "%s"}\n' \
     "$HELPER_VERSION" "$1" "$(json_text "$2")" "$(json_text "${3:-}")" \
     "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$tmp"
   chmod 644 "$tmp"
-  mv -f "$tmp" "$STATUS"
+  mv -fT "$tmp" "$STATUS"   # rename(2): replaces a planted link instead of following it
 }
 
-exec 9>"$UPDATER_DIR/.lock"
+exec 9>"$RUNTIME/lock"
 flock -n 9 || exit 0   # one update at a time
 
 if [ ! -f "$REQUEST" ]; then
   # Started by installation, or by the request file being removed: keep the last result.
-  [ -f "$STATUS" ] || status idle "Ready for updates."
+  # Also after an upgrade, so the app sees which helper version it is talking to.
+  grep -qs "\"helper\": \"$HELPER_VERSION\"" "$STATUS" || status idle "Ready for updates."
   exit 0
 fi
-version=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' "$REQUEST" 2>/dev/null \
+# The request belongs to the container: read at most 256 bytes, and never through a link.
+version=$(dd if="$REQUEST" iflag=nofollow bs=256 count=1 status=none 2>/dev/null \
+  | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
   | head -1 | sed -E 's/.*"([^"]*)"$/\1/' || true)
 rm -f "$REQUEST"
 if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
@@ -56,7 +85,7 @@ if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
 fi
 
 status updating "Checking that $version is a published release." "$version"
-answer="$UPDATER_DIR/.release.json"
+answer="$RUNTIME/release.json"
 code=000
 for attempt in 1 2 3; do
   code=$(curl -sS --max-time 20 -o "$answer" -w '%{http_code}' \

@@ -293,7 +293,16 @@ class Pipeline:
                         completed.isoformat(timespec="minutes"),
                     )
                     continue
-                self._import(export_id, export_key, parts, client, resolver, report)
+                try:
+                    self._import(export_id, export_key, parts, client, resolver, report)
+                except (ImmichError, LocationError):
+                    raise  # Immich or the folder is unreachable: every export would fail too
+                except Exception as error:  # one damaged export must not stop the others
+                    log.exception("Export %s could not be imported", export_id)
+                    report.problems.append(
+                        f"Export {export_id} not imported: {type(error).__name__}: {error}"[:300]
+                    )
+                    self._skip(export_id, "could not be read")
             # Immich processes large imports in the background; catch up on earlier uploads.
             checked = verify_pending(self.state, client, self.destination, self.clock)
             report.verified_later += checked.verified

@@ -25,6 +25,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from googich_takeaway import __version__, cleanup, downloads, reminders, updates
@@ -66,7 +67,18 @@ log = logging.getLogger("googich.web")
 HERE = Path(__file__).parent
 COOKIE = "googich_session"
 SESSION_LIFETIME = timedelta(days=7)
-OPEN_PATHS = ("/login", "/setup", "/healthz", "/static/")
+OPEN_PATHS = frozenset({"/login", "/setup", "/healthz"})
+"""Reachable without a session: these exact paths, and files under /static/."""
+OPEN_BODY_LIMIT = 16 * 1024
+"""Largest request body accepted before signing in (the login and setup forms are tiny)."""
+BODY_LIMIT = 1024 * 1024
+"""Largest request body accepted at all (key files are at most 64 KB)."""
+
+
+def _is_open(path: str) -> bool:
+    return path in OPEN_PATHS or path.startswith("/static/")
+
+
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 NOTICES = {
     "started": "Run started. Progress shows below.",
@@ -139,7 +151,7 @@ def create_app(
     async def csrf_guard(request: Request) -> None:
         # A dependency, not middleware: it shares FastAPI's parsed form with the route. Reading
         # the body in middleware would consume it before the route sees its form fields.
-        if request.method not in UNSAFE_METHODS or request.url.path.startswith(OPEN_PATHS):
+        if request.method not in UNSAFE_METHODS or _is_open(request.url.path):
             return
         expected = getattr(request.state, "csrf", None)
         if expected is None or not await _csrf_ok(request, expected):
@@ -308,8 +320,12 @@ def create_app(
         if request.method in UNSAFE_METHODS and not _same_origin(request):
             return _with_headers(Response("Cross-site request refused.", status_code=403))
         path = request.url.path
-        if not path.startswith(OPEN_PATHS):
-            csrf = _session_csrf(request, settings.state_path, clock())
+        if request.method in UNSAFE_METHODS:
+            refused = _body_refused(request, OPEN_BODY_LIMIT if _is_open(path) else BODY_LIMIT)
+            if refused is not None:
+                return _with_headers(refused)
+        if not _is_open(path):
+            csrf = await run_in_threadpool(_session_csrf, request, settings.state_path, clock())
             if csrf is None:
                 if request.headers.get("HX-Request"):
                     response: Response = Response(
@@ -342,11 +358,10 @@ def create_app(
         if state.password_hash() is not None or not app.state.setup_token:
             return RedirectResponse("/login", status_code=303)
         address = _client(request)
-        wait = login_throttle.retry_after(address)
+        wait = login_throttle.attempt(address)
         if wait:
             return _throttled(request, templates, "setup.html", wait)
         if not auth.same(token.strip(), app.state.setup_token):
-            login_throttle.failed(address)
             return templates.TemplateResponse(
                 request, "setup.html", {"error": "That setup token is not right."}, status_code=400
             )
@@ -373,11 +388,13 @@ def create_app(
         if stored is None:
             return RedirectResponse("/setup", status_code=303)
         address = _client(request)
-        wait = login_throttle.retry_after(address)
+        wait = login_throttle.attempt(address)
         if wait:
             return _throttled(request, templates, "login.html", wait)
-        if not auth.verify_password(stored, password):
-            login_throttle.failed(address)
+        verified = auth.verify_password_limited(stored, password)
+        if verified is None:
+            return _throttled(request, templates, "login.html", 5.0)
+        if not verified:
             log.warning("Failed login from %s", address)
             return templates.TemplateResponse(
                 request, "login.html", {"error": "Wrong password."}, status_code=401
@@ -1263,7 +1280,8 @@ def create_app(
             config.state.set_setting("updates.helper_ack", helper.at.isoformat(), clock())
         back = request.headers.get("referer", "/")
         path = urlsplit(back).path or "/"
-        return RedirectResponse(path if path.startswith("/") else "/", status_code=303)
+        local = path.startswith("/") and not path.startswith(("//", "/\\"))  # never off-site
+        return RedirectResponse(path if local else "/", status_code=303)
 
     @app.post("/updates/check")
     def check_updates(state: StateDep) -> Response:
@@ -1429,14 +1447,16 @@ def create_app(
         return sources_page(request, config)
 
     @app.post("/sources/drive")
-    async def add_drive(
+    def add_drive(
         request: Request,
         config: ConfigDep,
         name: Annotated[str, Form()],
         folder_id: Annotated[str, Form()],
         key_file: Annotated[UploadFile, File()],
     ) -> Response:
-        data = await key_file.read(MAX_KEY_FILE_BYTES + 1)
+        # A plain function, so FastAPI runs it off the event loop: adding the source asks Google
+        # for the folder's name, and pages polling meanwhile must not freeze.
+        data = key_file.file.read(MAX_KEY_FILE_BYTES + 1)
         try:
             source_id = config.add_drive_source(name, folder_id, data)
         except ConfigError as error:
@@ -1474,7 +1494,7 @@ def create_app(
         return RedirectResponse("/sources", status_code=303)
 
     @app.post("/sources/{source_id}/key")
-    async def replace_key(
+    def replace_key(
         request: Request,
         config: ConfigDep,
         source_id: int,
@@ -1482,7 +1502,7 @@ def create_app(
     ) -> Response:
         if not any(s.id == source_id and s.kind == "gdrive" for s in config.sources()):
             return Response(status_code=404)
-        data = await key_file.read(MAX_KEY_FILE_BYTES + 1)
+        data = key_file.file.read(MAX_KEY_FILE_BYTES + 1)
         try:
             config.replace_drive_key(source_id, data)
         except ConfigError as error:
@@ -1652,6 +1672,16 @@ def _split_netloc(netloc: str) -> tuple[str, str | None]:
 
 def _client(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+def _body_refused(request: Request, limit: int) -> Response | None:
+    """A response refusing the request body, if it is too large or of unknown length."""
+    length = request.headers.get("content-length")
+    if length is None:
+        return Response("A request body of known length is required.", status_code=411)
+    if not length.isdigit() or int(length) > limit:
+        return Response("Request too large.", status_code=413)
+    return None
 
 
 def _throttled(request: Request, templates: Jinja2Templates, page: str, wait: float) -> Response:

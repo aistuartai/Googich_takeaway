@@ -141,3 +141,18 @@ def test_version_6_database_keeps_its_sources_and_counts_seen_items(tmp_path: Pa
         ]
         state.add_source("download-folder", "Downloads", "download-folder", AT)
         assert len(state.sources()) == 2
+
+
+def test_sessions_are_checked_without_writing_every_time(tmp_path: Path) -> None:
+    from datetime import timedelta
+
+    with State(tmp_path / "state.db") as state:
+        state.create_session("h", "csrf", AT, AT + timedelta(days=7))
+        assert state.get_session("h", AT + timedelta(seconds=30)) == "csrf"
+        seen = state._db.execute("SELECT last_seen FROM web_sessions").fetchone()[0]
+        assert seen == AT.isoformat()  # under a minute: not written
+        assert state.get_session("h", AT + timedelta(minutes=5)) == "csrf"
+        seen = state._db.execute("SELECT last_seen FROM web_sessions").fetchone()[0]
+        assert seen == (AT + timedelta(minutes=5)).isoformat()
+        assert state.get_session("h", AT + timedelta(days=8)) is None  # expired
+        assert state._db.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL

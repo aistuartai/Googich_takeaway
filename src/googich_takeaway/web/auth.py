@@ -61,15 +61,37 @@ def same(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
 
 
+HASHING_AT_ONCE = 2
+"""Password checks allowed at the same time. Each takes 64 MiB, so a burst of logins cannot
+exhaust a small container's memory."""
+_hashing = threading.BoundedSemaphore(HASHING_AT_ONCE)
+
+
+def verify_password_limited(stored_hash: str, password: str, wait: float = 10.0) -> bool | None:
+    """``verify_password``, at most ``HASHING_AT_ONCE`` at a time. None if the server was too
+    busy to check within ``wait`` seconds."""
+    if not _hashing.acquire(timeout=wait):
+        return None
+    try:
+        return verify_password(stored_hash, password)
+    finally:
+        _hashing.release()
+
+
 @dataclass
 class LoginThrottle:
-    """Per-address lockout after repeated failures: 5 free tries, then 30 s doubling to 15 min."""
+    """Per-address lockout after repeated failures: 5 free tries, then 30 s doubling to 15 min.
+
+    Every attempt counts as a failure the moment it starts, and stops counting only when it
+    succeeds, so a burst of simultaneous guesses cannot all slip past the check."""
 
     free_attempts: int = 5
     first_lock: float = 30.0
     max_lock: float = 900.0
+    forget_after: float = 86400.0
     clock: Callable[[], float] = time.monotonic
-    _failures: dict[str, tuple[int, float]] = field(default_factory=dict)
+    _failures: dict[str, tuple[int, float, float]] = field(default_factory=dict)
+    """address: (failed attempts, locked until, last attempt)."""
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def _now(self) -> float:
@@ -78,18 +100,35 @@ class LoginThrottle:
     def retry_after(self, address: str) -> float:
         """Seconds until ``address`` may try again; 0 if allowed now."""
         with self._lock:
-            _, until = self._failures.get(address, (0, 0.0))
+            _, until, _ = self._failures.get(address, (0, 0.0, 0.0))
             return max(0.0, until - self._now())
 
-    def failed(self, address: str) -> None:
+    def attempt(self, address: str) -> float:
+        """Start an attempt: 0 if allowed (and counted as failed until ``succeeded``), else the
+        seconds to wait. The check and the count are one step."""
         with self._lock:
-            count, _ = self._failures.get(address, (0, 0.0))
+            now = self._now()
+            count, until, _ = self._failures.get(address, (0, 0.0, 0.0))
+            if until > now:
+                return until - now
             count += 1
             until = 0.0
             if count > self.free_attempts:
                 lock = min(self.first_lock * 2 ** (count - self.free_attempts - 1), self.max_lock)
-                until = self._now() + lock
-            self._failures[address] = (count, until)
+                until = now + lock
+            self._failures[address] = (count, until, now)
+            if len(self._failures) > 1000:
+                self._forget_old(now)
+            return 0.0
+
+    def failed(self, address: str) -> None:
+        """Record a failure outside ``attempt`` (kept for callers that check first)."""
+        self.attempt(address)
+
+    def _forget_old(self, now: float) -> None:
+        for key, (_, until, last) in list(self._failures.items()):
+            if until <= now and now - last > self.forget_after:
+                del self._failures[key]
 
     def succeeded(self, address: str) -> None:
         with self._lock:

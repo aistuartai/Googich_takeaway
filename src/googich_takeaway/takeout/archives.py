@@ -8,7 +8,7 @@ import re
 import tarfile
 import zipfile
 import zlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Protocol
@@ -75,42 +75,60 @@ def _open(source: ArchiveSource) -> IO[bytes]:
     return source.open()
 
 
-def iter_entries(source: ArchiveSource) -> Iterator[ArchiveEntry]:
-    """Yield every regular file in a zip or tgz archive, in archive order."""
+def iter_entries(
+    source: ArchiveSource, only: Collection[str] | None = None
+) -> Iterator[ArchiveEntry]:
+    """Yield every regular file in a zip or tgz archive, in archive order.
+
+    With ``only``, yield just those paths, and stop as soon as all have been found: a zip
+    opens only those entries, and a tgz is not read past the last one."""
     kind = archive_format(source)
+    wanted = None if only is None else set(only)
+    if wanted is not None and not wanted:
+        return
     try:
         with _open(source) as handle:
             if kind == "zip":
-                yield from _iter_zip(handle, source.name)
+                yield from _iter_zip(handle, source.name, wanted)
             else:
-                yield from _iter_tgz(handle, source.name)
+                yield from _iter_tgz(handle, source.name, wanted)
     except _READ_ERRORS as error:
         raise ArchiveError(f"{source.name}: {error}") from error
 
 
-def _iter_zip(handle: IO[bytes], name: str) -> Iterator[ArchiveEntry]:
+def _iter_zip(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator[ArchiveEntry]:
     # Zip needs random access to its central directory; local files and SMB handles both seek.
     with zipfile.ZipFile(handle) as archive:
         for info in archive.infolist():
-            if info.is_dir():
+            if info.is_dir() or (wanted is not None and info.filename not in wanted):
                 continue
             with archive.open(info) as stream:
                 guarded = _GuardedStream(stream, name, info.filename)
                 yield ArchiveEntry(info.filename, info.file_size, guarded)
+            if wanted is not None:
+                wanted.discard(info.filename)
+                if not wanted:
+                    return
 
 
-def _iter_tgz(handle: IO[bytes], name: str) -> Iterator[ArchiveEntry]:
+def _iter_tgz(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator[ArchiveEntry]:
     # Stream mode ("r|gz") reads sequentially, which suits network shares; no seeking.
     with tarfile.open(fileobj=handle, mode="r|gz") as archive:
         for member in archive:
             if not member.isfile():
                 continue  # directories, links and devices are never followed
+            if wanted is not None and member.name not in wanted:
+                continue
             stream = archive.extractfile(member)
             if stream is None:
                 continue
             with stream:
                 guarded = _GuardedStream(stream, name, member.name)
                 yield ArchiveEntry(member.name, member.size, guarded)
+            if wanted is not None:
+                wanted.discard(member.name)
+                if not wanted:
+                    return  # the rest of the archive is never decompressed
 
 
 _PART_NAME = re.compile(
