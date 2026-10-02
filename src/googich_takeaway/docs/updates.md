@@ -33,7 +33,8 @@ into `data/updater/request.json`. The helper, a shell script started by systemd 
 container, then:
 
 1. accepts nothing but a plain version number such as `0.3.0`,
-2. checks it is a published release of this project on GitHub,
+2. checks it is a published release of this project, on GitHub's releases pages (not its API,
+   which limits how often anyone on your network may ask),
 3. sets that version in `compose.yaml`, keeping a copy of the old file,
 4. pulls the image, restarts the container, and waits for it to report the new version,
 5. restores the previous version automatically if anything fails.
@@ -49,7 +50,7 @@ Progress and the result appear in the banner and under Help → Updates.
 On the Docker host, run:
 
 ```bash
-curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.5/install-updater.sh
+curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.6/install-updater.sh
 sudo bash install-updater.sh /opt/googich
 ```
 

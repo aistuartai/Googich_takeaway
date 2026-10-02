@@ -1,6 +1,6 @@
 [project]
 name = "googich-takeaway"
-version = "0.3.5"
+version = "0.3.6"
 description = "Self-hosted tool that moves Google Photos into Immich using Google Takeout archives."
 readme = "README.md"
 license = "MIT"

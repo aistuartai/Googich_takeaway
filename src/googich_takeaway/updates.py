@@ -214,7 +214,7 @@ def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
 # banner with the manual command.
 
 
-HELPER_VERSION = 2
+HELPER_VERSION = 3
 """The update helper this release ships (``HELPER_VERSION`` in googich-updater.sh)."""
 
 

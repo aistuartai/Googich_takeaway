@@ -5,7 +5,7 @@
 #   <data>/updater/request.json   {"version": "X.Y.Z"}
 # and this script, started by googich-updater.path, does the update:
 #   1. accepts nothing but a plain X.Y.Z version from that file
-#   2. checks it is a published, non-pre-release GitHub release of this project
+#   2. checks it is a published GitHub release of this project, from its releases pages
 #   3. sets that tag on the image line in compose.yaml (a backup is kept)
 #   4. pulls and restarts the container, then waits for /healthz to report the new version
 #   5. on any failure, restores the previous compose.yaml and restarts the old version
@@ -23,7 +23,7 @@ IMAGE="${GOOGICH_IMAGE:-ghcr.io/aistuartai/googich_takeaway}"
 REPOSITORY="${GOOGICH_REPOSITORY:-aistuartai/Googich_takeaway}"
 SERVICE="${GOOGICH_SERVICE:-googich}"
 HEALTH_URL="${GOOGICH_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-HELPER_VERSION="2"
+HELPER_VERSION="3"
 OWNER_UID="${GOOGICH_UPDATER_OWNER:-0}"   # tests run as an ordinary user
 RUNTIME="${GOOGICH_RUNTIME_DIR:-${RUNTIME_DIRECTORY:-/run/googich-updater}}"
 
@@ -89,37 +89,41 @@ if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
 fi
 
 status updating "Checking that $version is a published release." "$version"
-answer="$RUNTIME/release.json"
-code=000
-for attempt in 1 2 3; do
-  code=$(curl -sS --max-time 20 -o "$answer" -w '%{http_code}' \
-    -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/$REPOSITORY/releases/tags/v$version" 2>/dev/null || true)
-  case "$code" in
-    200|404) break ;;
-  esac
-  # Rate limited (GitHub allows 60 anonymous requests an hour per address), a server error or
-  # no network: wait and try again rather than calling a real release unpublished.
-  [ "$attempt" -lt 3 ] && sleep 20
-done
-if [ "$code" = "404" ]; then
-  rm -f "$answer"
-  status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
+# GitHub's releases pages, not its API: the API allows 60 anonymous requests an hour per network
+# address, shared by everything on the network, and refused updates when others had used them.
+# A version counts as published when GitHub's newest release is at least that version (the
+# newest is never a draft or pre-release), and the release has its helper files attached
+# (drafts' files cannot be downloaded).
+ask() {  # url format -> prints the answer; retried, since GitHub or the network may stumble
+  local out="" attempt
+  for attempt in 1 2 3; do
+    out=$(curl -sS --max-time 20 -o /dev/null -w "$2" "$1" 2>/dev/null || true)
+    case "$out" in 000|5??|429|"") ;; *) printf '%s' "$out"; return ;; esac
+    [ "$attempt" -lt 3 ] && sleep 20
+  done
+  printf '%s' "$out"
+}
+newest_url=$(ask "https://github.com/$REPOSITORY/releases/latest" '%{redirect_url}')
+newest=""
+if [[ "$newest_url" =~ ^https://github\.com/$REPOSITORY/releases/tag/v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})$ ]]; then
+  newest="${BASH_REMATCH[1]}"
+fi
+if [ -z "$newest" ]; then
+  status failed "Could not ask GitHub to confirm $version (offline, or a GitHub problem). Nothing was changed; try again later." "$version"
   exit 1
 fi
-if [ "$code" != "200" ]; then
-  rm -f "$answer"
-  status failed "Could not ask GitHub to confirm $version (HTTP $code: rate limited, offline or a GitHub problem). Nothing was changed; try again later." "$version"
+if [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+  status failed "Refused: $version is newer than the newest published release ($newest)." "$version"
   exit 1
 fi
-flat=$(tr -d '\n\r\t ' < "$answer")
-rm -f "$answer"
-if ! { printf '%s' "$flat" | grep -q "\"tag_name\":\"v$version\"" \
-       && printf '%s' "$flat" | grep -q '"draft":false' \
-       && printf '%s' "$flat" | grep -q '"prerelease":false'; }; then
-  status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
-  exit 1
-fi
+code=$(ask "https://github.com/$REPOSITORY/releases/download/v$version/SHA256SUMS" '%{http_code}')
+case "$code" in
+  302|200) ;;
+  404) status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
+       exit 1 ;;
+  *) status failed "Could not ask GitHub to confirm $version (HTTP $code). Nothing was changed; try again later." "$version"
+     exit 1 ;;
+esac
 
 current=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$COMPOSE" | head -1 \
   | sed -E "s|.*$IMAGE:||" | tr -cd 'A-Za-z0-9._-' || true)

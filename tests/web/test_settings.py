@@ -1045,8 +1045,11 @@ def test_an_old_update_helper_is_offered_a_one_command_upgrade(world: World) -> 
     )
     assert "sudo bash install-updater.sh /opt/googich" in page
     folder = world.tmp / "updater"
+    from googich_takeaway.updates import HELPER_VERSION
+
     (folder / "status.json").write_text(
-        '{"helper": "2", "state": "idle", "message": "Ready for updates.", "version": "", "at": ""}'
+        f'{{"helper": "{HELPER_VERSION}", "state": "idle", "message": "Ready for updates.", '
+        '"version": "", "at": ""}'
     )
     assert "can be upgraded" not in world.client.get("/updates").text
 

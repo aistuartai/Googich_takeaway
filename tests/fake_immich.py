@@ -8,6 +8,7 @@ metadata appears only after a short delay.
 import hashlib
 import json
 import re
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -43,6 +44,7 @@ class FakeImmichServer:
     )
     assets: dict[str, Asset] = field(default_factory=dict)
     requests: list[str] = field(default_factory=list)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def by_sha1(self, sha1: str) -> Asset | None:
         return next((a for a in self.assets.values() if a.sha1 == sha1), None)
@@ -62,6 +64,12 @@ class FakeImmichServer:
         return httpx.MockTransport(self.handle)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        # Uploads arrive from several threads at once; a real server copes, this fake's plain
+        # dicts and counters need one request at a time.
+        with self._lock:
+            return self._handle(request)
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(f"{request.method} {request.url.path}")
         if request.headers.get("x-api-key") != KEY:
             return httpx.Response(401, json={"message": "Invalid API key"})

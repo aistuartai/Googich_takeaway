@@ -36,15 +36,14 @@ reply() {  # code body
   return 0
 }
 case "$url" in
-  *releases/tags/v0.1.2)
-    if [ -n "$STUB_RATE_LIMITED" ]; then reply 403 '{"message": "API rate limit exceeded"}'
-    else reply 200 '{
- "tag_name": "v0.1.2",
- "draft": false,
- "prerelease": false
-}'; fi ;;
-  *releases/tags/v0.1.3) reply 200 '{"tag_name": "v0.1.3", "draft": false, "prerelease": true}' ;;
-  *releases/tags/*) reply 404 '{"message": "Not Found"}' ;;
+  *github.com/*/releases/latest)
+    if [ -n "$STUB_RATE_LIMITED" ]; then printf '000'; exit 0; fi
+    case "$fmt" in
+      *redirect_url*) printf 'https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.2' ;;
+      *) printf '302' ;;
+    esac ;;
+  *releases/download/v0.1.2/SHA256SUMS) printf '302' ;;
+  *releases/download/*) printf '404' ;;
   *healthz) running=$(cat "$STUB_RUNNING"); [ "$running" = "$STUB_BROKEN" ] && exit 7
             printf '{"status":"ok","version":"%s"}' "$running" ;;
   *) exit 6 ;;
@@ -105,8 +104,9 @@ def test_updates_to_a_published_release(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("request_body", "message"),
     [
-        ('{"version": "9.9.9"}', "is not a published release"),
-        ('{"version": "0.1.3"}', "is not a published release"),  # a pre-release
+        ('{"version": "9.9.9"}', "newer than the newest published release (0.1.2)"),
+        ('{"version": "0.1.3"}', "newer than the newest"),  # a pre-release: never the newest
+        ('{"version": "0.1.0"}', "is not a published release"),  # no release files
         ('{"version": "0.1.2; rm -rf /"}', "not a plain version number"),
         ('{"version": "$(reboot)"}', "not a plain version number"),
         ("not json", "not a plain version number"),
@@ -131,7 +131,7 @@ def test_rolls_back_when_the_new_version_is_unhealthy(tmp_path: Path) -> None:
 def test_rate_limited_github_is_not_mistaken_for_an_unpublished_release(tmp_path: Path) -> None:
     status, compose, running = run(tmp_path, '{"version": "0.1.2"}', rate_limited=True)
     assert status["state"] == "failed"
-    assert "Could not ask GitHub to confirm 0.1.2 (HTTP 403" in status["message"]
+    assert "Could not ask GitHub to confirm 0.1.2" in status["message"]
     assert "not a published release" not in status["message"]
     assert "googich_takeaway:0.1.1" in compose
     assert running.strip() == "0.1.1"

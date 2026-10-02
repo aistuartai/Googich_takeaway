@@ -7,8 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-02
+
 ### Fixed
 
+- **One-click updates no longer use GitHub's API either.** The update helper (version 3)
+  confirms a release from GitHub's releases pages: the requested version must be no newer than
+  the newest published release, and must have the release's helper files attached. It can
+  therefore only install 0.3.5 or later. Help → Updates offers the helper upgrade.
 - The update check could fail with "rate limited" when other things on the same network had
   used up GitHub's 60 anonymous API requests an hour. It now reads the releases page instead,
   which that limit does not cover, and asks the API only if the page gives no answer.
@@ -441,7 +447,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.2...v0.3.3
