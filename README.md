@@ -1,204 +1,97 @@
-# Googich Takeaway
+<h1 align="center">Googich Takeaway</h1>
 
-Self-hosted tool that moves your Google Photos library into [Immich](https://immich.app/), using
-Google Takeout archives, and keeps it topped up on a schedule.
+<p align="center">
+  <strong>Your Google Photos library, in your own <a href="https://immich.app/">Immich</a>, kept up to date.</strong><br>
+  Self-hosted. Read-only on Google. Every photo with its right date.
+</p>
 
-> **Status: early releases (0.3).** It works end to end and has been tested against real Google
-> Drive, Immich and SMB, but it is young. Try it on a test Immich user first, and back up your
-> Immich database before the first real import.
+<p align="center">
+  <a href="https://github.com/aistuartai/Googich_takeaway/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aistuartai/Googich_takeaway"></a>
+  <a href="https://github.com/aistuartai/Googich_takeaway/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aistuartai/Googich_takeaway/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue"></a>
+</p>
 
-![The dashboard: Google Photos, Google Drive, the download folder and Immich, with run
-controls, a cleanup summary and run history](assets/dashboard.png)
+![The dashboard: Google Photos, Google Drive, the download folder and Immich, with the run box,
+schedule, cleanup summary and history](assets/dashboard.png)
 
-## What it does
+Google Takeout exports your library as a pile of archives, with each photo's date tucked into a
+separate file beside it. Googich Takeaway picks up each export, works out every photo's real
+date and time zone, and adds to Immich only what it does not have yet, on a schedule.
 
-- Picks up Google Takeout archives from a Google Drive folder, or a local folder, on a schedule.
-- Downloads them to a folder you choose, on local disk or an SMB share (NAS), resuming if
-  interrupted and checking each download against Drive's checksum.
-- Reads `.zip` and `.tgz` exports, pairs every photo and video with Takeout's metadata file, and
-  works out the correct capture date and time zone.
-- Uploads only what Immich does not already have, with the date and location attached, then reads
-  each upload back to check the date.
-- Remembers what it has done: archives are not downloaded twice, and photos you delete in Immich
-  are not brought back (unless you ask for a re-import).
-- Shows progress with sizes and time estimates, logs, and run history in a password-protected web
-  interface, and sends notifications through [Apprise](https://github.com/caronc/apprise).
-- Tells you which archives are fully imported and safe to delete, locally and in Google Drive.
+## Highlights
 
-Google Drive access is read-only: the app never changes or deletes anything in your Google account.
+- **Two ways in.** Fetch scheduled exports from Google Drive with a read-only service account,
+  or download them yourself from Takeout's email, with no Google Cloud setup at all.
+- **Dates done right.** Pairs every photo and video with its Takeout metadata, across all parts
+  of an export, and sends the date, time zone and location with each upload, then reads it back
+  to check.
+- **Never twice.** Archives are not downloaded again, photos already in Immich are skipped, and
+  photos you delete in Immich stay deleted.
+- **Resumable.** Downloads continue where they stopped. Pause, resume or cancel at any time, even
+  across an update.
+- **Clear at a glance.** Live progress with time estimates, history, logs, a built-in guide with
+  search, and notifications through [Apprise](https://github.com/caronc/apprise).
+- **Tidy.** Tells you which archives are fully in Immich and safe to delete, here and in Drive.
+- **Careful with secrets.** Credentials encrypted at rest (AES-256-GCM), password login, strict
+  browser security, and an unprivileged user on a read-only container.
 
-## Quick start (Docker)
+## Quick start
 
-Requirements: Docker with Compose, an Immich server, and space for one full Takeout export
-(locally or on an SMB share).
+You need Docker with Compose, an Immich server, and room for one Takeout export (on this machine
+or an SMB share).
 
 ```bash
 mkdir googich && cd googich
 curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.3/docker/compose.yaml
-less compose.yaml   # read what you are about to run
+less compose.yaml                  # read what you are about to run
 
-# A data folder, and a master key that encrypts the credentials you enter later. Both belong to
-# the app's unprivileged user inside the container, uid 10001.
 mkdir -p data secrets && chmod 700 data secrets
 head -c 32 /dev/urandom | base64 > secrets/master.key && chmod 600 secrets/master.key
-chown -R 10001:10001 data secrets
+chown -R 10001:10001 data secrets  # the app's unprivileged user in the container
 
 docker compose up -d
 docker compose logs googich | grep "First-run setup"
 ```
 
-Straight away, open `http://<this host>:8080/setup`, enter the setup token from the log, and
-choose a password. Until a password is set, anyone on your network who sees the log could claim
-the install; the token keeps it to you, so do not leave a fresh install waiting.
+Then **straight away** open `http://<this host>:8080/setup`, enter the token from the log and
+choose a password: until then, anyone who can see the log could claim the install. The
+dashboard walks you through the rest: connect Immich, pick the download folder, and choose how
+exports arrive.
 
-Keep a copy of `secrets/master.key` somewhere safe outside this machine. The compose file pins a
-version, so the app changes only when you update it.
+> [!IMPORTANT]
+> Keep a copy of `secrets/master.key` somewhere safe, away from this machine: it unlocks the
+> stored credentials. Back up the `data` folder, and try the first import on a test Immich user.
 
-Edit `compose.yaml` first if you want a different port, time zone, or a large local disk for
-downloads. The web interface is meant for your local network; put it behind HTTPS (a reverse
-proxy) if you reach it from anywhere else.
+## Guide
 
-### Behind a reverse proxy (HTTPS)
+The same guide is built into the app under **Help → Guide**, with search.
 
-The app works behind Nginx Proxy Manager, Caddy, Traefik or similar without any changes. The
-proxy must pass the original `Host` header, which Nginx Proxy Manager does by default.
-
-Telling the app the proxy's IP address is recommended: the session cookie is then marked secure,
-and failed logins are throttled per visitor rather than for everyone coming through the proxy.
-The app logs a reminder when it sees a proxy it has not been told about. In `compose.yaml`:
-
-```yaml
-    environment:
-      GOOGICH_TRUSTED_PROXIES: 192.168.1.10   # the proxy's address; separate several with commas
-```
-
-Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are believed.
-
-## Setting it up
-
-The dashboard shows a checklist until the essentials are done, and **Help → Guide** in the app
-explains every part. The same guide is in [`src/googich_takeaway/docs`](src/googich_takeaway/docs/README.md):
-
-- [First-time setup](src/googich_takeaway/docs/first-setup.md), in order
-- [Setting up Google Takeout](src/googich_takeaway/docs/takeout.md): a scheduled export to Drive
-- [Connecting Google Drive](src/googich_takeaway/docs/google-drive.md): a read-only service account
-- [Immich and the download folder](src/googich_takeaway/docs/destinations.md), including SMB shares
-- [Troubleshooting](src/googich_takeaway/docs/troubleshooting.md)
+| Getting started | Running it | Reference |
+|---|---|---|
+| [How it works](src/googich_takeaway/docs/how-it-works.md) | [Schedule and notifications](src/googich_takeaway/docs/schedule.md) | [Dates and time zones](src/googich_takeaway/docs/dates.md) |
+| [Setting up Immich](src/googich_takeaway/docs/immich-setup.md) | [Cleanup](src/googich_takeaway/docs/cleanup.md) | [Security and backups](src/googich_takeaway/docs/security.md) |
+| [First-time setup](src/googich_takeaway/docs/first-setup.md) | [Updates and one-click updates](src/googich_takeaway/docs/updates.md) | [Command-line tools](src/googich_takeaway/docs/command-line.md) |
+| [Google Takeout](src/googich_takeaway/docs/takeout.md) and [Google Drive](src/googich_takeaway/docs/google-drive.md) | [Backing up an Android phone](src/googich_takeaway/docs/android-backup.md) | [Troubleshooting](src/googich_takeaway/docs/troubleshooting.md) |
+| [Downloading exports yourself](src/googich_takeaway/docs/manual-downloads.md) | [Reverse proxy and HTTPS](src/googich_takeaway/docs/security.md#reaching-it-from-outside-your-network) | [All topics](src/googich_takeaway/docs/README.md) |
 
 ## Updating
 
-The app checks GitHub once a day and shows a banner on every page when a new release is out
-(switch this off in Help → Updates). **Check now** in Help → Updates asks GitHub straight
-away. The app never updates itself on its own.
-
-To update by hand, pull the new image and restart. If `compose.yaml` names a fixed version, such
-as `ghcr.io/aistuartai/googich_takeaway:0.3.3` (recommended, so updates happen only when you
-choose), change that version first:
+The app tells you when a new release is out, and never updates itself. With the optional
+[update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper) on the Docker
+host, **Update now** installs it in one click, pausing a running run first. By hand:
 
 ```bash
 sed -i 's/googich_takeaway:0.3.2/googich_takeaway:0.3.3/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 
-### One-click updates (optional)
+## Limitations
 
-With a small helper installed on the Docker host, the banner offers **Update now**. The app itself
-never gets access to Docker: it only writes the version to install into
-`data/updater/request.json`. The helper, a shell script started by systemd outside the container,
-then:
-
-1. accepts nothing but a plain version number such as `0.1.2`,
-2. checks it is a published release of this project on GitHub (not a draft or pre-release),
-3. sets that version on the image line in `compose.yaml`, keeping a copy of the old file,
-4. pulls the image, restarts the container and waits for it to report the new version,
-5. restores the previous version automatically if anything fails.
-
-If a run is going, the app pauses it before asking the helper, and the run resumes by itself
-once the new version starts. Progress and the result appear in the banner and under
-Help → Updates.
-
-To install it, as root on the Docker host, in the folder holding `compose.yaml` (for example
-`/opt/googich`), using the release you are running:
-
-```bash
-cd /opt/googich
-V=0.3.3
-base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
-install -d -m 755 /usr/local/lib/googich-updater
-curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
-chmod 755 /usr/local/lib/googich-updater/googich-updater.sh
-curl -fsSL "$base/googich-updater.path" -o /etc/systemd/system/googich-updater.path
-curl -fsSL "$base/googich-updater.service" -o /etc/systemd/system/googich-updater.service
-install -d -m 770 -o "$(stat -c %u data)" -g "$(stat -c %g data)" data/updater
-systemctl daemon-reload
-systemctl enable --now googich-updater.path
-systemctl start googich-updater.service   # reports "Ready for updates." to the app
-```
-
-Read the script before installing it; it runs as root. If your install is not in
-`/opt/googich`, change the path in both systemd files. To remove the helper, run
-`systemctl disable --now googich-updater.path` and delete the three files.
-
-## Backups
-
-Back up the `data` folder: it holds the state database (what has been downloaded and uploaded,
-your settings and encrypted credentials) and logs. Keep `secrets/master.key` somewhere separate;
-without it the stored credentials cannot be read, and you would need to enter them again.
-
-### Keeping the master key out of backups (Proxmox containers)
-
-If the app runs in a Proxmox container that is backed up whole, every backup holds the master key
-next to the credentials it encrypts, so the encryption no longer protects those backups. Move the
-key out of the container onto the Proxmox host, and mount it back in. Proxmox never includes
-bind mounts in container backups. On the Proxmox host, as root, with the container stopped
-(204 and `/opt/googich` are examples):
-
-```bash
-CT=204
-install -d -m 700 /srv/googich-secrets
-pct pull $CT /opt/googich/secrets/master.key /srv/googich-secrets/master.key
-# The container's uid 10001 is uid 110001 on the host in an unprivileged container.
-chown -R 110001:110001 /srv/googich-secrets && chmod 600 /srv/googich-secrets/master.key
-pct exec $CT -- rm /opt/googich/secrets/master.key
-pct set $CT -mp0 /srv/googich-secrets,mp=/opt/googich/secrets
-pct start $CT
-```
-
-If the app inside the container runs as a different uid, add 100000 to it for the host-side
-owner. Older backups taken before the move still contain the key; if that matters, delete them,
-or replace the stored credentials (create a new Immich API key and Google service account key,
-change the SMB password) so the old copies become useless.
-
-## Where credentials are kept
-
-Credentials entered in the web interface (the Immich API key, Google service account keys, the SMB
-password and notification URLs) are encrypted with AES-256-GCM before they are stored, and the
-interface never shows them again. The master key is read from `GOOGICH_MASTER_KEY_FILE` (the
-Docker secret in `compose.yaml`). If that is not set, `master.key` is created next to the database
-on first start, readable only by its owner; that protects a copy of the database on its own, such
-as a backup, but not someone who can read the whole data folder.
-
-Logs are written as JSON lines in `data/logs/` and pass through a filter that removes keys,
-tokens and passwords before anything is written. Log files older than 90 days are deleted;
-the period is set in Settings or on the Logs page. Run history is always kept.
-
-## Command-line tools
-
-The same engine runs from the command line, for scripting or a quick look before using the web
-interface. From a checkout of this repository, with [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv run googich scan /path/to/archives --timezone Australia/Melbourne          # dry run
-uv run googich scan /path/to/archives --immich-url http://immich:2283 \
-  --key-file /path/to/immich.key                                             # what is new
-uv run googich import /path/to/archives --immich-url http://immich:2283 \
-  --key-file /path/to/immich.key --timezone Australia/Melbourne              # asks first
-uv run googich fetch --drive-folder FOLDER_ID --service-account key.json \
-  --staging /path/to/downloads                                               # from Drive
-```
-
-Key files must be readable only by you (`chmod 600`); keys are never accepted on the command line,
-so they stay out of your shell history.
+- iPhone Live Photos import as a photo and a video, and Google's edited copies sit beside their
+  originals rather than stacked with them.
+- HEIC and RAW photos are dated from Takeout's metadata file, which has no time zone; the one set
+  in Settings fills the gap.
+- Uploads go one at a time, so a very large first import takes a while.
 
 ## Development
 
@@ -207,25 +100,11 @@ uv sync
 uv run ruff check && uv run mypy && uv run pytest
 ```
 
-Tests use synthetic Takeout exports generated at test time, and in-memory stand-ins for Immich,
-Google Drive and SMB. No real photos are stored in the repository.
-
-## Limitations
-
-- **Live Photos and edited copies are not linked.** An iPhone Live Photo arrives in Takeout as a
-  photo and a short video; both are imported as separate items. Edited copies from Google Photos
-  are imported beside their originals, not stacked with them. (Pixel motion photos are fine:
-  the video is inside the photo, and Takeout's extra copy of it is skipped.)
-- **HEIC and RAW files are dated from Takeout's sidecar file**, not from the dates inside the
-  photo. Almost every photo has a sidecar, so dates are right, but the sidecar carries no time
-  zone: photos with no time zone of their own take the one set in Settings.
-- **Uploads go one at a time**, streamed straight from the archive without unpacking it. A very
-  large first import takes as long as the network, the download folder and Immich allow for
-  one upload at a time.
+Tests build synthetic Takeout exports and use in-memory stand-ins for Immich, Google Drive and
+SMB. No real photos are stored in the repository.
 
 ## Licence
 
-[MIT](LICENSE)
-
-Googich Takeaway is an independent project. It is not affiliated with, endorsed by, or sponsored
-by Google or Immich. Google Drive, Google Photos and Google Takeout are trademarks of Google LLC.
+[MIT](LICENSE). Googich Takeaway is an independent project, not affiliated with, endorsed by or
+sponsored by Google or Immich. Google Drive, Google Photos and Google Takeout are trademarks of
+Google LLC.

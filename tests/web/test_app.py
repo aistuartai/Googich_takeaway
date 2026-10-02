@@ -293,13 +293,13 @@ def test_untrusted_proxy_gets_a_hint_in_the_log(
     [
         ("https://googich.example", "googich.example", True),  # proxy forwards plain http
         ("http://googich.example", "googich.example", True),
-        ("http://192.168.8.217:8080", "192.168.8.217:8080", True),  # direct on the LAN
+        ("http://192.0.2.10:8080", "192.0.2.10:8080", True),  # direct on the LAN
         ("https://googich.example:443", "googich.example", True),
         ("https://googich.example:8443", "googich.example:8443", True),
         ("https://evil.example", "googich.example", False),
         ("https://googich.example.evil.example", "googich.example", False),
         ("http://googich.example:8000", "googich.example", False),  # another service, same host
-        ("http://192.168.8.217:9000", "192.168.8.217:8080", False),
+        ("http://192.0.2.10:9000", "192.0.2.10:8080", False),
         ("null", "googich.example", False),
         ("file://googich.example", "googich.example", False),
     ],

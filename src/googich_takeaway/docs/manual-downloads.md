@@ -29,7 +29,7 @@ Under **Configuration → Sources**, choose **I download the exports myself**, t
 
 - **The download folder** (simplest). The app already reads it on every run. If it is an SMB
   share, such as a folder on a NAS, save the archives straight into it from your browser, for
-  example `\\nas\GoogichDump\takeout`.
+  example `\\nas\photos\takeout`.
 - **Another folder on this server.** Map the folder into the container in `compose.yaml`, for
   example `- /srv/takeout-downloads:/data/manual:ro`, then add `/data/manual` as a local folder.
   Archives there are read where they are, never copied or changed.

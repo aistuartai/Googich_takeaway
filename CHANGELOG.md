@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- README rewritten to be short: highlights, quick start and a guide table. Installing the update
+  helper, reverse proxy settings and keeping the master key out of Proxmox backups moved into the
+  guide (Updates, and Security and backups), with a new Command-line tools guide.
+
 ## [0.3.3] - 2026-10-02
 
 ### Changed

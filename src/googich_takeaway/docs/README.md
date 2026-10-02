@@ -17,3 +17,4 @@ The same guide is built into the app, under **Help → Guide**.
 13. [Updates](updates.md): new releases, and one-click updates.
 14. [Security and backups](security.md): what is protected, and what to back up.
 15. [Troubleshooting](troubleshooting.md): common problems and what to do.
+16. [Command-line tools](command-line.md): scanning and importing from a terminal.

@@ -57,6 +57,7 @@ TOPICS = (
     Topic("updates", "Updates", "New releases, and one-click updates."),
     Topic("security", "Security and backups", "What is protected, and what to back up."),
     Topic("troubleshooting", "Troubleshooting", "Common problems and what to do."),
+    Topic("command-line", "Command-line tools", "Scanning and importing from a terminal."),
 )
 BY_SLUG = {topic.slug: topic for topic in TOPICS}
 

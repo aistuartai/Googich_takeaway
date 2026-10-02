@@ -138,7 +138,7 @@ def test_connection_limit_is_explained() -> None:
         def makedirs(self, path: str, exist_ok: bool = False, **kwargs: object) -> None:
             raise OSError(
                 "[Error 0] [NtStatus 0xc00000d0] Unknown NtStatus error returned "
-                "'STATUS_REQUEST_NOT_ACCEPTED': '\\\\\\\\optimus\\\\share'"
+                "'STATUS_REQUEST_NOT_ACCEPTED': '\\\\\\\\nas\\\\share'"
             )
 
     with pytest.raises(LocationError, match="Windows desktop editions accept 20") as caught:

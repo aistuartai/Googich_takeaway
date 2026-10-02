@@ -26,9 +26,18 @@ on the network can claim a fresh install. Set the password straight after starti
 
 The interface is meant for your local network. To reach it from elsewhere, put it behind a
 reverse proxy with HTTPS (Nginx Proxy Manager, Caddy, Traefik). It works behind a proxy without
-changes. Setting `GOOGICH_TRUSTED_PROXIES` to the proxy's address is recommended: the session
-cookie is then marked secure, and failed logins are slowed per visitor instead of for everyone
-coming through the proxy.
+changes; the proxy must pass the original `Host` header, which Nginx Proxy Manager does by
+default.
+
+Setting `GOOGICH_TRUSTED_PROXIES` to the proxy's address is recommended: the session cookie is
+then marked secure, and failed logins are slowed per visitor instead of for everyone coming
+through the proxy. Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are
+believed. In `compose.yaml`:
+
+```yaml
+    environment:
+      GOOGICH_TRUSTED_PROXIES: 192.168.1.10   # the proxy's address; separate several with commas
+```
 
 ## Backups
 
@@ -37,8 +46,29 @@ settings and encrypted credentials) and the logs.
 
 Keep **`secrets/master.key`** somewhere separate and safe. Without it the stored credentials
 cannot be read, and you would enter them again. Stored next to the database in the same backup,
-it lets anyone with the backup read the credentials. The README explains how to keep it out of
-Proxmox container backups.
+it lets anyone with the backup read the credentials.
 
 If a backup containing both was exposed, replace the credentials: create a new Immich API key and
 a new service account key, and change the SMB password.
+
+## Keeping the master key out of Proxmox backups
+
+If the app runs in a Proxmox container that is backed up whole, every backup holds the master
+key next to the credentials it encrypts. Move the key onto the Proxmox host and mount it back in:
+Proxmox never includes bind mounts in container backups. On the Proxmox host, as root, with the
+container stopped (123 and `/opt/googich` are examples):
+
+```bash
+CT=123
+install -d -m 700 /srv/googich-secrets
+pct pull $CT /opt/googich/secrets/master.key /srv/googich-secrets/master.key
+# The container's uid 10001 is uid 110001 on the host in an unprivileged container.
+chown -R 110001:110001 /srv/googich-secrets && chmod 600 /srv/googich-secrets/master.key
+pct exec $CT -- rm /opt/googich/secrets/master.key
+pct set $CT -mp0 /srv/googich-secrets,mp=/opt/googich/secrets
+pct start $CT
+```
+
+If the app inside the container runs as a different uid, add 100000 to it for the host-side
+owner. Backups taken before the move still contain the key; delete them, or replace the stored
+credentials so the old copies become useless.

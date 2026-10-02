@@ -40,5 +40,28 @@ If a run is going when you press Update, the app pauses it first, at the next sa
 only then asks the helper to install. Once the new version starts, the paused run resumes by
 itself. If the update fails, the run resumes straight away.
 
-Progress and the result appear in the banner and under Help → Updates. Installation steps are
-in the project's README, under *One-click updates*.
+Progress and the result appear in the banner and under Help → Updates.
+
+## Installing the update helper
+
+As root on the Docker host, in the folder holding `compose.yaml` (for example `/opt/googich`),
+using the release you are running:
+
+```bash
+cd /opt/googich
+V=0.3.3
+base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
+install -d -m 755 /usr/local/lib/googich-updater
+curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
+chmod 755 /usr/local/lib/googich-updater/googich-updater.sh
+curl -fsSL "$base/googich-updater.path" -o /etc/systemd/system/googich-updater.path
+curl -fsSL "$base/googich-updater.service" -o /etc/systemd/system/googich-updater.service
+install -d -m 770 -o "$(stat -c %u data)" -g "$(stat -c %g data)" data/updater
+systemctl daemon-reload
+systemctl enable --now googich-updater.path
+systemctl start googich-updater.service   # reports "Ready for updates." to the app
+```
+
+Read the script before installing it: it runs as root. If your install is not in
+`/opt/googich`, change the path in both systemd files. To remove the helper, run
+`systemctl disable --now googich-updater.path` and delete the three files.

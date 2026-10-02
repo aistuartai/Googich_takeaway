@@ -390,14 +390,14 @@ def test_failed_smb_save_keeps_what_was_typed_except_the_password(
 
     monkeypatch.setitem(sys.modules, "smbclient", FakeSmb())
     form = {
-        "storage": "smb", "timezone": "Australia/Melbourne", "smb_server": "optimus.local",
-        "smb_share": "GoogichDump", "smb_folder": "takeout", "smb_username": "googich",
+        "storage": "smb", "timezone": "Australia/Melbourne", "smb_server": "nas.example",
+        "smb_share": "Photos", "smb_folder": "takeout", "smb_username": "googich",
         "smb_password": "typed-but-wrong", "smb_domain": "HOME", "smb_port": "4455",
     }  # fmt: skip
     response = world.post("/destinations/downloads", data=form)
     assert response.status_code == 400
     page = response.text
-    for value in ("optimus.local", "GoogichDump", "takeout", "googich", "HOME", "4455"):
+    for value in ("nas.example", "Photos", "takeout", "googich", "HOME", "4455"):
         assert f'value="{value}"' in page
     assert 'value="smb" checked' in page
     assert "typed-but-wrong" not in page
