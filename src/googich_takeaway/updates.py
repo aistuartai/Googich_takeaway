@@ -179,10 +179,25 @@ def _fetch(
                 },
             )
         if response.status_code == 404:
-            return None  # no release published yet
+            _failed(state, now, "no release published yet")
+            return None
+        if response.status_code in (403, 429):
+            _failed(state, now, f"GitHub refused (HTTP {response.status_code}): its limit of 60 "
+                    "checks an hour from each network is used up")  # fmt: skip
+            return None
         response.raise_for_status()
         data = response.json()
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPStatusError as error:
+        _failed(state, now, f"GitHub answered HTTP {error.response.status_code}")
+        return None
+    except httpx.TimeoutException:
+        _failed(state, now, "GitHub did not answer in time")
+        return None
+    except httpx.HTTPError as error:
+        _failed(state, now, f"could not connect to GitHub ({type(error).__name__})")
+        return None
+    except ValueError:
+        _failed(state, now, "GitHub sent an answer that could not be read")
         return None
     if (
         data.get("prerelease")
@@ -194,7 +209,17 @@ def _fetch(
     return _save(state, now, str(data["tag_name"]).lstrip("v"), url)
 
 
+def _failed(state: State, now: datetime, why: str) -> None:
+    state.set_setting("updates.error", why, now)
+
+
+def last_error(state: State) -> str | None:
+    """Why the last check failed, if it did."""
+    return state.get_setting("updates.error")
+
+
 def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
+    state.set_setting("updates.error", None, now)
     if not url.startswith(f"https://github.com/{REPOSITORY}/"):
         url = f"https://github.com/{REPOSITORY}/releases"  # only ever link to this project
     info = UpdateInfo(latest, url, now)

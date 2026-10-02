@@ -38,6 +38,7 @@ def register(app: FastAPI, web: Shared) -> None:
             update_known=known,
             update_available=known if known and known.newer else None,
             saved=request.query_params.get("saved"),
+            check_error=updates.last_error(config.state),
             zone=_zone(config.general().timezone),
         )
 

@@ -1088,3 +1088,22 @@ def test_install_command_checks_the_installer_against_the_app(world: World) -> N
     expected = hashlib.sha256(INSTALL.read_bytes()).hexdigest()
     page = world.client.get("/updates").text
     assert f'echo "{expected}  install-updater.sh" | sha256sum -c' in page
+
+
+def test_updates_and_about_show_the_helper_version(world: World) -> None:
+    from googich_takeaway.updates import HELPER_VERSION
+
+    _helper(world)  # reports version 1
+    page = world.client.get("/updates").text
+    assert "update helper version 1 (this release comes with version" in page
+    about = world.client.get("/about").text
+    assert f"Update helper version 1, older than this release's {HELPER_VERSION}" in about
+
+
+def test_a_failed_check_says_why(world: World) -> None:
+    world.github.status = 403
+    world.github.page = False
+    response = world.post("/updates/check")
+    assert response.headers["location"].endswith("check-failed")
+    page = world.client.get("/updates?saved=check-failed").text
+    assert "GitHub refused (HTTP 403)" in page

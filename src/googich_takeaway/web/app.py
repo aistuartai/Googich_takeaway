@@ -131,6 +131,7 @@ def create_app(
         default_look=Look(),
         demo=settings.demo,
         installer_sha256=updates.installer_sha256(),
+        helper_expected=updates.HELPER_VERSION,
     )
     templates.env.filters.update(
         duration=format_duration, size=format_size, export_date=_export_date

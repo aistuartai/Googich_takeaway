@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Help → Updates and Help → About show which version of the update helper is installed, and
+  whether this release brings a newer one.
+
+### Changed
+
+- A failed update check says what went wrong (refused by GitHub's limit, no answer, could not
+  connect, an HTTP error) instead of always pointing at the rate limit.
+
 ## [0.3.6] - 2026-10-02
 
 ### Fixed
