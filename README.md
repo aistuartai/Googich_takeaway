@@ -92,11 +92,53 @@ what is new.
 ## Updating
 
 The app checks GitHub once a day and shows a banner when a new release is out (switch this off in
-Settings → Updates). It never updates itself. To update:
+Settings → Updates). It never updates itself on its own.
+
+To update by hand, pull the new image and restart. If `compose.yaml` names a fixed version, such
+as `ghcr.io/aistuartai/googich_takeaway:0.1.1` (recommended, so updates happen only when you
+choose), change that version first:
 
 ```bash
+sed -i 's/googich_takeaway:0.1.1/googich_takeaway:0.1.2/' compose.yaml
 docker compose pull && docker compose up -d
 ```
+
+### One-click updates (optional)
+
+With a small helper installed on the Docker host, the banner offers **Update now**. The app itself
+never gets access to Docker: it only writes the version to install into
+`data/updater/request.json`. The helper, a shell script started by systemd outside the container,
+then:
+
+1. accepts nothing but a plain version number such as `0.1.2`,
+2. checks it is a published release of this project on GitHub (not a draft or pre-release),
+3. sets that version on the image line in `compose.yaml`, keeping a copy of the old file,
+4. pulls the image, restarts the container and waits for it to report the new version,
+5. restores the previous version automatically if anything fails.
+
+Progress and the result appear in the banner and under Settings → Updates.
+
+To install it, as root on the Docker host, in the folder holding `compose.yaml` (for example
+`/opt/googich`), using the release you are running:
+
+```bash
+cd /opt/googich
+V=0.1.2
+base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
+install -d -m 755 /usr/local/lib/googich-updater
+curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
+chmod 755 /usr/local/lib/googich-updater/googich-updater.sh
+curl -fsSL "$base/googich-updater.path" -o /etc/systemd/system/googich-updater.path
+curl -fsSL "$base/googich-updater.service" -o /etc/systemd/system/googich-updater.service
+install -d -m 770 -o "$(stat -c %u data)" -g "$(stat -c %g data)" data/updater
+systemctl daemon-reload
+systemctl enable --now googich-updater.path
+systemctl start googich-updater.service   # reports "Ready for updates." to the app
+```
+
+Read the script before installing it; it runs as root. If your install is not in
+`/opt/googich`, change the path in both systemd files. To remove the helper, run
+`systemctl disable --now googich-updater.path` and delete the three files.
 
 ## Backups
 

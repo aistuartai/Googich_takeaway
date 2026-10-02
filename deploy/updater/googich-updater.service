@@ -1,0 +1,11 @@
+[Unit]
+Description=Update Googich Takeaway to a requested release
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/googich-updater/googich-updater.sh
+# Change these if your install is not in /opt/googich:
+Environment=GOOGICH_COMPOSE_DIR=/opt/googich
+TimeoutStartSec=10min

@@ -132,7 +132,14 @@
   <form method="post" action="/settings/updates">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
-    <small>Only shows a notice; nothing is downloaded or installed automatically. The check asks GitHub anonymously for the latest release of this project. You are running version {{ version }}.{% if update_known %} Latest release seen: {{ update_known.latest }}, checked {{ update_known.checked_at.strftime('%d %b %H:%M') }} UTC.{% endif %}</small>
+    {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
+    {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
+    {% if helper %}
+    <p>One-click updates are on. The update helper on the host last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.strftime('%d %b %H:%M') }} UTC){% endif %}</p>
+    {% else %}
+    <p class="muted">One-click updates are off: the optional update helper is not installed on the host. See "One-click updates" in the README.</p>
+    {% endif %}
+    <small>The daily check only shows a notice. With the update helper, <strong>Update now</strong> installs a release when you press it; nothing installs on its own. The check asks GitHub anonymously for the latest release of this project. You are running version {{ version }}.{% if update_known %} Latest release seen: {{ update_known.latest }}, checked {{ update_known.checked_at.strftime('%d %b %H:%M') }} UTC.{% endif %}</small>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
 </section>

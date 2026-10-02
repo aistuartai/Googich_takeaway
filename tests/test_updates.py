@@ -91,3 +91,28 @@ def test_links_only_ever_point_at_this_project(state: State) -> None:
     info = updates.check_if_due(state, lambda: NOW, github.transport())
     assert info is not None
     assert info.url == "https://github.com/aistuartai/Googich_takeaway/releases"
+
+
+def test_helper_status_and_request(tmp_path: Path) -> None:
+    assert updates.helper_status(tmp_path) is None
+    with pytest.raises(ValueError, match="not installed"):
+        updates.request_update(tmp_path, "0.1.1")
+    folder = tmp_path / "updater"
+    folder.mkdir()
+    (folder / "status.json").write_text(
+        '{"helper": "1", "state": "done", "message": "Updated from 0.1.0 to 0.1.1.", '
+        '"version": "0.1.1", "at": "2026-10-02T00:14:00+00:00"}'
+    )
+    status = updates.helper_status(tmp_path)
+    assert status is not None
+    assert (status.state, status.version) == ("done", "0.1.1")
+    updates.request_update(tmp_path, "0.1.2")
+    assert (folder / "request.json").read_text() == '{"version": "0.1.2"}'
+    with pytest.raises(ValueError, match="release version"):
+        updates.request_update(tmp_path, "0.1.2; rm -rf /")
+
+
+def test_damaged_status_file_means_no_helper(tmp_path: Path) -> None:
+    (tmp_path / "updater").mkdir()
+    (tmp_path / "updater" / "status.json").write_text("not json")
+    assert updates.helper_status(tmp_path) is None
