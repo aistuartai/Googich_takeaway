@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-10-03
+
 ### Added
 
 - **Completed with errors.** A run where a few files could not be uploaded no longer counts as
@@ -496,7 +498,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.8...HEAD
+[0.3.8]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.4...v0.3.5
