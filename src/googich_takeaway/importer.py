@@ -13,10 +13,13 @@ Every upload is recorded as soon as Immich confirms it, so an interrupted run re
 files already sent are found by Immich's duplicate check and adopted, never sent twice.
 """
 
+import io
 from collections.abc import Callable
+from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Any
 
 from googich_takeaway.destinations.immich import (
     AssetDates,
@@ -28,10 +31,15 @@ from googich_takeaway.destinations.immich import (
 from googich_takeaway.destinations.xmp import build_xmp
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.state import State, UploadRecord, UploadStatus
-from googich_takeaway.takeout.archives import ArchiveSource, iter_entries
+from googich_takeaway.takeout.archives import ArchiveSource, Readable, iter_entries
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem
 
 MAX_CONSECUTIVE_FAILURES = 5
+VERIFY_NOW_LIMIT = 200
+PARALLEL_UPLOADS = 3
+"""Files sent to Immich at the same time, unless set otherwise in Settings."""
+PARALLEL_MAX_BYTES = 32 * 1024 * 1024
+"""Files up to this size are sent in parallel; larger ones stream on their own."""
 VERIFY_ATTEMPTS = 10
 VERIFY_DELAY_SECONDS = 2.0
 
@@ -117,17 +125,21 @@ def run_import(
     progress: Callable[[int], None] | None = None,
     tracker: Tracker | None = None,
     verify_attempts: int = VERIFY_ATTEMPTS,
+    parallel: int = PARALLEL_UPLOADS,
 ) -> ImportResult:
     """Upload, then check what Immich has processed so far.
 
     Immich reads metadata in the background, and after a large import that can take hours, so
     files it has not processed yet stay ``uploaded`` and are checked by ``verify_pending`` on
-    later runs. ``verify_attempts`` 1 makes a single quick pass.
+    later runs. ``verify_attempts`` 1 makes a single quick pass. Only the first
+    ``VERIFY_NOW_LIMIT`` uploads are checked straight away: after a big import Immich has not
+    processed the rest yet, and asking about each one would only slow the run down.
     """
     result = ImportResult()
     _record_known(plan, state, destination, clock)
-    _upload(plan, client, state, destination, clock, result, progress, tracker)
-    _verify(result.uploaded, client, state, destination, clock, sleep, result, verify_attempts)
+    _upload(plan, client, state, destination, clock, result, progress, tracker, parallel)
+    now = result.uploaded[:VERIFY_NOW_LIMIT]
+    _verify(now, client, state, destination, clock, sleep, result, verify_attempts)
     return result
 
 
@@ -225,6 +237,7 @@ def _upload(
     result: ImportResult,
     progress: Callable[[int], None] | None,
     tracker: Tracker | None = None,
+    parallel: int = PARALLEL_UPLOADS,
 ) -> None:
     wanted = {p.item.path: p.item for p in plan.with_decision(Decision.UPLOAD)}
     if tracker:
@@ -240,41 +253,101 @@ def _upload(
     for item in wanted.values():
         archives.setdefault(item.archive, set()).add(item.path)
 
-    consecutive_failures = 0
-    for archive in sorted(archives, key=lambda a: a.name):
-        for entry in iter_entries(archive, only=archives[archive]):
-            item = wanted[entry.path]
-            if item.date is None:
-                raise RuntimeError(f"planned upload without a date: {item.path}")
-            sidecar = build_xmp(item.date, item.gps, item.description)
+    def send(item: ScannedItem, stream: Readable, report: Callable[[int], None] | None) -> Any:
+        if item.date is None:
+            raise RuntimeError(f"planned upload without a date: {item.path}")
+        return client.upload(
+            stream,
+            item.name,
+            item.size,
+            item.sha1,
+            item.date.utc,
+            sidecar=build_xmp(item.date, item.gps, item.description),
+            favorite=item.favorited,
+            progress=report,
+        )
+
+    failures_in_a_row = [0]
+
+    def finished(item: ScannedItem, sent: Any, error: ImmichError | None) -> bool:
+        """Record one upload's outcome; False once too many have failed in a row."""
+        if error is not None:
+            result.failed.append((item, str(error)))
             if tracker:
-                tracker.begin(Stage.UPLOAD, item.path, item.size)
-            try:
-                sent = client.upload(
-                    entry.stream,
-                    item.name,
-                    item.size,
-                    item.sha1,
-                    item.date.utc,
-                    sidecar=sidecar,
-                    favorite=item.favorited,
-                    progress=advance,
-                )
-            except ImmichError as error:
-                result.failed.append((item, str(error)))
-                if tracker:
-                    tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, str(error))
-                consecutive_failures += 1
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                    result.aborted = f"stopped after {consecutive_failures} failures in a row"
-                    return
-                continue
-            consecutive_failures = 0
-            if tracker:
-                tracker.end(Stage.UPLOAD, item.path)
-            status = UploadStatus.ADOPTED if sent.duplicate else UploadStatus.UPLOADED
-            state.record_upload(_record(destination, plan, item, sent.asset_id, status, clock()))
-            (result.adopted if sent.duplicate else result.uploaded).append(item)
+                tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, str(error))
+            failures_in_a_row[0] += 1
+            if failures_in_a_row[0] >= MAX_CONSECUTIVE_FAILURES:
+                result.aborted = f"stopped after {failures_in_a_row[0]} failures in a row"
+                return False
+            return True
+        failures_in_a_row[0] = 0
+        if tracker:
+            tracker.end(Stage.UPLOAD, item.path)
+        status = UploadStatus.ADOPTED if sent.duplicate else UploadStatus.UPLOADED
+        state.record_upload(_record(destination, plan, item, sent.asset_id, status, clock()))
+        (result.adopted if sent.duplicate else result.uploaded).append(item)
+        return True
+
+    # Small files go to Immich several at a time: for photos, the wait for each request costs
+    # more than sending it. Each is read into memory first (archives are read in order, so it
+    # cannot stay in the archive); large files (videos) stream one at a time as before.
+    # Outcomes are recorded here, on this thread, never on the senders' threads.
+    found: set[str] = set()
+    pending: dict[Future[Any], ScannedItem] = {}
+
+    def collect(block: bool) -> bool:
+        if not pending:
+            return True
+        done, _ = wait(pending, return_when=FIRST_COMPLETED if block else ALL_COMPLETED)
+        going = True
+        for future in done:
+            item = pending.pop(future)
+            error = future.exception()
+            if error is not None and not isinstance(error, ImmichError):
+                raise error
+            if not finished(item, future.result() if error is None else None, error):
+                going = False
+        return going
+
+    with ThreadPoolExecutor(max_workers=parallel, thread_name_prefix="googich-upload") as pool:
+        try:
+            for archive in sorted(archives, key=lambda a: a.name):
+                for entry in iter_entries(archive, only=archives[archive]):
+                    found.add(entry.path)
+                    item = wanted[entry.path]
+                    if parallel > 1 and item.size <= PARALLEL_MAX_BYTES:
+                        while len(pending) >= parallel:
+                            if not collect(block=True):
+                                return
+                        if tracker:
+                            tracker.begin(Stage.UPLOAD, item.path, item.size, parallel=True)
+                        data = entry.stream.read(item.size + 1)
+                        if progress:
+                            progress(len(data))
+                        pending[pool.submit(send, item, io.BytesIO(data), None)] = item
+                        continue
+                    if tracker:
+                        tracker.begin(Stage.UPLOAD, item.path, item.size)
+                    try:
+                        sent = send(item, entry.stream, advance)
+                    except ImmichError as error:
+                        if not finished(item, None, error):
+                            return
+                        continue
+                    if not finished(item, sent, None):
+                        return
+        finally:
+            # Whatever happens (Pause, an error), record what was sent before leaving.
+            while pending:
+                if not collect(block=False):
+                    break
+
+    for path in sorted(set(wanted) - found):
+        item = wanted[path]
+        why = "not found in its archive when uploading; it is tried again next run"
+        result.failed.append((item, why))
+        if tracker:
+            tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, why)
 
 
 def _verify(

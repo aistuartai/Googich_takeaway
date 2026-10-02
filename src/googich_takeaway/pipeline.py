@@ -358,6 +358,7 @@ class Pipeline:
             self.progress,
             tracker=self.tracker,
             verify_attempts=1,  # one quick pass; verify_pending catches up on later runs
+            parallel=self.config.parallel_uploads(),
         )
         report.exports_imported += 1
         self._remember_export(export_id, scan, plan, result)

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><h1>Settings</h1><a class="help-link" href="/help/dates">Guide: Dates and time zones</a></div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if saved and saved != "logs" %}<p class="result ok" role="status">Saved.</p>{% endif %}
+{% if saved and saved not in ("logs", "uploads") %}<p class="result ok" role="status">Saved.</p>{% endif %}
 
 <section class="settings-group" id="timezone">
   <header><h2>Time zone</h2><p>For photos that carry no time zone of their own, so their dates come out right in Immich.</p></header>
@@ -51,6 +51,20 @@
       {% endfor %}
     </fieldset>
     <div class="actions"><button type="submit">Save look and feel</button></div>
+  </form>
+  </div>
+</section>
+<section class="settings-group" id="uploads">
+  <header><h2>Uploads</h2><p>How many photos are sent to Immich at the same time. More is faster on a good network; fewer is gentler on a small Immich server.</p></header>
+  <div class="card">
+  {% if saved == 'uploads' %}<p class="result ok" role="status">Saved.</p>{% endif %}
+  <form method="post" action="/settings/uploads">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label>Uploads at a time
+      <input name="parallel" type="number" min="1" max="{{ max_parallel }}" value="{{ parallel_uploads }}" required>
+      <small>1 to {{ max_parallel }}; 3 suits most setups. Files over 32 MB, usually videos, always go one at a time.</small>
+    </label>
+    <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>
 </section>

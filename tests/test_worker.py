@@ -219,10 +219,10 @@ def _stop_at_first_upload(world: World, kind: str, at: str = "upload") -> Callab
     tracker = world.worker.tracker
     begin = tracker.begin
 
-    def stopping(stage: Stage, name: str, size: int | None = None) -> None:
+    def stopping(stage: Stage, name: str, size: int | None = None, parallel: bool = False) -> None:
         if stage is Stage(at):
             tracker.request_stop(kind)
-        begin(stage, name, size)
+        begin(stage, name, size, parallel)
 
     tracker.begin = stopping  # type: ignore[method-assign]
     return begin
@@ -305,12 +305,14 @@ def test_update_during_a_run_pauses_it_first_and_resumes_after(world: World) -> 
     begin = tracker.begin
     done: list[bool] = []
 
-    def update_pressed(stage: Stage, name: str, size: int | None = None) -> None:
+    def update_pressed(
+        stage: Stage, name: str, size: int | None = None, parallel: bool = False
+    ) -> None:
         if stage is Stage.UPLOAD and not done:
             # Update now, pressed mid-run: the request waits for the pause.
             assert world.worker.pause_then(lambda: done.append(True))
             assert done == []
-        begin(stage, name, size)
+        begin(stage, name, size, parallel)
 
     tracker.begin = update_pressed  # type: ignore[method-assign]
     assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.STOPPED

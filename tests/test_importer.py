@@ -2,8 +2,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from googich_takeaway.destinations.immich import ImmichClient
-from googich_takeaway.importer import Decision, ImportPlan, ImportResult, plan_import, run_import
+from googich_takeaway.importer import (
+    PARALLEL_UPLOADS,
+    Decision,
+    ImportPlan,
+    ImportResult,
+    plan_import,
+    run_import,
+)
 from googich_takeaway.state import State, UploadRecord, UploadStatus
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, scan_export
@@ -40,10 +49,13 @@ class Run:
             checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
         return plan_import(EXPORT, scan, checks, self.state, "immich", reimport)
 
-    def run(self, reimport: bool = False) -> tuple[ImportPlan, ImportResult]:
+    def run(self, reimport: bool = False, parallel: int = 3) -> tuple[ImportPlan, ImportResult]:
         plan = self.plan(reimport)
         with self.client() as client:
-            result = run_import(plan, client, self.state, "immich", lambda: NOW, self.sleeps.append)
+            result = run_import(
+                plan, client, self.state, "immich", lambda: NOW, self.sleeps.append,
+                parallel=parallel,
+            )  # fmt: skip
         return plan, result
 
     def client(self) -> ImmichClient:
@@ -142,7 +154,8 @@ def test_repeated_failures_stop_the_run(tmp_path: Path) -> None:
     server = FakeImmichServer(fail_uploads=100, store_failed_uploads=False)
     _, result = Run(tmp_path, server).run()
     assert result.aborted is not None
-    assert len(result.failed) == 5
+    # Five in a row stop it; uploads already on their way still finish and are counted.
+    assert 5 <= len(result.failed) <= 5 + PARALLEL_UPLOADS
     assert not server.assets
 
 
@@ -217,3 +230,13 @@ def test_verify_pending_respects_limit_and_budget(tmp_path: Path) -> None:
     assert rest.remaining == 0
     statuses = {rec.status for rec in all_uploads(r.state, "immich")}
     assert statuses == {UploadStatus.VERIFIED}
+
+
+@pytest.mark.parametrize("parallel", [1, 3])
+def test_parallel_uploads_send_everything_once(tmp_path: Path, parallel: int) -> None:
+    server = FakeImmichServer()
+    run = Run(tmp_path, server)
+    _, result = run.run(parallel=parallel)
+    assert len(result.uploaded) == 13
+    assert len(server.assets) == 13
+    assert len(all_uploads(run.state, "immich")) == 13

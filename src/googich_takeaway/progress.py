@@ -113,6 +113,8 @@ class _StageState:
     failed: list[Item] = field(default_factory=list)
     recent: deque[Item] = field(default_factory=lambda: deque(maxlen=KEEP_RECENT))
     active: str | None = None
+    running: dict[str, None] = field(default_factory=dict)
+    """Items going at the same time as others (parallel uploads), in start order."""
     rate: float | None = None
     window_bytes: int = 0
     window_start: float = 0.0
@@ -197,7 +199,14 @@ class Tracker:
                 state.waiting[name] = None
                 state.total += size
 
-    def begin(self, stage: Stage, name: str, size: int | None = None) -> None:
+    def begin(
+        self, stage: Stage, name: str, size: int | None = None, parallel: bool = False
+    ) -> None:
+        """Start an item. ``parallel``: it runs alongside others (parallel uploads), so it is
+        not the one ``advance`` reports on; its bytes count when it ends."""
+        if parallel:
+            self._begin_parallel(stage, name, size)
+            return
         self._checkpoint()
         with self._lock:
             state = self._stages[stage]
@@ -217,6 +226,23 @@ class Tracker:
                 state.window_start = now
             self._current = stage
 
+    def _begin_parallel(self, stage: Stage, name: str, size: int | None) -> None:
+        self._checkpoint()
+        with self._lock:
+            state = self._stages[stage]
+            item = state.items.get(name)
+            if item is None:
+                item = Item(name, size or 0)
+                state.total += item.size
+            state.items[name] = replace(item, state=ItemState.ACTIVE)
+            state.waiting.pop(name, None)
+            state.running[name] = None
+            now = self._clock()
+            if state.started_at is None:
+                state.started_at = now
+                state.window_start = now
+            self._current = stage
+
     def advance(self, amount: int) -> None:
         self._checkpoint()
         with self._lock:
@@ -229,17 +255,19 @@ class Tracker:
             counted = min(amount, max(0, item.size - item.done))
             state.items[state.active] = replace(item, done=item.done + amount)
             state.done += counted
-            state.window_bytes += amount
-            now = self._clock()
-            elapsed = now - state.window_start
-            if elapsed >= SAMPLE_SECONDS:
-                sample = state.window_bytes / elapsed
-                state.rate = (
-                    sample
-                    if state.rate is None
-                    else (1 - SMOOTHING) * state.rate + SMOOTHING * sample
-                )
-                state.window_bytes, state.window_start = 0, now
+            self._sample(state, amount)
+
+    def _sample(self, state: "_StageState", amount: int) -> None:
+        """Add bytes to the speed measurement (with the lock held)."""
+        state.window_bytes += amount
+        now = self._clock()
+        elapsed = now - state.window_start
+        if elapsed >= SAMPLE_SECONDS:
+            sample = state.window_bytes / elapsed
+            state.rate = (
+                sample if state.rate is None else (1 - SMOOTHING) * state.rate + SMOOTHING * sample
+            )
+            state.window_bytes, state.window_start = 0, now
 
     def already_have(self, amount: int) -> None:
         """The active file is resuming with ``amount`` bytes already there. Counted as done, but
@@ -276,8 +304,12 @@ class Tracker:
             counted = min(item.done, item.size)
             if name not in stage_state.items:
                 stage_state.total += item.size
+            parallel = name in stage_state.running
+            stage_state.running.pop(name, None)
             if state is ItemState.DONE:
                 stage_state.done += item.size - counted
+                if parallel:
+                    self._sample(stage_state, item.size - counted)
                 finished = replace(item, state=state, done=item.size, detail=detail)
                 stage_state.files_done += 1
                 stage_state.recent.append(finished)
@@ -336,6 +368,7 @@ class Tracker:
         window: list[Item] = []
         if state.active is not None:
             window.append(state.items[state.active])
+        window.extend(state.items[name] for name in state.running)
         window.extend(state.failed)
         for name in state.waiting:
             if len(window) >= WINDOW_WAITING + len(state.failed) + 1:

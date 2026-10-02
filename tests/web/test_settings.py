@@ -1067,3 +1067,11 @@ def test_a_run_notice_goes_once_progress_shows(world: World) -> None:
         assert "Resuming the paused run." not in world.client.get("/status").text  # next poll
     finally:
         worker.release_from_demo()
+
+
+def test_uploads_at_a_time_is_set_in_settings(world: World) -> None:
+    page = world.client.get("/settings").text
+    assert 'name="parallel" type="number" min="1" max="8" value="3"' in page
+    assert world.post("/settings/uploads", data={"parallel": "6"}).status_code == 303
+    assert 'value="6"' in world.client.get("/settings").text
+    assert "between 1 and 8" in world.post("/settings/uploads", data={"parallel": "20"}).text

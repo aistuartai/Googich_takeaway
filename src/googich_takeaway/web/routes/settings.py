@@ -9,6 +9,7 @@ from googich_takeaway import reminders
 from googich_takeaway.config import (
     BAR_STYLES,
     COLOUR_SCHEMES,
+    MAX_PARALLEL_UPLOADS,
     MOTION,
     THEMES,
     Config,
@@ -44,6 +45,8 @@ def register(app: FastAPI, web: Shared) -> None:
             "settings.html",
             general=config.general(),
             retention_days=config.log_retention_days(),
+            parallel_uploads=config.parallel_uploads(),
+            max_parallel=MAX_PARALLEL_UPLOADS,
             log_usage=log_usage(),
             timezones=TIMEZONES,
             themes=THEMES,
@@ -83,6 +86,16 @@ def register(app: FastAPI, web: Shared) -> None:
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=look#look", status_code=303)
+
+    @app.post("/settings/uploads")
+    def save_parallel_uploads(
+        request: Request, config: ConfigDep, parallel: Annotated[str, Form()] = ""
+    ) -> Response:
+        try:
+            config.save_parallel_uploads(parallel)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=uploads#uploads", status_code=303)
 
     @app.post("/settings/logs")
     def save_log_retention(

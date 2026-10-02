@@ -119,6 +119,8 @@ MOTION = {"auto": "Animate unless this device asks for reduced motion", "off": "
 
 DOWNLOAD_FOLDER_KIND = "download-folder"
 """A source that is the download folder itself: archives saved there by hand."""
+DEFAULT_PARALLEL_UPLOADS = 3
+MAX_PARALLEL_UPLOADS = 8
 MIN_RETENTION_DAYS = 7
 MAX_RETENTION_DAYS = 3650
 
@@ -288,6 +290,21 @@ class Config:
             port=public.port,
             domain=public.domain,
         )
+
+    # --- uploads -------------------------------------------------------------------------------
+
+    def parallel_uploads(self) -> int:
+        """How many files are sent to Immich at the same time."""
+        stored = self._state.get_setting("uploads.parallel")
+        if stored and stored.isdigit() and 1 <= int(stored) <= MAX_PARALLEL_UPLOADS:
+            return int(stored)
+        return DEFAULT_PARALLEL_UPLOADS
+
+    def save_parallel_uploads(self, value: str) -> None:
+        value = value.strip()
+        if not value.isdigit() or not 1 <= int(value) <= MAX_PARALLEL_UPLOADS:
+            raise ConfigError(f"Choose between 1 and {MAX_PARALLEL_UPLOADS} uploads at a time.")
+        self._state.set_setting("uploads.parallel", str(int(value)), self._clock())
 
     # --- log retention ---------------------------------------------------------------------------
 
