@@ -410,3 +410,21 @@ def test_pause_while_reading_resumes_without_reading_again(world: World) -> None
     _, options = world.worker._due_trigger() or (None, None)
     assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
     assert len(world.immich.assets) == 13
+
+
+def test_completed_with_errors_does_not_count_towards_pausing(world: World) -> None:
+    from googich_takeaway.notify import Message
+
+    config = world.config()
+    config.set_scheduled_failures(2)
+    sent: list[Message] = []
+
+    def send(message: Message) -> bool:
+        sent.append(message)
+        return True
+
+    world.worker._count_failures(
+        config, Trigger.SCHEDULE, Message(Outcome.PARTIAL, "Completed with errors", []), send
+    )
+    assert config.scheduled_failures() == 0
+    assert sent == []

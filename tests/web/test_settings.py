@@ -691,7 +691,7 @@ def test_run_buttons_and_schedule_box(world: World) -> None:
     worker.tracker.begin(Stage.SCAN, "20261001T010203Z", 50 * 1000**3)
     worker.tracker.already_have(20 * 1000**3)
     confirm = world.client.get("/runs/stop?kind=cancel").text
-    assert "Reading starts again from the beginning of this export" in confirm
+    assert "Reading carries on where it stopped next time" in confirm
     assert 'action="/runs/cancel"' in confirm
     worker.tracker.finish_run()
     worker._run_started = None
@@ -1145,3 +1145,34 @@ def test_stage_details_show_on_the_dashboard(world: World) -> None:
         assert '<p class="stage-detail">Catching up in takeout-x-002.tgz: 4.0 GB</p>' in page
     finally:
         worker.release_from_demo()
+
+
+def test_failed_files_show_in_the_run_box_with_retry_and_ignore(world: World) -> None:
+    _ready(world)
+    record = {
+        "20261001T010203Z": {
+            "export_key": "k", "parts": ["takeout-20261001T010203Z-001.zip"], "uploaded": 10,
+            "no_date": 0, "unsupported": 0, "at": datetime.now(UTC).isoformat(),
+            "files": [
+                {"path": "a/PXL_1(1).MP", "name": "PXL_1(1).MP",
+                 "reason": "Immich answered 400 for POST /assets: Unsupported file type",
+                 "refused": True},
+                {"path": "a/IMG_2.jpg", "name": "IMG_2.jpg",
+                 "reason": "cannot reach Immich: ReadTimeout", "refused": False},
+            ],
+        }
+    }  # fmt: skip
+    with State(world.tmp / "state.db") as state:
+        state.set_setting("run.failures", json.dumps(record), datetime.now(UTC))
+    page = world.client.get("/").text
+    assert "Completed with errors</h2>" in page
+    assert "2 files from export 01 Oct 2026 could not be uploaded" in page
+    assert "Retrying won't help: Immich refused it." in page
+    assert ">Retry these files</button>" in page
+    confirm = world.client.get("/runs/failures/ignore?export=20261001T010203Z").text
+    assert "Ignore 2 failed files?" in confirm
+    response = world.post("/runs/failures/ignore", data={"export": "20261001T010203Z"})
+    assert response.headers["location"] == "/?notice=ignored"
+    page = world.client.get("/?notice=ignored").text
+    assert "Failed files ignored" in page
+    assert "could not be uploaded" not in page

@@ -41,6 +41,7 @@ NOTICES = {
     "idle": "No run is going.",
     "resumed": "Resuming the paused run.",
     "discarded": "The paused run was set aside. The next run starts afresh, skipping what is done.",
+    "ignored": "Failed files ignored: that export now counts as done, and Cleanup can offer it.",
     "schedule-paused": "Scheduled runs are paused. Run now still works.",
     "schedule-resumed": "Scheduled runs are on again.",
 }

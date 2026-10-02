@@ -11,7 +11,7 @@
     <p>The part downloaded so far is kept, and the download continues from {{ item.done|size }} next time. The progress bar then starts there too.</p>
     {% elif stage == 'scan' %}
     <p><strong>Reading the archives of export {{ item.name }}: {{ item.done|size }} of {{ item.size|size }}.</strong></p>
-    <p class="warn-text">Reading starts again from the beginning of this export next time{% if item.done > 10 * 1000**3 %}, which for {{ item.size|size }} takes a while{% endif %}. It reads files already in the download folder: nothing is downloaded again.</p>
+    <p>Reading carries on where it stopped next time: files already read are not read again. In a <code>.tgz</code> part the archive is unpacked again up to that point, without checking each file again. Nothing is downloaded again.</p>
     {% else %}
     <p><strong>Uploading {{ item.name.rsplit('/', 1)[-1] }}: {{ item.done|size }} of {{ item.size|size }}.</strong></p>
     <p>Files already uploaded are not sent again. This one is sent again in full{% if item.size %} ({{ item.size|size }}){% endif %}.</p>

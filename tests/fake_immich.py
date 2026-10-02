@@ -34,6 +34,8 @@ class Asset:
 class FakeImmichServer:
     metadata_delay_reads: int = 0
     """GET /assets/{id} returns no exifInfo this many times before it does."""
+    refuse_names: frozenset[str] = frozenset()
+    """File names answered with 400 "Unsupported file type", as Immich does for .MP files."""
     fail_uploads: int = 0
     """Answer this many uploads with 500 (after storing them, like a lost response)."""
     store_failed_uploads: bool = True
@@ -123,6 +125,8 @@ class FakeImmichServer:
             parts.get("sidecarData", (None, None))[1],
             parts["isFavorite"][1] == b"true",
         )
+        if asset.filename in self.refuse_names:
+            return httpx.Response(400, json={"message": "Unsupported file type"})
         if self.fail_uploads:
             self.fail_uploads -= 1
             if self.store_failed_uploads:

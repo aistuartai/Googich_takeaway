@@ -67,7 +67,7 @@
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <fieldset>
       <legend>Send a notification when…</legend>
-      {% for value, label in [('success', 'a run imports new files'), ('no-new-data', 'a run finds nothing new'), ('failed', 'a run fails'), ('paused', 'the schedule pauses after failed runs'), ('reminder', 'the Takeout schedule needs attention')] %}
+      {% for value, label in [('success', 'a run imports new files'), ('partial', 'a run completes, but some files could not be uploaded'), ('no-new-data', 'a run finds nothing new'), ('failed', 'a run fails'), ('paused', 'the schedule pauses after failed runs'), ('reminder', 'the Takeout schedule needs attention')] %}
       <label class="check"><input type="checkbox" name="outcomes" value="{{ value }}" {{ 'checked' if value in outcomes }}> {{ label }}</label>
       {% endfor %}
     </fieldset>

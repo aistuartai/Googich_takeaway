@@ -10,7 +10,7 @@ from googich_takeaway.config import (
     DASHBOARD_ITEMS,
     ConfigError,
 )
-from googich_takeaway.pipeline import RunOptions
+from googich_takeaway.pipeline import RunOptions, ignore_failures, pending_failures
 from googich_takeaway.web import demo
 from googich_takeaway.web.common import (
     _zone,
@@ -58,6 +58,7 @@ def register(app: FastAPI, web: Shared) -> None:
             failures=config.scheduled_failures(),
             runs=state.recent_runs(15) if "runs" in items else [],
             last_run=next(iter(state.recent_runs(1)), None),
+            failed_exports=pending_failures(state),
             notice=dashboard_notice(request.query_params.get("notice", "")),
             reminders=reminders.takeout_reminders(config, state, clock()),
             zone=_zone(config.general().timezone),
@@ -163,6 +164,22 @@ def register(app: FastAPI, web: Shared) -> None:
     def resume_run() -> Response:
         resumed = worker.resume_paused()
         return RedirectResponse(f"/?notice={'resumed' if resumed else 'busy'}", status_code=303)
+
+    @app.get("/runs/failures/ignore", response_class=HTMLResponse)
+    def confirm_ignore_failures(
+        request: Request, config: ConfigDep, state: StateDep, export: str = ""
+    ) -> Response:
+        record = next((r for r in pending_failures(state) if r["export_id"] == export), None)
+        if record is None:
+            return RedirectResponse("/", status_code=303)
+        return page(request, config, "failures_confirm.html", record=record)
+
+    @app.post("/runs/failures/ignore")
+    def ignore_failed_files(state: StateDep, export: Annotated[str, Form()] = "") -> Response:
+        if worker.status_running():
+            return RedirectResponse("/?notice=busy", status_code=303)
+        ignored = ignore_failures(state, export, clock())
+        return RedirectResponse(f"/?notice={'ignored' if ignored else 'idle'}", status_code=303)
 
     @app.post("/runs/discard")
     def discard_run() -> Response:

@@ -29,6 +29,7 @@ from googich_takeaway.destinations.immich import (
     ImmichClient,
     ImmichError,
     ImmichNotFoundError,
+    ImmichRefusedError,
 )
 from googich_takeaway.destinations.xmp import build_xmp
 from googich_takeaway.progress import ItemState, Stage, Tracker, format_size
@@ -86,6 +87,8 @@ class ImportResult:
     unverified: list[ScannedItem] = field(default_factory=list)
     """Immich had not finished reading the file's metadata in time; checked on the next run."""
     failed: list[tuple[ScannedItem, str]] = field(default_factory=list)
+    refused: set[str] = field(default_factory=set)
+    """Paths of failed files Immich refused outright: retrying would not help."""
     aborted: str | None = None
 
 
@@ -280,6 +283,8 @@ def _upload(
         """Record one upload's outcome; False once too many have failed in a row."""
         if error is not None:
             result.failed.append((item, str(error)))
+            if isinstance(error, ImmichRefusedError):
+                result.refused.add(item.path)
             if tracker:
                 tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, str(error))
             failures_in_a_row[0] += 1

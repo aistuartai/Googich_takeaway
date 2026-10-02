@@ -9,7 +9,7 @@
   <section class="card run-card{{ ' is-running' if status.running }}{{ ' is-ready' if not status.running and not status.run_paused }}">
     <div class="status-head">
       <div>
-        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else 'ready') }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% else %}Ready{% endif %}</h2>
+        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else ('partial' if failed_exports else 'ready')) }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% elif failed_exports %}Completed with errors{% else %}Ready{% endif %}</h2>
         {% if status.stopping %}
         <p class="status-line">Stopping at the next safe point, between or inside file transfers. Nothing done so far is lost.</p>
         {% elif status.running %}
@@ -68,6 +68,28 @@
       </div>
     </div>
 
+    {% if failed_exports and not status.running and not status.run_paused %}
+    {% for record in failed_exports %}
+    <div class="failed-box">
+      {%- set refused = record.files|selectattr('refused')|list|length -%}
+      <h3>{{ record.files|length }} {{ 'file' if record.files|length == 1 else 'files' }} from export {{ record.export_id[:8]|export_date }} could not be uploaded</h3>
+      <ul class="failed-files">
+        {% for f in record.files[:10] %}<li><strong>{{ f.name }}</strong> <span class="muted">{{ f.reason }}</span>{% if f.refused %} <span class="hint">Retrying won't help: Immich refused it.</span>{% endif %}</li>{% endfor %}
+        {% if record.files|length > 10 %}<li class="muted">…and {{ record.files|length - 10 }} more{% if last_run %}, in <a href="/logs?run={{ last_run.id }}&level=WARNING">the run's log</a>{% endif %}.</li>{% endif %}
+      </ul>
+      <p class="muted">Until you choose, the export counts as unfinished: runs try these files again, and Cleanup waits.</p>
+      <div class="actions">
+        {% if refused < record.files|length %}
+        <form method="post" action="/runs" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+          <button type="submit" class="secondary">Retry these files</button>
+        </form>
+        {% endif %}
+        <a class="button secondary" href="/runs/failures/ignore?export={{ record.export_id|urlencode }}">Ignore them</a>
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
     {% if status.run_paused and status.paused_progress %}
     <div class="paused-progress">
       <h3>How far it got</h3>

@@ -101,7 +101,12 @@ def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> Ex
             "checked on the next runs, and the archive is safe to remove after that."
         )
     summary = state.export_summary(key) or {}
-    copy.not_imported = _count(summary.get("no_date")) + _count(summary.get("unsupported"))
+    ignored = summary.get("ignored")
+    copy.not_imported = (
+        _count(summary.get("no_date"))
+        + _count(summary.get("unsupported"))
+        + (len(ignored) if isinstance(ignored, list) else 0)
+    )
     return copy
 
 
@@ -208,8 +213,9 @@ def delete_staged_export(
         raise CleanupError(f"Not yet: {copy.reason} Nothing deleted.")
     if copy.needs_confirmation and not confirmed_not_imported:
         raise CleanupError(
-            f"{copy.not_imported} files from this export were not imported (no date, or rejected "
-            "by Immich). Tick the box to confirm you want to delete the archives anyway."
+            f"{copy.not_imported} files from this export were not imported (no date, refused by "
+            "Immich, or failed and ignored). Tick the box to confirm you want to delete the "
+            "archives anyway."
         )
     freed = 0
     for part in copy.parts:

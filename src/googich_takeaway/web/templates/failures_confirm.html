@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Ignore failed files | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  <h1>Ignore {{ record.files|length }} failed {{ 'file' if record.files|length == 1 else 'files' }}?</h1>
+  <p>Export {{ record.export_id[:8]|export_date }} is then counted as done: no run tries these files again, and Cleanup offers its archives, asking first because these files are not in Immich.</p>
+  <ul class="failed-files">
+    {% for f in record.files[:50] %}<li><strong>{{ f.name }}</strong>: {{ f.reason }}</li>{% endfor %}
+    {% if record.files|length > 50 %}<li>…and {{ record.files|length - 50 }} more</li>{% endif %}
+  </ul>
+  <p class="muted">They stay listed in this export's details on the Cleanup page. To import them later, use Re-import from the run options.</p>
+  <div class="actions">
+    <form method="post" action="/runs/failures/ignore" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <input type="hidden" name="export" value="{{ record.export_id }}">
+      <button type="submit" class="danger">Ignore them</button>
+    </form>
+    <a class="button secondary" href="/">Keep them for now</a>
+  </div>
+</section>
+{% endblock %}

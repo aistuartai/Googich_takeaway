@@ -99,6 +99,24 @@ Open an issue on [GitHub](https://github.com/aistuartai/Googich_takeaway/issues)
 what happened, and the matching lines from the log. Logs never contain keys or passwords, but look
 for anything else you would rather not share, such as file names.
 
+## Some files failed
+
+A run that uploads most of an export but cannot send a few files ends **Completed with errors**,
+not failed: it does not count towards pausing the schedule, and the notification lists the
+files. If more than 5% of the files it tried failed, or it could not reach Immich or the
+download folder, the run has **failed**.
+
+The run box on the dashboard then lists the files that failed, with the reason, and offers:
+
+- **Retry these files:** a run that tries just those again. Everything else is done, so it goes
+  straight to them. Where Immich refused a file (for example "Unsupported file type"), the list
+  says retrying will not help.
+- **Ignore them:** after asking, counts the export as done, so Cleanup can offer its archives
+  (it asks again before deleting, as these files are not in Immich). The files stay listed in
+  the export's details.
+
+Until you choose, the export counts as unfinished, and each run tries those files again.
+
 ## Known limitations
 
 - **Live Photos appear as two items**, a photo and a short video, and **edited copies sit beside

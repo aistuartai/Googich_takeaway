@@ -499,3 +499,49 @@ def test_dashboard_figures_are_saved_before_uploading_starts(
     assert latest["uploading"] is True
     final = world.config.state.get_json("photos.latest_export")
     assert (final["uploading"], final["to_upload"], final["in_immich"]) == (False, 0, 13)
+
+
+def test_a_few_failed_files_complete_with_errors_not_fail() -> None:
+    from googich_takeaway.pipeline import RunReport
+
+    few = RunReport(uploaded=97, files_tried=100)
+    few.failed_files = [
+        ("e", f"f{n}.jpg", "Immich did not answer in time", False) for n in range(3)
+    ]
+    message = few.message()
+    assert message.outcome is Outcome.PARTIAL
+    assert (
+        message.title == "Completed with errors: 97 photos and videos uploaded, 0 skipped, 3 failed"
+    )
+    assert "f0.jpg: Immich did not answer in time" in message.body
+    many = RunReport(uploaded=94, files_tried=100)
+    many.failed_files = [("e", f"f{n}.jpg", "x", False) for n in range(6)]  # over 5%
+    assert many.message().outcome is Outcome.FAILED
+
+
+def test_failed_files_wait_for_retry_or_ignore(world: World) -> None:
+    from googich_takeaway import cleanup
+    from googich_takeaway.pipeline import ignore_failures, pending_failures
+
+    world.configure()
+    world.immich.refuse_names = frozenset({"IMG_0001.jpg"})
+    report = world.pipeline().run()
+    assert report.problems == []
+    assert [(name, refused) for _, name, _, refused in report.failed_files] == [
+        ("IMG_0001.jpg", True)
+    ]
+    assert "Unsupported file type" in report.failed_files[0][2]  # Immich's own reason
+    waiting = pending_failures(world.config.state)
+    files = waiting[0]["files"]
+    assert isinstance(files, list)
+    assert [f["name"] for f in files] == ["IMG_0001.jpg"]
+    staging = world.config.staging_location()
+    assert staging is not None
+    copy = cleanup.staged_exports(staging, world.config.state)[0]
+    assert not copy.ready  # unfinished until Retry succeeds or the files are ignored
+
+    assert ignore_failures(world.config.state, str(waiting[0]["export_id"]), NOW) == 1
+    assert pending_failures(world.config.state) == []
+    copy = cleanup.staged_exports(staging, world.config.state)[0]
+    assert copy.ready
+    assert copy.needs_confirmation  # Cleanup still asks: those files are not in Immich

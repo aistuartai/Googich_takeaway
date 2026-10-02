@@ -28,6 +28,11 @@ class ImmichError(Exception):
     """Immich could not be reached or answered with an error."""
 
 
+class ImmichRefusedError(ImmichError):
+    """Immich refused the request itself (a 4xx other than sign-in, not found or too many
+    requests): sending the same file again would be refused again."""
+
+
 class ImmichNotFoundError(ImmichError):
     """Immich has no such asset (404), for example because it was deleted there."""
 
@@ -223,9 +228,10 @@ class ImmichClient:
         if response.status_code == 404:
             raise ImmichNotFoundError(f"Immich has nothing at {method} {path} (404)")
         if response.is_error:
-            raise ImmichError(
-                f"Immich answered {response.status_code} for {method} {path}{_reason(response)}"
-            )
+            text = f"Immich answered {response.status_code} for {method} {path}{_reason(response)}"
+            if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
+                raise ImmichRefusedError(text)
+            raise ImmichError(text)
         try:
             data = response.json()
         except ValueError:

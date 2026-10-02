@@ -18,6 +18,8 @@ log = logging.getLogger("googich.notify")
 
 class Outcome(StrEnum):
     SUCCESS = "success"
+    PARTIAL = "partial"
+    """The run did its job, but a few files could not be uploaded."""
     NO_NEW_DATA = "no-new-data"
     FAILED = "failed"
     PAUSED = "paused"
@@ -27,10 +29,13 @@ class Outcome(StrEnum):
     """The user paused or cancelled the run. Never notified."""
 
 
-DEFAULT_OUTCOMES = frozenset({Outcome.SUCCESS, Outcome.FAILED, Outcome.PAUSED, Outcome.REMINDER})
+DEFAULT_OUTCOMES = frozenset(
+    {Outcome.SUCCESS, Outcome.PARTIAL, Outcome.FAILED, Outcome.PAUSED, Outcome.REMINDER}
+)
 
 _TYPES = {
     Outcome.SUCCESS: apprise.NotifyType.SUCCESS,
+    Outcome.PARTIAL: apprise.NotifyType.WARNING,
     Outcome.NO_NEW_DATA: apprise.NotifyType.INFO,
     Outcome.FAILED: apprise.NotifyType.FAILURE,
     Outcome.PAUSED: apprise.NotifyType.WARNING,

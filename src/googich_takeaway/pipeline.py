@@ -46,6 +46,11 @@ log = logging.getLogger("googich.run")
 # Takeout may still be writing parts to Drive. An export whose newest part changed more recently
 # than this waits for a later run, so it is never imported without parts that were not yet listed.
 SETTLE_TIME = timedelta(hours=1)
+FAILED_SHARE = 0.05
+"""A run fails when more than this share of the files it tried could not be uploaded; below it,
+it completes with errors."""
+FAILURES_SETTING = "run.failures"
+"""Files that failed, by export, for the dashboard's Retry and Ignore."""
 COPY_SETTLE_TIME = timedelta(minutes=30)
 """An archive saved by hand (not from Drive) is left alone until it has not changed for this
 long, so an export whose parts are still being downloaded or copied is not imported half-done."""
@@ -91,19 +96,39 @@ class RunReport:
     incomplete: list[tuple[str, str]] = field(default_factory=list)
     """Exports saved by hand that look unfinished, and why: imported once complete."""
     problems: list[str] = field(default_factory=list)
+    """What stopped the run doing its job: it failed."""
+    files_tried: int = 0
+    """Files this run tried to upload, for judging how many failed."""
+    failed_files: list[tuple[str, str, str, bool]] = field(default_factory=list)
+    """(export ID, file name, reason, Immich refused it) for files that could not be uploaded."""
 
     @property
     def nothing_new(self) -> bool:
         return self.downloaded == 0 and self.uploaded == 0
 
     def message(self) -> Message:
+        failures = self._failure_lines()
         if self.problems:
             done = self._done_lines()
             return Message(
                 Outcome.FAILED,
                 f"Run failed: {self.problems[0]}",
-                [*self.problems, *(["", "What did work:", *done] if done else [])],
+                [*self.problems, *failures, *(["", "What did work:", *done] if done else [])],
             )
+        if self.failed_files:
+            failed = len(self.failed_files)
+            if failed > FAILED_SHARE * max(self.files_tried, 1):
+                return Message(
+                    Outcome.FAILED,
+                    f"Run failed: {failed:,} of {self.files_tried:,} files could not be uploaded",
+                    [*failures, "", *self._done_lines()],
+                )
+            return Message(
+                Outcome.PARTIAL,
+                f"Completed with errors: {self._counts()}",
+                [*self._done_lines(), "", *failures,
+                 "Retry them or ignore them in the run box on the dashboard."],
+            )  # fmt: skip
         if self.nothing_new:
             return Message(
                 Outcome.NO_NEW_DATA,
@@ -129,7 +154,18 @@ class RunReport:
             f"{uploaded} uploaded" if parts else f"{uploaded[0].upper()}{uploaded[1:]} uploaded"
         )
         parts.append(f"{self.already_present:,} skipped")
+        if self.failed_files:
+            parts.append(f"{len(self.failed_files):,} failed")
         return ", ".join(parts)
+
+    def _failure_lines(self) -> list[str]:
+        if not self.failed_files:
+            return []
+        lines = [f"{len(self.failed_files):,} files could not be uploaded:"]
+        lines += [f"{name}: {reason}" for _, name, reason, _ in self.failed_files[:5]]
+        if len(self.failed_files) > 5:
+            lines.append(f"…and {len(self.failed_files) - 5:,} more (see the dashboard).")
+        return lines
 
     def _done_lines(self) -> list[str]:
         lines = []
@@ -385,10 +421,12 @@ class Pipeline:
         report.needs_review += len(plan.with_decision(Decision.NO_DATE))
         report.date_mismatches += len(result.date_mismatch)
 
-        for item, detail in result.failed[:5]:
-            report.problems.append(f"{item.name}: {detail}")
-        if len(result.failed) > 5:
-            report.problems.append(f"…and {len(result.failed) - 5} more files failed.")
+        # A few files that failed do not fail the run: the export stays unfinished, so the next
+        # run tries them again, and the dashboard offers Retry or Ignore.
+        report.files_tried += len(result.uploaded) + len(result.adopted) + len(result.failed)
+        for item, detail in result.failed:
+            report.failed_files.append((export_id, item.name, detail, item.path in result.refused))
+        self._remember_failures(export_id, export_key, parts, plan, result)
         if result.aborted:
             report.problems.append(f"Export {export_id}: {result.aborted}.")
         # Complete once everything is uploaded: checking dates in Immich can take hours after a
@@ -407,6 +445,39 @@ class Pipeline:
             )
             # Fully in Immich: what reading it found is not needed again.
             self.state.forget_scan_parts(archive_key(p.name, p.size) for p in parts)
+
+    def _remember_failures(
+        self,
+        export_id: str,
+        export_key: str,
+        parts: list[StoredFile],
+        plan: ImportPlan,
+        result: ImportResult,
+    ) -> None:
+        """Files of this export that failed, for the dashboard's Retry and Ignore; gone once the
+        export has none."""
+        stored = self.state.get_json(FAILURES_SETTING)
+        if result.failed:
+            stored[export_id] = {
+                "export_key": export_key,
+                "parts": sorted(p.name for p in parts),
+                "uploaded": len(result.uploaded),
+                "no_date": len(plan.with_decision(Decision.NO_DATE)),
+                "unsupported": len(plan.with_decision(Decision.UNSUPPORTED)),
+                "files": [
+                    {
+                        "path": item.path,
+                        "name": item.name,
+                        "reason": detail[:300],
+                        "refused": item.path in result.refused,
+                    }
+                    for item, detail in result.failed
+                ],
+                "at": self.clock().isoformat(),
+            }
+        else:
+            stored.pop(export_id, None)
+        self.state.set_json(FAILURES_SETTING, stored or None, self.clock())
 
     def _remember_export(
         self,
@@ -468,6 +539,36 @@ class Pipeline:
     def _skip(self, export_id: str, why: str) -> None:
         if self.tracker:
             self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
+
+
+def ignore_failures(state: State, export_id: str, at: datetime) -> int:
+    """Accept that an export's failed files will not be imported: mark it complete, so Cleanup
+    offers it (asking first, as for undated files). Returns how many files were ignored."""
+    stored = state.get_json(FAILURES_SETTING)
+    record = stored.get(export_id)
+    if not isinstance(record, dict):
+        return 0
+    files = [f for f in record.get("files", []) if isinstance(f, dict)]
+    summary = {
+        "uploaded": record.get("uploaded", 0),
+        "verified": 0,
+        "no_date": record.get("no_date", 0),
+        "unsupported": record.get("unsupported", 0),
+        "ignored": [{"name": f.get("name"), "reason": f.get("reason")} for f in files],
+        "parts": record.get("parts", []),
+    }
+    state.mark_export_complete(str(record["export_key"]), export_id, json.dumps(summary), at)
+    stored.pop(export_id)
+    state.set_json(FAILURES_SETTING, stored or None, at)
+    log.warning("Export %s marked complete; %d failed files ignored", export_id, len(files))
+    return len(files)
+
+
+def pending_failures(state: State) -> list[dict[str, object]]:
+    """Exports with files that failed and are waiting for Retry or Ignore, newest first."""
+    stored = state.get_json(FAILURES_SETTING)
+    found = [{"export_id": k, **v} for k, v in stored.items() if isinstance(v, dict)]
+    return sorted(found, key=lambda r: str(r["export_id"]), reverse=True)
 
 
 class StateScanCache:

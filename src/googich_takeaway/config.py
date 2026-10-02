@@ -476,7 +476,13 @@ class Config:
         stored = self._state.get_setting("notify.outcomes")
         if stored is None:
             return DEFAULT_OUTCOMES
-        return frozenset(Outcome(o) for o in json.loads(stored) if o in Outcome)
+        chosen = {Outcome(o) for o in json.loads(stored) if o in Outcome}
+        # Kinds added since the choice was saved are on if they are on by default, as when
+        # "completed with errors" arrived: someone told about failures wants to hear of these.
+        known = json.loads(self._state.get_setting("notify.known") or '["failed", "no-new-data", '
+                           '"paused", "reminder", "success"]')  # fmt: skip
+        new = {o for o in DEFAULT_OUTCOMES if o.value not in known}
+        return frozenset(chosen | new)
 
     def has_notification_urls(self) -> bool:
         return bool(self._targets())
@@ -544,6 +550,7 @@ class Config:
                 )
             self._save_targets(_named(lines))
         self._state.set_setting("notify.outcomes", json.dumps(chosen), now)
+        self._state.set_setting("notify.known", json.dumps(sorted(o.value for o in Outcome)), now)
 
     def notifier(self) -> Notifier:
         return Notifier([t["url"] for t in self._targets()], self.notification_outcomes())

@@ -20,7 +20,7 @@
         <td class="num">{{ copy.size|size }}</td>
         <td>
           {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
-            {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, or rejected by Immich) and exist only in this archive and in Google Photos.</span>{% endif %}
+            {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% endif %}
           {% else %}<span class="muted">{{ copy.reason }}</span>{% endif %}
         </td>
         <td>

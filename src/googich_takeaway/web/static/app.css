@@ -682,3 +682,11 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 .helper-upgrade { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1rem 0; }
 .station-pending { color: var(--ink); margin-top: .2rem; }
 .stage-detail { margin: -.9rem 0 .6rem; font-weight: 600; color: var(--ink); }
+/* After a run with failed files: what failed, and Retry or Ignore. */
+.failed-box { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1.25rem 0 .5rem; }
+.failed-box h3 { margin-top: 0; }
+.failed-files { margin: .5rem 0; padding-left: 1.2rem; }
+.failed-files li { margin: .25rem 0; overflow-wrap: anywhere; }
+.failed-files .hint { color: var(--warn); font-weight: 600; font-size: .875rem; }
+.state-dot.partial { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent); }
+.run-partial { color: var(--warn); }

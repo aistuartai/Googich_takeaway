@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Completed with errors.** A run where a few files could not be uploaded no longer counts as
+  failed: it completes with errors (amber in History), does not count towards pausing the
+  schedule, and has its own notification, on by default. It fails only if more than 5% of the
+  files it tried failed, or it could not do its job (Immich or the folder unreachable, five
+  failures in a row).
+- **Retry or ignore failed files** from the run box: it lists them with Immich's reason, marks
+  the ones Immich refused (retrying will not help), and offers **Retry these files** or
+  **Ignore them**, which counts the export as done so Cleanup can offer it.
+
 ### Changed
 
 - While uploading, the dashboard says when it is catching up: a resumed run passes over the
