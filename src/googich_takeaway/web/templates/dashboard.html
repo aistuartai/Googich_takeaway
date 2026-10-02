@@ -17,7 +17,6 @@
   </ol>
 </section>
 {% else %}
-{% if notice %}<p class="result ok notice" role="status">{{ notice }}</p>{% endif %}
 {% if status.paused and not status.paused_by_user %}
 <section class="card warn" role="alert">
   <h2>Scheduled runs are paused</h2>

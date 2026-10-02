@@ -1,5 +1,8 @@
 {%- from "_meters.html" import meter -%}
 <div id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {#- Inside the polled block: a notice such as "Resuming the paused run" goes as soon as the
+      progress below takes over, and stays only when nothing is running. -#}
+  {% if notice %}<p class="result ok notice" role="status">{{ notice }}</p>{% endif %}
   {% if 'journey' in items %}{% include "_journey.html" %}{% endif %}
   {%- set side_schedule = 'schedule' in items and not status.running -%}
   <div class="run-row{{ ' with-schedule' if side_schedule }}">

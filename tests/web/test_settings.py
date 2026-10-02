@@ -1055,3 +1055,15 @@ def test_without_the_helper_the_install_command_is_shown(world: World) -> None:
     page = world.client.get("/updates").text
     assert "One-click updates are off" in page
     assert "sudo bash install-updater.sh /opt/googich" in page
+
+
+def test_a_run_notice_goes_once_progress_shows(world: World) -> None:
+    _ready(world)
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        page = world.client.get("/?notice=resumed").text
+        assert "Resuming the paused run." in page  # straight after pressing Resume
+        assert "Resuming the paused run." not in world.client.get("/status").text  # next poll
+    finally:
+        worker.release_from_demo()

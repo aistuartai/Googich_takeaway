@@ -7,6 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The update commands in the README and the Updates guide find the newest release themselves,
+  instead of naming versions that went out of date with each release.
+
+### Fixed
+
+- "Resuming the paused run" and "Run started" stayed on the dashboard for the whole run; they
+  now go as soon as the progress shows.
+
 ## [0.3.4] - 2026-10-02
 
 ### Security
