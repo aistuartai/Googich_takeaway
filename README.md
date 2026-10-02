@@ -77,12 +77,15 @@ The same guide is built into the app under **Help → Guide**, with search.
 ## Updating
 
 The app tells you when a new release is out, and never updates itself. With the optional
-[update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper), installed with
-one command on the Docker host, **Update now** installs it in one click, pausing a running run first. By hand:
+[update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper) (one command
+to install on the Docker host), **Update now** installs it in one click, pausing a running run
+first. Or by hand, in the folder holding `compose.yaml`:
 
 ```bash
-sed -i 's/googich_takeaway:0.3.3/googich_takeaway:0.3.4/' compose.yaml
-docker compose pull && docker compose up -d
+V=$(curl -fsS https://api.github.com/repos/aistuartai/Googich_takeaway/releases/latest \
+  | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')   # newest release
+[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
+  && docker compose pull && docker compose up -d
 ```
 
 ## Limitations

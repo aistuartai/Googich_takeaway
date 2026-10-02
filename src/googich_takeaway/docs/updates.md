@@ -17,8 +17,10 @@ Help → Updates if you prefer. The app never installs anything by itself.
 On the Docker host, in the folder holding `compose.yaml`:
 
 ```bash
-sed -i 's/googich_takeaway:0.2.1/googich_takeaway:0.3.0/' compose.yaml   # the versions you have and want
-docker compose pull && docker compose up -d
+V=$(curl -fsS https://api.github.com/repos/aistuartai/Googich_takeaway/releases/latest \
+  | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')   # newest release
+[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
+  && docker compose pull && docker compose up -d
 ```
 
 The compose file names a fixed version, so the app changes only when you choose.

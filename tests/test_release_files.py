@@ -36,7 +36,6 @@ def test_every_versioned_link_names_the_current_release() -> None:
     for path in ("README.md", "src/googich_takeaway/docs/updates.md"):
         found = set(re.findall(r"Googich_takeaway/v(\d+\.\d+\.\d+)/", (ROOT / path).read_text()))
         assert found == {version}, f"bump the version in links in {path}"
-    assert f"googich_takeaway:{version}/" in (ROOT / "README.md").read_text().replace("'", "/")
 
 
 def test_helper_version_matches_the_app() -> None:
