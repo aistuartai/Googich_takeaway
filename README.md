@@ -3,7 +3,7 @@
 Self-hosted tool that moves your Google Photos library into [Immich](https://immich.app/), using
 Google Takeout archives, and keeps it topped up on a schedule.
 
-> **Status: first release (0.1.0).** It works end to end and has been tested against real Google
+> **Status: early releases (0.2).** It works end to end and has been tested against real Google
 > Drive, Immich and SMB, but it is young. Try it on a test Immich user first, and back up your
 > Immich database before the first real import.
 
@@ -31,18 +31,25 @@ Requirements: Docker with Compose, an Immich server, and space for one full Take
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/main/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.2.0/docker/compose.yaml
+less compose.yaml   # read what you are about to run
 
-# A data folder, and a master key that encrypts the credentials you enter later.
+# A data folder, and a master key that encrypts the credentials you enter later. Both belong to
+# the app's unprivileged user inside the container, uid 10001.
 mkdir -p data secrets && chmod 700 data secrets
 head -c 32 /dev/urandom | base64 > secrets/master.key && chmod 600 secrets/master.key
+chown -R 10001:10001 data secrets
 
-PUID=$(id -u) PGID=$(id -g) docker compose up -d
+docker compose up -d
 docker compose logs googich | grep "First-run setup"
 ```
 
-Open `http://<this host>:8080/setup`, enter the setup token from the log, and choose a password.
-The token stops anyone else on your network from claiming a fresh install.
+Straight away, open `http://<this host>:8080/setup`, enter the setup token from the log, and
+choose a password. Until a password is set, anyone on your network who sees the log could claim
+the install; the token keeps it to you, so do not leave a fresh install waiting.
+
+Keep a copy of `secrets/master.key` somewhere safe outside this machine. The compose file pins a
+version, so the app changes only when you update it.
 
 Edit `compose.yaml` first if you want a different port, time zone, or a large local disk for
 downloads. The web interface is meant for your local network; put it behind HTTPS (a reverse
@@ -99,7 +106,7 @@ as `ghcr.io/aistuartai/googich_takeaway:0.1.1` (recommended, so updates happen o
 choose), change that version first:
 
 ```bash
-sed -i 's/googich_takeaway:0.1.1/googich_takeaway:0.1.2/' compose.yaml
+sed -i 's/googich_takeaway:0.2.0/googich_takeaway:0.2.1/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 
@@ -123,7 +130,7 @@ To install it, as root on the Docker host, in the folder holding `compose.yaml` 
 
 ```bash
 cd /opt/googich
-V=0.1.2
+V=0.2.0
 base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
 install -d -m 755 /usr/local/lib/googich-updater
 curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
@@ -145,6 +152,30 @@ Read the script before installing it; it runs as root. If your install is not in
 Back up the `data` folder: it holds the state database (what has been downloaded and uploaded,
 your settings and encrypted credentials) and logs. Keep `secrets/master.key` somewhere separate;
 without it the stored credentials cannot be read, and you would need to enter them again.
+
+### Keeping the master key out of backups (Proxmox containers)
+
+If the app runs in a Proxmox container that is backed up whole, every backup holds the master key
+next to the credentials it encrypts, so the encryption no longer protects those backups. Move the
+key out of the container onto the Proxmox host, and mount it back in. Proxmox never includes
+bind mounts in container backups. On the Proxmox host, as root, with the container stopped
+(204 and `/opt/googich` are examples):
+
+```bash
+CT=204
+install -d -m 700 /srv/googich-secrets
+pct pull $CT /opt/googich/secrets/master.key /srv/googich-secrets/master.key
+# The container's uid 10001 is uid 110001 on the host in an unprivileged container.
+chown -R 110001:110001 /srv/googich-secrets && chmod 600 /srv/googich-secrets/master.key
+pct exec $CT -- rm /opt/googich/secrets/master.key
+pct set $CT -mp0 /srv/googich-secrets,mp=/opt/googich/secrets
+pct start $CT
+```
+
+If the app inside the container runs as a different uid, add 100000 to it for the host-side
+owner. Older backups taken before the move still contain the key; if that matters, delete them,
+or replace the stored credentials (create a new Immich API key and Google service account key,
+change the SMB password) so the old copies become useless.
 
 ## Where credentials are kept
 
@@ -191,6 +222,16 @@ uv run ruff check && uv run mypy && uv run pytest
 
 Tests use synthetic Takeout exports generated at test time, and in-memory stand-ins for Immich,
 Google Drive and SMB. No real photos are stored in the repository.
+
+## Roadmap
+
+- **Unlock after restart (optional):** keep the master key protected by a passphrase, so it is
+  never stored anywhere in usable form. After each restart the app would wait to be unlocked in
+  the web interface before running again. This protects against a stolen disk or backup, at the
+  cost of runs pausing after reboots and updates until someone unlocks it.
+- Linking Live Photo pairs and stacking edited copies with their originals in Immich.
+- Reading capture dates from HEIC and RAW files directly.
+- Optional parallel uploads for very large first imports.
 
 ## Licence
 

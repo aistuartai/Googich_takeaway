@@ -7,13 +7,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-02
+
+A new look, one-click updates, and safer defaults for new installs.
+
 ### Added
 
+- A new design: stages have colours (sky for Google Drive, violet for the download folder, green
+  for Immich), progress travels through a spectrum between them, and red is kept for errors.
+  The dashboard opens with a journey strip whose legs animate while files move.
+- Progress bars in two styles, glossy striped bars with a travelling percentage or segmented
+  capsules, drawn without inline styles so the strict security policy stays in place.
+- Look and feel settings: theme (match the device, light or dark), colour scheme (spectrum,
+  ocean or sunset), progress bar style, and animation on or off. Reduced-motion settings on the
+  device are always respected.
+- Bundled typefaces, Bricolage Grotesque and Atkinson Hyperlegible Next (SIL Open Font
+  Licence), an original icon and favicon, and a two-column settings layout.
+- Demo mode for previewing the progress views (`GOOGICH_DEMO=1`): a simulated run that records
+  nothing.
 - One-click updates, optional. With the update helper installed on the Docker host, the update
   banner offers Update now. The app only writes the version to install into a file; the helper,
   outside the container, checks it is a published release, switches the image version in
   `compose.yaml`, restarts the container, waits for the new version to answer and rolls back if
   anything fails. The app never gets access to Docker.
+
+### Changed
+
+- The example `compose.yaml` pins the release version instead of `latest`, and runs as the
+  image's own unprivileged user (uid 10001). New installs `chown` the data and secrets folders
+  to it. A test keeps the pinned version in step with each release.
+- `/healthz` also answers `HEAD` requests, for monitors that use them.
+
+### Documentation
+
+- How to keep the master key out of Proxmox container backups, by moving it to the host and
+  mounting it back in.
+- First-run setup should happen straight after starting a new install.
+- A roadmap, including an optional "unlock after restart" mode that never stores the key in usable
+  form.
 
 ## [0.1.1] - 2026-10-02
 
@@ -133,6 +164,7 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.0

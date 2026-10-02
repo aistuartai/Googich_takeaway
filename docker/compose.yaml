@@ -1,19 +1,24 @@
 # Googich Takeaway: example Docker Compose file.
 #
-#   1. Create the data folder and a master key for encrypting stored credentials, as your own user
-#      (keep the key safe, and out of backups of ./data):
+#   1. Create the data folder and a master key for encrypting stored credentials, owned by the
+#      app's user inside the container (uid 10001), and keep a copy of the key somewhere safe:
 #        mkdir -p data secrets && chmod 700 data secrets
 #        head -c 32 /dev/urandom | base64 > secrets/master.key && chmod 600 secrets/master.key
-#   2. PUID=$(id -u) PGID=$(id -g) docker compose up -d
+#        chown -R 10001:10001 data secrets
+#   2. docker compose up -d
 #   3. docker compose logs googich | grep "First-run setup"   # the one-time setup token
-#   4. Open http://<this host>:8080/setup
+#   4. Open http://<this host>:8080/setup straight away: until a password is set, anyone on the
+#      network who has the token could set it.
+#
+# The version is pinned so it only changes when you choose: edit it here (or press Update now
+# with the optional update helper) when a new release is out.
 #
 # The data folder holds the state database and logs. Downloaded archives go to the download folder
 # chosen in Settings: /data/staging below, or an SMB share (no mount needed).
 
 services:
   googich:
-    image: ghcr.io/aistuartai/googich_takeaway:latest
+    image: ghcr.io/aistuartai/googich_takeaway:0.2.0
     container_name: googich
     restart: unless-stopped
     ports:
@@ -34,8 +39,9 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # Run as the user who owns ./data and secrets/master.key, so the container can use them.
-    user: "${PUID:-1000}:${PGID:-1000}"
+    # The app's own unprivileged user. ./data and secrets/ must belong to it (step 1). To run as
+    # another user, change this and chown the folders to match.
+    user: "10001:10001"
 
 secrets:
   master_key:

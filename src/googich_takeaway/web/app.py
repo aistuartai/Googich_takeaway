@@ -205,7 +205,7 @@ def create_app(
             request.state.csrf = csrf
         return _with_headers(await call_next(request))
 
-    @app.get("/healthz", include_in_schema=False)
+    @app.api_route("/healthz", methods=["GET", "HEAD"], include_in_schema=False)
     def healthz() -> JSONResponse:
         return JSONResponse({"status": "ok", "version": __version__})
 

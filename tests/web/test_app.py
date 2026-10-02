@@ -221,3 +221,7 @@ def test_null_origin_is_refused(tmp_path: Path, clock: Clock) -> None:
         headers={"Origin": "null"},
     )
     assert response.status_code == 403
+
+
+def test_health_answers_head_for_monitors(tmp_path: Path, clock: Clock) -> None:
+    assert make(tmp_path, clock).head("/healthz").status_code == 200
