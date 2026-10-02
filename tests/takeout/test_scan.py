@@ -143,3 +143,35 @@ def test_lone_mp_video_is_kept_as_a_video(tmp_path: Path) -> None:
     scan = scan_export(builder.write(tmp_path), RESOLVER, NOW)
     assert [i.kind for i in scan.items] == [MediaKind.VIDEO]
     assert scan.motion_companions == []
+
+
+def test_numbered_motion_videos_are_paired_with_their_still(tmp_path: Path) -> None:
+    """Takeout numbers a second copy before the last extension of each file:
+    PXL_x(1).MP is the motion video of PXL_x.MP(1).jpg, already inside that photo."""
+    import zipfile
+
+    folder = "Takeout/Google Photos/Photos from 2022"
+    path = tmp_path / "takeout-20261001T010203Z-001.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in (
+            ("PXL_20220202_094253007.MP.jpg", b"still one"),
+            ("PXL_20220202_094253007.MP", b"video one"),
+            ("PXL_20220202_094253007.MP(1).jpg", b"still two"),
+            ("PXL_20220202_094253007(1).MP", b"video two"),
+            ("PXL_20220303_101010000.MP", b"a video with no still"),
+        ):
+            archive.writestr(f"{folder}/{name}", data)
+    scan = scan_export([path], RESOLVER, NOW)
+    assert sorted(p.rsplit("/", 1)[1] for p in scan.motion_companions) == [
+        "PXL_20220202_094253007(1).MP",
+        "PXL_20220202_094253007.MP",
+    ]
+    kept = sorted(i.name for i in scan.items)
+    assert "PXL_20220303_101010000.MP" in kept  # no still: kept, so it is not lost
+
+
+def test_a_lone_motion_video_goes_to_immich_as_mp4() -> None:
+    from googich_takeaway.importer import _upload_name
+
+    assert _upload_name("PXL_20220303_101010000.MP") == "PXL_20220303_101010000.mp4"
+    assert _upload_name("IMG_1.jpg") == "IMG_1.jpg"

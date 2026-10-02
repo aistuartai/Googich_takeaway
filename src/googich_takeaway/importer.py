@@ -265,7 +265,7 @@ def _upload(
             raise RuntimeError(f"planned upload without a date: {item.path}")
         return client.upload(
             stream,
-            item.name,
+            _upload_name(item.name),
             item.size,
             item.sha1,
             item.date.utc,
@@ -357,6 +357,14 @@ def _upload(
         result.failed.append((item, why))
         if tracker:
             tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, why)
+
+
+def _upload_name(name: str) -> str:
+    """The name sent to Immich. A Pixel ``.MP`` video is an ordinary MP4, but Immich refuses the
+    ``.MP`` extension (400): one whose still was not found in the export goes up as ``.mp4``."""
+    if name.lower().endswith(".mp"):
+        return name[:-3] + ".mp4"
+    return name
 
 
 class CatchingUp:

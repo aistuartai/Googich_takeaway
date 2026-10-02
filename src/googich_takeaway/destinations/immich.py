@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from googich_takeaway.logs import redact
 from googich_takeaway.takeout.archives import Readable
 
 CHECK_BATCH = 1000
@@ -222,7 +223,9 @@ class ImmichClient:
         if response.status_code == 404:
             raise ImmichNotFoundError(f"Immich has nothing at {method} {path} (404)")
         if response.is_error:
-            raise ImmichError(f"Immich answered {response.status_code} for {method} {path}")
+            raise ImmichError(
+                f"Immich answered {response.status_code} for {method} {path}{_reason(response)}"
+            )
         try:
             data = response.json()
         except ValueError:
@@ -230,6 +233,22 @@ class ImmichClient:
         if not isinstance(data, dict):
             raise ImmichError(f"unexpected response for {method} {path}")
         return data
+
+
+def _reason(response: httpx.Response) -> str:
+    """Immich's own explanation of a refusal, such as "Unsupported file type", if it gave one.
+
+    Kept short, and passed through the log redaction, since it is shown and logged."""
+    try:
+        data = response.json()
+    except ValueError:
+        return ""
+    message = data.get("message") if isinstance(data, dict) else None
+    if isinstance(message, list):
+        message = "; ".join(str(m) for m in message)
+    if not isinstance(message, str) or not message.strip():
+        return ""
+    return f": {redact(' '.join(message.split()))[:200]}"
 
 
 def _field(boundary: str, name: str, value: str) -> bytes:

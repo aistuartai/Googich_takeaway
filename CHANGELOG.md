@@ -18,6 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Pixel motion videos with a numbered name, such as `PXL_…(1).MP`, were not recognised as the
+  copy of the video already inside `PXL_….MP(1).jpg`, so the app tried to upload them and
+  Immich refused them (400). They are now skipped like the others; a `.MP` video whose photo is
+  not in the export is uploaded as `.mp4`, which Immich accepts.
+- Errors from Immich include Immich's own reason, such as "Unsupported file type", instead of
+  only the HTTP status.
 - The SMB library logged every block read from a share, dozens of lines a second, which cost
   CPU, slowed reading and filled the logs. Only its warnings and errors are kept.
 

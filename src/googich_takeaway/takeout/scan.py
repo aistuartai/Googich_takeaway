@@ -6,6 +6,7 @@ item's capture date is resolved. Nothing is extracted to disk.
 """
 
 import hashlib
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -190,9 +191,7 @@ def scan_export(
             cache.save(key, [], complete=True)
 
     for path in sorted(media):
-        if path.lower().endswith(".mp") and any(
-            path + suffix in media for suffix in (".jpg", ".jpeg", ".JPG", ".JPEG")
-        ):
+        if path.lower().endswith(".mp") and any(still in media for still in _motion_stills(path)):
             scan.motion_companions.append(path)
             del media[path]
 
@@ -294,3 +293,23 @@ def _archive_size(archive: ArchiveSource) -> int:
     if isinstance(archive, Path):
         return archive.stat().st_size
     return archive.size
+
+
+_NUMBERED_MP = re.compile(r"^(?P<stem>.*)\((?P<n>\d+)\)(?P<ext>\.mp)$", re.IGNORECASE)
+_STILL_EXTENSIONS = (".jpg", ".jpeg", ".JPG", ".JPEG")
+
+
+def _motion_stills(path: str) -> list[str]:
+    """Names the still of a Pixel motion video ``PXL_….MP`` may have in the same export.
+
+    The still is ``PXL_….MP.jpg``. A second copy with the same name is numbered, and Takeout
+    puts the number before the last extension of each: ``PXL_…(1).MP`` beside
+    ``PXL_….MP(1).jpg``. Other spellings are accepted too, in case an export differs."""
+    names = [path + ext for ext in _STILL_EXTENSIONS]
+    numbered = _NUMBERED_MP.match(path)
+    if numbered:
+        stem, n, ext = numbered["stem"], numbered["n"], numbered["ext"]
+        for still in _STILL_EXTENSIONS:
+            names.append(f"{stem}{ext}({n}){still}")  # PXL_x.MP(1).jpg
+            names.append(f"{stem}{ext}{still}({n})")  # PXL_x.MP.jpg(1)
+    return names

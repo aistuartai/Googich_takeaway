@@ -129,3 +129,18 @@ def test_read_api_key_refuses_empty_files(tmp_path: Path) -> None:
     path.chmod(0o600)
     with pytest.raises(ImmichError, match="empty"):
         read_api_key(path)
+
+
+def test_a_refused_request_says_why() -> None:
+    import httpx
+
+    from googich_takeaway.destinations.immich import ImmichClient, ImmichError
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"message": "Unsupported file type", "error": "Bad Request"}
+        )
+
+    client = ImmichClient("http://immich.test", "key", transport=httpx.MockTransport(handle))
+    with pytest.raises(ImmichError, match="400 for GET /assets/x: Unsupported file type"):
+        client.asset_dates("x")
