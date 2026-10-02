@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- One-click updates, optional. With the update helper installed on the Docker host, the update
+  banner offers Update now. The app only writes the version to install into a file; the helper,
+  outside the container, checks it is a published release, switches the image version in
+  `compose.yaml`, restarts the container, waits for the new version to answer and rolls back if
+  anything fails. The app never gets access to Docker.
+
 ## [0.1.1] - 2026-10-02
 
 Fixes for real-world use: SMB shares on Windows desktops, settings forms, and full-size

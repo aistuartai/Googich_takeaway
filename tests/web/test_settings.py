@@ -404,3 +404,72 @@ def test_failed_schedule_save_keeps_what_was_typed(world: World) -> None:
     assert 'value="25:99"' in response.text
     assert 'value="weekly" selected' in response.text
     assert '<option value="2" selected>' in response.text
+
+
+def _newer_release_seen(world: World) -> None:
+    import json
+
+    from googich_takeaway.state import State
+
+    with State(world.tmp / "state.db") as state:
+        state.set_setting(
+            "updates.latest",
+            json.dumps(
+                {
+                    "latest": "9.9.9",
+                    "url": "https://github.com/aistuartai/Googich_takeaway/releases",
+                    "checked_at": datetime.now(UTC).isoformat(),
+                }
+            ),
+            datetime.now(UTC),
+        )
+
+
+def _helper(world: World, state: str = "idle", version: str = "") -> Path:
+    folder = world.tmp / "updater"
+    folder.mkdir(exist_ok=True)
+    (folder / "status.json").write_text(
+        f'{{"helper": "1", "state": "{state}", "message": "Downloading {version}.", '
+        f'"version": "{version}", "at": "2026-10-02T00:00:00+00:00"}}'
+    )
+    return folder
+
+
+def test_no_helper_means_no_update_button(world: World) -> None:
+    _newer_release_seen(world)
+    page = world.client.get("/").text
+    assert "Version 9.9.9 is available" in page
+    assert "Update now" not in page
+    assert world.post("/updates/apply").headers["location"].endswith("no-helper#updates")
+
+
+def test_update_button_requests_the_version_the_app_found(world: World) -> None:
+    _newer_release_seen(world)
+    folder = _helper(world)
+    assert "Update now" in world.client.get("/").text
+    response = world.client.post(
+        "/updates/apply",
+        data={
+            "csrf_token": world.csrf,
+            "version": "6.6.6",
+        },  # a browser-supplied version is ignored
+        headers=ORIGIN,
+    )
+    assert response.headers["location"].endswith("update-requested#updates")
+    assert (folder / "request.json").read_text() == '{"version": "9.9.9"}'
+
+
+def test_update_in_progress_is_shown_and_refreshes(world: World) -> None:
+    _newer_release_seen(world)
+    _helper(world, state="updating", version="9.9.9")
+    page = world.client.get("/").text
+    assert "Updating to 9.9.9: Downloading 9.9.9." in page
+    assert '<meta http-equiv="refresh" content="8">' in page
+    assert "Update now" not in page
+
+
+def test_update_needs_csrf(world: World) -> None:
+    _newer_release_seen(world)
+    folder = _helper(world)
+    assert world.client.post("/updates/apply", headers=ORIGIN).status_code == 403
+    assert not (folder / "request.json").exists()

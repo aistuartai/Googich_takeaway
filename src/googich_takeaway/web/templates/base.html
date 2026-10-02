@@ -11,6 +11,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="preload" href="/static/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/atkinson-hyperlegible-next.woff2" as="font" type="font/woff2" crossorigin>
+  {% if helper and helper.state == 'updating' %}<meta http-equiv="refresh" content="8">{% endif %}
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/pct.css">
   <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "includeIndicatorStyles": false}'>
@@ -36,11 +37,20 @@
     </nav>
     {% endif %}
   </header>
-  {% if update %}
+  {% if helper and helper.state == 'updating' %}
+  <div class="update-banner" role="status">Updating to {{ helper.version }}: {{ helper.message }} The app restarts during the update; this page reloads by itself.</div>
+  {% elif update %}
   <div class="update-banner" role="status">
     Version {{ update.latest }} is available; you have {{ version }}.
     <a href="{{ update.url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
-    Update with <code>docker compose pull &amp;&amp; docker compose up -d</code>
+    {% if helper and request.state.csrf is defined %}
+    <form method="post" action="/updates/apply" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" class="link">Update now</button>
+    </form>
+    {% else %}
+    Update with <code>docker compose pull &amp;&amp; docker compose up -d</code>, after changing the version in <code>compose.yaml</code> if it is pinned.
+    {% endif %}
   </div>
   {% endif %}
   <main id="main">

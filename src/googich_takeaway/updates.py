@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
 
@@ -118,3 +119,54 @@ def check_if_due(
         now,
     )
     return info
+
+
+# --- one-click updates through the optional host helper ---------------------------------------
+#
+# The app never touches Docker. It writes the version to install into <data>/updater/request.json;
+# googich-updater on the host checks it is a published release, switches the image tag, restarts
+# the container and reports back in status.json. Without the helper there is no button, only the
+# banner with the manual command.
+
+
+@dataclass(frozen=True)
+class HelperStatus:
+    state: str
+    """``idle``, ``updating``, ``done`` or ``failed``."""
+    message: str
+    version: str
+    at: datetime | None
+
+
+def helper_status(data_dir: Path) -> HelperStatus | None:
+    """What the host update helper last reported, or None if it is not installed."""
+    path = data_dir / "updater" / "status.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or "helper" not in data:
+        return None
+    try:
+        at = datetime.fromisoformat(str(data.get("at", "")))
+    except ValueError:
+        at = None
+    return HelperStatus(
+        state=str(data.get("state", "idle")),
+        message=str(data.get("message", ""))[:300],
+        version=str(data.get("version", ""))[:20],
+        at=at,
+    )
+
+
+def request_update(data_dir: Path, version: str) -> None:
+    """Ask the host helper to install ``version``. Raises ValueError if it cannot be asked."""
+    if parse_version(version) is None:
+        raise ValueError("not a release version")
+    folder = data_dir / "updater"
+    if not (folder / "status.json").exists():
+        raise ValueError("the update helper is not installed")
+    temporary = folder / ".request.json.tmp"
+    temporary.write_text(json.dumps({"version": version}))
+    temporary.chmod(0o644)
+    temporary.replace(folder / "request.json")  # one atomic write for the helper to see

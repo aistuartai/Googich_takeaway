@@ -150,6 +150,7 @@ def create_app(
     templates.env.globals.update(version=__version__, default_look=Look(), demo=settings.demo)
     templates.env.filters.update(duration=format_duration, size=format_size)
     login_throttle = throttle or auth.LoginThrottle()
+    data_dir = settings.state_path.parent
 
     with State(settings.state_path) as state:
         needs_setup = state.password_hash() is None
@@ -181,6 +182,7 @@ def create_app(
         context.setdefault("look", config.look())
         known = updates.cached(config.state) if updates.enabled(config.state) else None
         context.setdefault("update", known if known and known.newer else None)
+        context.setdefault("helper", updates.helper_status(data_dir))
         return templates.TemplateResponse(request, name, context, status_code=status_code)
 
     @app.middleware("http")
@@ -682,6 +684,20 @@ def create_app(
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=look#look", status_code=303)
+
+    @app.post("/updates/apply")
+    def apply_update(config: ConfigDep) -> Response:
+        """Ask the host helper to install the newest release the app itself found."""
+        known = updates.cached(config.state)
+        if known is None or not known.newer:
+            return RedirectResponse("/settings?saved=no-update#updates", status_code=303)
+        try:
+            updates.request_update(data_dir, known.latest)  # never a version from the browser
+        except ValueError as error:
+            log.warning("Update request refused: %s", error)
+            return RedirectResponse("/settings?saved=no-helper#updates", status_code=303)
+        log.warning("Update to %s requested from the web interface", known.latest)
+        return RedirectResponse("/settings?saved=update-requested#updates", status_code=303)
 
     @app.post("/settings/updates")
     def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:
