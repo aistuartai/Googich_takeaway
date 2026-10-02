@@ -18,7 +18,7 @@
 
 services:
   googich:
-    image: ghcr.io/aistuartai/googich_takeaway:0.3.6
+    image: ghcr.io/aistuartai/googich_takeaway:0.3.7
     container_name: googich
     restart: unless-stopped
     ports:

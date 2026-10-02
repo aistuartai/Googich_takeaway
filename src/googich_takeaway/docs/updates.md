@@ -50,7 +50,7 @@ Progress and the result appear in the banner and under Help → Updates.
 On the Docker host, run:
 
 ```bash
-curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.6/install-updater.sh
+curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.7/install-updater.sh
 sudo bash install-updater.sh /opt/googich
 ```
 
