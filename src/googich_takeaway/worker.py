@@ -13,12 +13,12 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from googich_takeaway import reminders, updates
+from googich_takeaway import logs, reminders, updates
 from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
@@ -34,6 +34,8 @@ log = logging.getLogger("googich.worker")
 IDLE_CHECK_SECONDS = 30.0
 PAUSED_RUN = "run.paused"
 """The options of a run the user paused, so Resume continues it."""
+RESUME_AFTER_UPDATE = "run.resume_after_update"
+"""Set when a run was paused for an update: it resumes by itself once the app starts again."""
 """How often the worker re-reads the schedule while idle, so setting changes take effect."""
 
 
@@ -82,6 +84,8 @@ class Worker:
         self._run_started: datetime | None = None
         self._thread: threading.Thread | None = None
         self.tracker = Tracker(self._load_rates())
+        self._pruned_at: datetime | None = None
+        self._after_run: Callable[[], None] | None = None
 
     def _interruptible_sleep(self, seconds: float) -> None:
         """Retry backoff that ends early when the app is stopping."""
@@ -110,14 +114,18 @@ class Worker:
         self.tracker.finish_run()  # measured demo speeds are discarded, never saved
         with self._lock:
             self._run_started = None
+        self._run_after_hook()
 
     # --- control -------------------------------------------------------------------------------
 
     def start(self) -> None:
         with State(self._state_path) as state:
             closed = state.abandon_unfinished_runs(self._clock())
+            resume = state.get_setting(RESUME_AFTER_UPDATE) is not None
         if closed:
             log.warning("Closed %d run(s) interrupted by a restart; they resume next run", closed)
+        if resume:
+            self.resume_after_update()
         self._thread = threading.Thread(target=self._loop, name="googich-worker", daemon=True)
         self._thread.start()
 
@@ -151,9 +159,56 @@ class Worker:
         options = RunOptions(**json.loads(stored).get("options", {}))
         return self.request_run(options)
 
+    def pause_then(self, action: Callable[[], None]) -> bool:
+        """Do ``action`` once no run is going: straight away if idle, otherwise after pausing
+        the run at its next safe point. True if a run is being paused for it."""
+        with self._lock:
+            running = self._run_started is not None
+            if running:
+                self._after_run = action
+        if not running:
+            action()
+            return False
+        if not self.tracker.request_stop("pause"):  # it ended just now
+            self._run_after_hook()
+            return False
+        with State(self._state_path) as state:
+            state.set_setting(RESUME_AFTER_UPDATE, "1", self._clock())
+        log.warning("Pausing the run for an update; it resumes after the update")
+        return True
+
+    def resume_after_update(self) -> None:
+        """Resume the run paused for an update, if there is one; used at start-up and when an
+        update failed (the app then never restarted)."""
+        with State(self._state_path) as state:
+            if state.get_setting(RESUME_AFTER_UPDATE) is None:
+                return
+            state.set_setting(RESUME_AFTER_UPDATE, None, self._clock())
+        if self.resume_paused():
+            log.info("Resuming the run paused for the update")
+
+    def _run_after_hook(self) -> None:
+        with self._lock:
+            action, self._after_run = self._after_run, None
+        if action is not None:
+            try:
+                action()
+            except Exception:
+                log.exception("Could not finish what was waiting for the run to stop")
+
     def discard_paused(self) -> None:
         with State(self._state_path) as state:
             state.set_setting(PAUSED_RUN, None, self._clock())
+
+    def status_running(self) -> bool:
+        """A run is going now (cheaper than status(), which reads the schedule)."""
+        with self._lock:
+            return self._run_started is not None
+
+    def run_pending_or_going(self) -> bool:
+        """A run is going, or has been asked for and is about to start."""
+        with self._lock:
+            return self._run_started is not None or self._manual_requested is not None
 
     def status(self) -> WorkerStatus:
         with State(self._state_path) as state:
@@ -196,6 +251,8 @@ class Worker:
                 continue
             self._check_updates()
             self._check_reminders()
+            if self._pruned_at is None or self._clock() - self._pruned_at > timedelta(hours=6):
+                self.prune_logs()
             self._wake.wait(IDLE_CHECK_SECONDS)
             self._wake.clear()
 
@@ -226,6 +283,21 @@ class Worker:
                 reminders.send_reminders(self._config(state), state, self._clock())
         except Exception:  # a reminder must never stop the worker
             log.exception("Reminder check failed")
+
+    def prune_logs(self) -> None:
+        """Delete log files older than the retention period. Never raises. Run history is
+        kept: it is small, and the schedule and cleanup rely on it."""
+        now = self._clock()
+        self._pruned_at = now
+        try:
+            with State(self._state_path) as state:
+                cutoff = now - timedelta(days=self._config(state).log_retention_days())
+            files = logs.prune_files(self._state_path.parent / "logs", cutoff)
+        except Exception:  # tidying up must never stop the worker
+            log.exception("Could not delete old logs")
+            return
+        if files:
+            log.info("Deleted %d log file(s) older than %s", len(files), cutoff.date().isoformat())
 
     def _next_due(self, state: State, config: Config) -> datetime | None:
         schedule = config.schedule()
@@ -286,6 +358,7 @@ class Worker:
                     state.set_setting("progress.rates", json.dumps(stored), self._clock())
             with self._lock:
                 self._run_started = None
+            self._run_after_hook()
 
     def _stopped(self, state: State, run_id: int, kind: str, options: RunOptions) -> Message:
         """Record a run the user paused or cancelled. No notification; not a failure."""

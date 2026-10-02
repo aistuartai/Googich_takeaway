@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><h1>Settings</h1><a class="help-link" href="/help/dates">Guide: Dates and time zones</a></div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
+{% if saved and saved != "logs" %}<p class="result ok" role="status">Saved.</p>{% endif %}
 
 <section class="settings-group" id="timezone">
   <header><h2>Time zone</h2><p>For photos that carry no time zone of their own, so their dates come out right in Immich.</p></header>
@@ -52,6 +52,13 @@
     </fieldset>
     <div class="actions"><button type="submit">Save look and feel</button></div>
   </form>
+  </div>
+</section>
+<section class="settings-group" id="logs">
+  <header><h2>Logs</h2><p>How long detailed log files are kept, so they do not grow without end. History on the dashboard is always kept. Also set on the <a href="/logs#retention">Logs</a> page.</p></header>
+  <div class="card">
+  {% if saved == 'logs' %}<p class="result ok" role="status">Saved.</p>{% endif %}
+  {% with back="" %}{% include "_retention_form.html" %}{% endwith %}
   </div>
 </section>
 {% endblock %}

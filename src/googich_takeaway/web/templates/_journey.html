@@ -8,9 +8,10 @@
   <div class="station station-photos">
     <a class="station-icon" href="https://photos.google.com/" target="_blank" rel="noopener noreferrer" title="Open Google Photos">{{ prints() }}<span class="visually-hidden">Open Google Photos (new tab)</span></a>
     <p class="station-name">Google Photos</p>
-    {% if photos %}
-    <p class="station-figure">{{ '{:,}'.format(photos['items']) }}</p>
-    <p class="station-note">{{ 'item' if photos['items'] == 1 else 'items' }} in the latest export, {{ photos.export_id[:8]|export_date }}</p>
+    {% if journey.photos_seen or photos %}
+    {%- set seen = [journey.photos_seen, photos['items'] if photos else 0]|max -%}
+    <p class="station-figure">{{ '{:,}'.format(seen) }}</p>
+    <p class="station-note">{{ 'item' if seen == 1 else 'items' }} found across your exports{% if photos %}; {{ '{:,}'.format(photos['items']) }} in the latest, {{ photos.export_id[:8]|export_date }}{% endif %}</p>
     {% else %}
     <p class="station-figure">?</p>
     <p class="station-note">counted when the first export is imported</p>
@@ -20,12 +21,25 @@
   <div class="leg leg-0" aria-hidden="true">
     <span class="leg-label">Takeout</span>
   </div>
-  <div class="station station-drive">
+  <div class="station station-drive{{ ' station-off' if not journey.uses_drive }}">
+    {% if journey.uses_drive %}
     <a class="station-icon" href="/sources" title="Sources">{{ cloud() }}<span class="visually-hidden">Sources</span></a>
     <p class="station-name">Google Drive</p>
+    {% if journey.drive_listed is not none %}
+    <p class="station-figure">{{ journey.drive_listed }}</p>
+    <p class="station-note">{{ 'archive' if journey.drive_listed == 1 else 'archives' }} in Drive{% if journey.drive_listed_bytes %}, {{ journey.drive_listed_bytes|size }}{% endif %}, seen {{ journey.drive_listed_at.astimezone(zone).strftime('%d %b %H:%M') }}; {{ journey.drive_count }} downloaded so far</p>
+    {% else %}
     <p class="station-figure">{{ journey.drive_count }}</p>
     <p class="station-note">{{ 'archive' if journey.drive_count == 1 else 'archives' }} downloaded so far{% if journey.drive_bytes %}, {{ journey.drive_bytes|size }}{% endif %}</p>
+    {% endif %}
     <p class="station-link"><a href="/cleanup#drive">Cleanup</a></p>
+    {% else %}
+    <a class="station-icon" href="/sources?how=drive#add" title="Set up Google Drive">{{ cloud() }}<span class="visually-hidden">Set up a Google Drive source</span></a>
+    <p class="station-name">Google Drive</p>
+    <p class="station-figure" aria-hidden="true">—</p>
+    <p class="station-note">Not set up{% if journey.has_sources %}: exports arrive as archives you download yourself{% endif %}.</p>
+    <p class="station-link"><a href="/sources?how=drive#add">Set up Google Drive</a></p>
+    {% endif %}
   </div>
   <div class="leg leg-1{{ ' flowing' if moving_down }}" aria-hidden="true">
     <span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
@@ -35,7 +49,7 @@
     <a class="station-icon" href="/destinations#downloads" title="Download folder settings">{{ folder() }}<span class="visually-hidden">Download folder settings</span></a>
     <p class="station-name">Download folder</p>
     <p class="station-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }}</p>
-    <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% endif %}</p>
+    <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% if journey.folder_arriving %}, one more arriving{% endif %}{% endif %}</p>
     <p class="station-link"><a href="/cleanup#folder">Cleanup</a></p>
   </div>
   <div class="leg leg-2{{ ' flowing' if moving_up }}" aria-hidden="true">

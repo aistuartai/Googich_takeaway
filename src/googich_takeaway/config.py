@@ -24,6 +24,7 @@ from googich_takeaway.locations import (
     probe_smb,
     shared_smb,
 )
+from googich_takeaway.logs import DEFAULT_RETENTION_DAYS
 from googich_takeaway.notify import (
     DEFAULT_OUTCOMES,
     Message,
@@ -110,11 +111,16 @@ DASHBOARD_ITEMS = {
     "sources": "Sources",
     "destinations": "Destinations",
     "cleanup": "Cleanup: how much space can be freed",
-    "runs": "Recent runs",
+    "runs": "History: past runs and their results",
 }
 DEFAULT_DASHBOARD_ITEMS = ("journey", "schedule", "runs")
 MOTION = {"auto": "Animate unless this device asks for reduced motion", "off": "No animation"}
 
+
+DOWNLOAD_FOLDER_KIND = "download-folder"
+"""A source that is the download folder itself: archives saved there by hand."""
+MIN_RETENTION_DAYS = 7
+MAX_RETENTION_DAYS = 3650
 
 _TARGETS = "notify.targets"
 
@@ -282,6 +288,27 @@ class Config:
             port=public.port,
             domain=public.domain,
         )
+
+    # --- log retention ---------------------------------------------------------------------------
+
+    def log_retention_days(self) -> int:
+        stored = self._state.get_setting("logs.retention_days")
+        try:
+            days = int(stored) if stored else DEFAULT_RETENTION_DAYS
+        except ValueError:
+            days = DEFAULT_RETENTION_DAYS
+        return min(max(days, MIN_RETENTION_DAYS), MAX_RETENTION_DAYS)
+
+    def save_log_retention(self, days: str) -> None:
+        try:
+            value = int(days.strip())
+        except ValueError:
+            raise ConfigError("Enter the number of days to keep logs, as a whole number.") from None
+        if not MIN_RETENTION_DAYS <= value <= MAX_RETENTION_DAYS:
+            raise ConfigError(
+                f"Keep logs for between {MIN_RETENTION_DAYS} and {MAX_RETENTION_DAYS} days."
+            )
+        self._state.set_setting("logs.retention_days", str(value), self._clock())
 
     # --- look and feel ---------------------------------------------------------------------------
 
@@ -562,6 +589,20 @@ class Config:
             raise ConfigError("That folder does not exist.")
         try:
             return self._state.add_source("local", clean_name, str(path), self._clock())
+        except StateError as error:
+            raise ConfigError(str(error)) from None
+
+    def add_download_folder_source(self, name: str) -> int:
+        """Archives the user downloads from Takeout's emails and saves into the download
+        folder. The download folder is read on every run anyway; this source says that is
+        how exports arrive, so setup is complete without Google Drive."""
+        clean_name = _name(name or "My Takeout downloads")
+        if any(s.kind == DOWNLOAD_FOLDER_KIND for s in self.sources()):
+            raise ConfigError("The download folder is already a source.")
+        try:
+            return self._state.add_source(
+                DOWNLOAD_FOLDER_KIND, clean_name, DOWNLOAD_FOLDER_KIND, self._clock()
+            )
         except StateError as error:
             raise ConfigError(str(error)) from None
 

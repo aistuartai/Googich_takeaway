@@ -1,0 +1,8 @@
+{#- Run activity in the menu bar. Asks again every few seconds while a run is going, and every
+    half minute otherwise, so a run started elsewhere (the schedule, another tab) shows up. -#}
+{%- set a = activity -%}
+<a id="activity" href="/" class="activity{{ ' ' ~ a['kind'] if a }}"{% if not a %} hidden{% endif %} hx-get="/activity" hx-trigger="{{ 'every 3s' if a and a['kind'] != 'paused' else 'every 30s' }}" hx-swap="outerHTML">
+  {%- if a -%}
+  <span class="activity-dot" aria-hidden="true"></span>{{ a['label'] }}{% if a['percent'] is not none %} <strong>{{ a['percent'] }}%</strong>{% endif %}
+  {%- endif -%}
+</a>

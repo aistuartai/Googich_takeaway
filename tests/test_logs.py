@@ -107,3 +107,26 @@ def test_setup_writes_redacted_json_lines_owner_only(
     assert set(line) == {"time", "level", "logger", "message"}
     assert "Traceback" in line["message"]
     assert any("[redacted]" in e.message for e in stored.buffer.query())
+
+
+def test_polling_requests_are_not_logged_but_pages_and_failures_are() -> None:
+    import logging
+
+    from googich_takeaway.logs import _QuietAccessFilter
+
+    quiet = _QuietAccessFilter()
+
+    def access(path: str, status: int) -> bool:
+        record = logging.LogRecord(
+            "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+            ("192.0.2.1:1234", "GET", path, "1.1", status), None,
+        )  # fmt: skip
+        return quiet.filter(record)
+
+    assert not access("/logs/tail?after=204&level=INFO&q=", 200)
+    assert not access("/status", 200)
+    assert not access("/activity", 200)
+    assert not access("/static/app.css", 304)
+    assert access("/logs/tail?after=1", 500)  # failures are kept
+    assert access("/logs", 200)  # pages opened are kept
+    assert access("/runs", 303)

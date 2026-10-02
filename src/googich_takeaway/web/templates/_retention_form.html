@@ -1,0 +1,10 @@
+<form method="post" action="/settings/logs" class="retention">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+  {% if back %}<input type="hidden" name="back" value="{{ back }}">{% endif %}
+  <label>Keep detailed logs for … days
+    <input name="days" type="number" min="7" max="3650" value="{{ retention_days }}" required>
+    <small>Log files older than this are deleted, checked every few hours. History on the dashboard is always kept.</small>
+  </label>
+  {% if log_usage %}<p class="log-usage">Now: <strong>{{ log_usage.bytes|size }}</strong> in {{ log_usage['files'] }} log {{ 'file' if log_usage['files'] == 1 else 'files' }}.</p>{% endif %}
+  <div class="actions"><button type="submit">Save</button></div>
+</form>

@@ -4,6 +4,7 @@
 <div class="help-layout">
   <aside class="help-side" aria-label="Guide topics">
     <a class="help-back" href="/help">Guide</a>
+    {% include "_help_search.html" %}
     <ol>
       {% for topic in topics %}
       <li><a href="/help/{{ topic.slug }}" {{ 'aria-current="page"'|safe if topic.slug == doc.topic.slug }}>{{ topic.title }}</a></li>

@@ -1,7 +1,8 @@
 # Setting up Google Takeout
 
 Google Takeout makes a complete copy of your Google Photos library. Set it up once to export to
-Google Drive every month or every two months, and the app picks up each export by itself.
+Google Drive every month or every two months, and the app picks up each export by itself. Or
+have Takeout email you a download link instead, and save the archives yourself.
 
 Google offers no way for apps to start or schedule Takeout, so this part is done by you, in your
 browser, signed in to the Google account that holds your photos.
@@ -13,7 +14,9 @@ browser, signed in to the Google account that holds your photos.
    **Deselect all**, then tick **Google Photos**.
 2. Leave **All photo albums included** as it is, unless you want only some albums. Press
    **Next step**.
-3. **Destination:** choose **Add to Drive**.
+3. **Destination:** choose **Add to Drive**, so the app fetches each export by itself. To
+   download the exports yourself instead, with no Google Cloud setup, choose **Send download link
+   via email** (see [Downloading exports yourself](manual-downloads.md)).
 4. **Frequency:** choose a scheduled export, every month or every 2 months. Either runs for one
    year: twelve or six exports. Every 2 months is usually enough, and uses less Google storage.
 5. **File type:** `.tgz` or `.zip`. Either works; `.tgz` suits SMB shares slightly better.

@@ -94,6 +94,33 @@ def check_if_due(
     return _fetch(state, now, transport) or known
 
 
+VIEW_FRESH = timedelta(minutes=10)
+
+
+def check_on_view(
+    state: State,
+    clock: Callable[[], datetime],
+    transport: httpx.BaseTransport | None = None,
+) -> UpdateInfo | None:
+    """Ask GitHub when the About or Updates page opens, so the latest release shown is current.
+
+    Only while checks are switched on, and at most once a minute; a reading under 10 minutes
+    old is used as it is, unless it is older than the version running (it was saved before an
+    update). Never raises; returns the latest known."""
+    known = cached(state)
+    if not enabled(state):
+        return known
+    now = clock()
+    stale = known is None or is_newer(__version__, known.latest)
+    if known and not stale and now - known.checked_at < VIEW_FRESH:
+        return known
+    attempted = state.get_setting("updates.view_attempted")
+    if attempted and now - datetime.fromisoformat(attempted) < MANUAL_GAP:
+        return known
+    state.set_setting("updates.view_attempted", now.isoformat(), now)
+    return _fetch(state, now, transport, timeout=5.0) or known
+
+
 class CheckResult(StrEnum):
     NEWER = "newer"
     CURRENT = "current"
@@ -122,10 +149,15 @@ def check_now(
     return CheckResult.NEWER if info.newer else CheckResult.CURRENT
 
 
-def _fetch(state: State, now: datetime, transport: httpx.BaseTransport | None) -> UpdateInfo | None:
+def _fetch(
+    state: State,
+    now: datetime,
+    transport: httpx.BaseTransport | None,
+    timeout: float = 10.0,
+) -> UpdateInfo | None:
     """The latest release, saved for the banner; None if GitHub could not say."""
     try:
-        with httpx.Client(timeout=10.0, transport=transport) as client:
+        with httpx.Client(timeout=timeout, transport=transport) as client:
             response = client.get(
                 LATEST_URL,
                 headers={

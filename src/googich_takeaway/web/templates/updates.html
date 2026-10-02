@@ -9,12 +9,13 @@
   <header><h2>Updates</h2><p>A notice when a new release is out. Nothing installs itself.</p></header>
   <div class="card">
   <div class="update-status">
-    <p>You are running version <strong>{{ version }}</strong>.{% if update_known %} Latest release: <strong>{{ update_known.latest }}</strong>, checked {{ update_known.checked_at.astimezone(zone).strftime('%d %b at %H:%M') }}.{% endif %}</p>
+    <p>You are running version <strong>{{ version }}</strong>.{% if update_known %} Latest release: <strong>{{ latest_shown }}</strong>, checked {{ update_known.checked_at.astimezone(zone).strftime('%d %b at %H:%M') }}.{% endif %}</p>
     {% if saved == 'check-current' %}<p class="result ok" role="status">You have the latest release.</p>{% endif %}
     {% if saved == 'check-newer' %}<p class="result ok" role="status">Version {{ update_known.latest }} is available.</p>{% endif %}
     {% if saved == 'check-failed' %}<p class="error" role="alert">Could not get the latest release from GitHub. Try again later; GitHub allows a limited number of checks an hour from each network.</p>{% endif %}
     {% if saved == 'check-wait' %}<p class="error" role="alert">Checked less than a minute ago. Try again in a minute.</p>{% endif %}
     {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
+    {% if saved == 'update-after-pause' %}<p class="result ok" role="status">Update requested. The run going now pauses at its next safe point, then the update installs, and the run resumes by itself once the app is back.</p>{% endif %}
     {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
     <div class="actions">
       <form method="post" action="/updates/check" class="inline">

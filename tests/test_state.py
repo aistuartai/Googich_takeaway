@@ -119,3 +119,25 @@ def test_version_1_database_is_upgraded_keeping_uploads(tmp_path: Path) -> None:
         assert state.get_upload("immich", "a" * 40) == record()
         assert state.downloads("anything") == []
         assert state.password_hash() is None
+
+
+def test_version_6_database_keeps_its_sources_and_counts_seen_items(tmp_path: Path) -> None:
+    from googich_takeaway import state as state_module
+
+    path = tmp_path / "state.db"
+    with sqlite3.connect(path) as raw:
+        for version in range(1, 7):
+            for statement in state_module._statements(state_module._MIGRATIONS[version]):
+                raw.execute(statement)
+        raw.execute(
+            "INSERT INTO sources (kind, name, location, created_at) VALUES "
+            "('gdrive', 'Takeout', 'folder-1', '2026-10-01T00:00:00+00:00')"
+        )
+        raw.execute("PRAGMA user_version = 6")
+    with State(path) as state:
+        assert state.schema_version == SCHEMA_VERSION
+        assert [(s.kind, s.name, s.location) for s in state.sources()] == [
+            ("gdrive", "Takeout", "folder-1")
+        ]
+        state.add_source("download-folder", "Downloads", "download-folder", AT)
+        assert len(state.sources()) == 2

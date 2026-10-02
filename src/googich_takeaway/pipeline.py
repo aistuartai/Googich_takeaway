@@ -36,7 +36,7 @@ from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
-from googich_takeaway.takeout.archives import ArchiveError, group_exports
+from googich_takeaway.takeout.archives import ArchiveError, group_exports, part_number
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, scan_export
 
@@ -45,6 +45,9 @@ log = logging.getLogger("googich.run")
 # Takeout may still be writing parts to Drive. An export whose newest part changed more recently
 # than this waits for a later run, so it is never imported without parts that were not yet listed.
 SETTLE_TIME = timedelta(hours=1)
+COPY_SETTLE_TIME = timedelta(minutes=30)
+"""An archive saved by hand (not from Drive) is left alone until it has not changed for this
+long, so an export whose parts are still being downloaded or copied is not imported half-done."""
 LATEST_EXPORT_SETTING = "photos.latest_export"
 
 ImmichFactory = Callable[[str, str], ImmichClient]
@@ -83,6 +86,8 @@ class RunReport:
     already_imported: list[tuple[str, datetime]] = field(default_factory=list)
     """Exports skipped because they were imported completely before."""
     waiting: list[str] = field(default_factory=list)
+    incomplete: list[tuple[str, str]] = field(default_factory=list)
+    """Exports saved by hand that look unfinished, and why: imported once complete."""
     """Exports not imported yet because Takeout may still be adding parts."""
     problems: list[str] = field(default_factory=list)
 
@@ -99,19 +104,31 @@ class RunReport:
                 [*self.problems, *(["", "What did work:", *done] if done else [])],
             )
         if self.nothing_new:
-            if self.already_present:
-                title = f"Nothing new: {self.already_present} files already in Immich"
-            else:
-                title = "Checked: nothing new"
-            lines = self._done_lines() or ["No new archives."]
-            return Message(Outcome.NO_NEW_DATA, title, lines)
-        if self.uploaded or not self.downloaded:
-            title = f"Imported {self.uploaded} new photos and videos"
-        elif self.already_imported and not self.exports_imported:
-            title = f"Downloaded {self.downloaded} archives, already imported before"
+            return Message(
+                Outcome.NO_NEW_DATA,
+                f"Nothing new: {self._counts()}",
+                self._done_lines() or ["No new archives."],
+            )
+        if self.already_imported and not self.exports_imported and not self.uploaded:
+            title = f"{self._counts()}: already imported before"
         else:
-            title = f"Downloaded {self.downloaded} archives"
+            title = self._counts()
         return Message(Outcome.SUCCESS, title, self._done_lines())
+
+    def _counts(self) -> str:
+        """What the run did, always with the upload counts, even when they are 0: for the
+        dashboard and History, where a run that uploaded nothing should say so."""
+        parts = []
+        if self.downloaded:
+            parts.append(f"Downloaded {self.downloaded} {_plural(self.downloaded, 'archive')}")
+        uploaded = (
+            f"{self.uploaded:,} {_plural(self.uploaded, 'photo or video', 'photos and videos')}"
+        )
+        parts.append(
+            f"{uploaded} uploaded" if parts else f"{uploaded[0].upper()}{uploaded[1:]} uploaded"
+        )
+        parts.append(f"{self.already_present:,} skipped")
+        return ", ".join(parts)
 
     def _done_lines(self) -> list[str]:
         lines = []
@@ -137,12 +154,18 @@ class RunReport:
             )
         for export_id in self.waiting:
             lines.append(f"Export {export_id} is still being written by Takeout; next run.")
+        for export_id, why in self.incomplete:
+            lines.append(f"Export {export_id} is not imported yet: {why}.")
         for export_id, when in self.already_imported:
             lines.append(
                 f"Export {export_id} was already imported on {when:%d %b %Y %H:%M} UTC; "
                 "skipped (use Re-import to check it again)."
             )
         return lines
+
+
+def _plural(count: int, one: str, many: str | None = None) -> str:
+    return one if count == 1 else many or f"{one}s"
 
 
 @dataclass(frozen=True)
@@ -255,6 +278,11 @@ class Pipeline:
                     report.waiting.append(export_id)
                     self._skip(export_id, "Takeout is still writing it")
                     continue
+                unfinished = None if export_id in newest else self._unfinished(parts)
+                if unfinished:
+                    report.incomplete.append((export_id, unfinished))
+                    self._skip(export_id, unfinished)
+                    continue
                 export_key = _export_key(export_id, parts)
                 completed = self.state.export_completed_at(export_key)
                 if completed is not None and not self.options.reimport:
@@ -271,6 +299,26 @@ class Pipeline:
             report.verified_later += checked.verified
             report.date_mismatches += len(checked.mismatched)
             report.unverified = checked.remaining
+
+    def _unfinished(self, parts: list[StoredFile]) -> str | None:
+        """Why an export saved by hand looks unfinished, if it does: a part missing between
+        the others, or a part changed in the last half hour (still downloading or copying)."""
+        numbers = sorted(n for p in parts if (n := part_number(p.name)) is not None)
+        if numbers:
+            missing = sorted(set(range(1, numbers[-1] + 1)) - set(numbers))
+            if missing:
+                listed = ", ".join(f"{n:03d}" for n in missing[:5])
+                return (
+                    f"part {listed} is missing"
+                    if len(missing) == 1
+                    else f"parts {listed} are missing"
+                )
+        now = self.clock()
+        # Within half an hour either way: a server whose clock runs ahead (an SMB share) shows
+        # times in the future, which must not hold an export back for good.
+        if any(p.modified and abs(now - p.modified) < COPY_SETTLE_TIME for p in parts):
+            return "a part was saved less than 30 minutes ago; waiting in case more are coming"
+        return None
 
     def _import(
         self,
@@ -335,8 +383,12 @@ class Pipeline:
     ) -> None:
         """What the newest export held, for the Google Photos figure on the dashboard.
 
-        Google offers no way to count a Google Photos library, so each Takeout export is the
-        best measure there is: a complete copy of the library on the day it was made."""
+        Google offers no way to count a Google Photos library, so the exports are the best
+        measure there is. Every distinct item from every export is also remembered, since an
+        export may hold only part of the library (a date range, some albums)."""
+        self.state.record_seen_items(
+            export_id, (item.sha1 for item in scan.unique_items()), self.clock()
+        )
         stored = json.loads(self.state.get_setting(LATEST_EXPORT_SETTING) or "{}")
         if str(stored.get("export_id", "")) > export_id:
             return  # an older export, imported again

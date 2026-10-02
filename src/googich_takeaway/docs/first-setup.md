@@ -2,6 +2,9 @@
 
 Set these up in order. The dashboard shows a checklist until the first three are done.
 
+No Immich yet? Start with [What is Immich?](what-is-immich.md) and
+[Setting up Immich](immich-setup.md).
+
 ## 1. Connect Immich
 
 Open **Configuration → Destinations**.
@@ -25,7 +28,10 @@ export. The folder is tested before it is saved.
 
 ## 3. Add a source
 
-Most people use Google Drive:
+Choose how exports reach the app, under **Configuration → Sources**. The dashboard offers
+the same choice.
+
+**Automatically, from Google Drive.** Nothing to do once set up.
 
 1. Set up a scheduled Google Takeout export to Google Drive:
    [Setting up Google Takeout](takeout.md).
@@ -34,7 +40,9 @@ Most people use Google Drive:
 3. In **Configuration → Sources**, add the Drive folder and upload the service account's key.
    Press **Test**.
 
-If you download Takeout archives yourself, add a **local folder** source instead.
+**Downloading the exports yourself.** No Google Cloud: Takeout emails you a link, and you save
+the archives into the download folder (or a folder of your own). See
+[Downloading exports yourself](manual-downloads.md).
 
 ## 4. Time zone, schedule and notifications
 

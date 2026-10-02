@@ -1,30 +1,56 @@
 {% extends "base.html" %}
 {% block title %}Logs | Googich Takeaway{% endblock %}
 {% block content %}
-<h1>Logs</h1>
-<section class="card">
-  {% if run %}<p>Showing run {{ run.id }}, started {{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}: {{ run.title or 'running' }}. <a href="/logs">Show all</a></p>{% endif %}
-  <form method="get" action="/logs" class="filters">
-    {% if run %}<input type="hidden" name="run" value="{{ run.id }}">{% endif %}
-    <label>Level
-      <select name="level">{% for name in levels %}<option {{ 'selected' if name == level }}>{{ name }}</option>{% endfor %}</select>
-    </label>
-    <label>Search <input name="q" value="{{ q }}" placeholder="text in message"></label>
-    <button type="submit">Filter</button>
-    <a class="button-link" href="/logs/download">Download log file</a>
-  </form>
-  {% if not run %}
-  <p class="muted">{% if follow %}New lines appear as they are logged. <a href="/logs?level={{ level }}&q={{ q|urlencode }}&follow=0">Pause</a>{% else %}Paused. <a href="/logs?level={{ level }}&q={{ q|urlencode }}">Follow new lines</a>{% endif %}</p>
+<div class="page-head"><h1>Logs</h1><a class="help-link" href="/help/troubleshooting">Guide: Troubleshooting</a></div>
+{% if saved == 'retention' %}<p class="result ok" role="status">Saved. Log files older than {{ retention_days }} days are deleted.</p>{% endif %}
+{% if saved == 'retention-invalid' %}<p class="error" role="alert">Enter a number of days between 7 and 3650.</p>{% endif %}
+<section class="card log-card">
+  {% if run %}
+  <p class="log-run">Showing run {{ run.id }}, started {{ run.started_at.astimezone(zone).strftime('%a %d %b %H:%M') }}: <strong>{{ run.title or 'running' }}</strong>. <a href="/logs">Show all</a></p>
   {% endif %}
-  {% if entries %}
+  <div class="log-toolbar">
+    <form method="get" action="/logs" class="log-filters">
+      {% if run %}<input type="hidden" name="run" value="{{ run.id }}">{% endif %}
+      {% if not follow and not run %}<input type="hidden" name="follow" value="0">{% endif %}
+      <label>Level
+        <select name="level">{% for name in levels %}<option {{ 'selected' if name == level }}>{{ name }}</option>{% endfor %}</select>
+      </label>
+      <label class="log-search">Search <input type="search" name="q" value="{{ q }}" placeholder="Text in message"></label>
+      <button type="submit">Filter</button>
+      {% if not run %}
+      {% if follow %}
+      <a class="button secondary" href="/logs?level={{ level }}&q={{ q|urlencode }}&follow=0">Pause</a>
+      {% else %}
+      <a class="button secondary" href="/logs?level={{ level }}&q={{ q|urlencode }}">Resume</a>
+      {% endif %}
+      {% endif %}
+    </form>
+    <div class="log-keep">
+      <a class="button secondary" href="/logs/download" download>Download logs</a>
+      <form method="post" action="/settings/logs" class="keep-form" id="retention">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+        <input type="hidden" name="back" value="logs">
+        <label>Keep
+          <span class="days-field"><input name="days" type="number" min="7" max="3650" value="{{ retention_days }}" required aria-describedby="log-usage"> days</span>
+        </label>
+        <button type="submit" class="secondary">Save</button>
+      </form>
+    </div>
+  </div>
+  <div class="log-status">
+    {% if not run %}
+    <p class="{{ 'following' if follow else 'held' }}"><span class="live-dot" aria-hidden="true"></span>{% if follow %}Following: new lines appear at the top as they are logged.{% else %}Paused: new lines are not added. Press Resume to follow again.{% endif %}</p>
+    {% endif %}
+    <p class="muted" id="log-usage">{% if log_usage %}{{ log_usage.bytes|size }} in {{ log_usage['files'] }} log {{ 'file' if log_usage['files'] == 1 else 'files' }}. {% endif %}Files older than {{ retention_days }} days are deleted; History is always kept.</p>
+  </div>
+  {% if not entries %}<p class="log-empty">No log lines match.</p>{% endif %}
+  <div class="log-scroll">
   <table class="logs">
-    <thead><tr><th>Time</th><th>Level</th><th>Part</th><th>Message</th></tr></thead>
-    <tbody>{% include "_log_rows.html" %}</tbody>
+    <thead{% if not entries %} hidden{% endif %}><tr><th>Time</th><th>Level</th><th>Part</th><th>Message</th></tr></thead>
+    <tbody id="log-body">{% include "_log_rows.html" %}</tbody>
+    <tbody class="log-poll">{% with oob=false %}{% include "_log_tail.html" %}{% endwith %}</tbody>
   </table>
-  {% else %}
-  <p>No log lines match.</p>
-  <table class="logs"><tbody>{% include "_log_rows.html" %}</tbody></table>
-  {% endif %}
-  <p class="muted">The viewer shows the most recent lines since the app started. Older lines are in the downloadable log file. Passwords, keys and tokens are removed before anything is logged.</p>
+  </div>
+  <p class="muted log-foot">Newest first. The viewer holds the most recent lines since the app started; older lines are in the downloaded logs. Passwords, keys and tokens are removed before anything is logged.</p>
 </section>
 {% endblock %}

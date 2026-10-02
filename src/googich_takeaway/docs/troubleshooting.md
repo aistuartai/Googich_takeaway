@@ -1,7 +1,12 @@
 # Troubleshooting
 
-**Help → Logs** shows what the app did, newest first. Each run on the dashboard has a *log* link
-showing only that run, in full detail.
+**Help → Logs** shows what the app did, newest first. Each run under History on the dashboard has
+a *log* link showing only that run, in full detail. **Download log files** saves every log file
+kept, in one zip.
+
+Detailed log files are kept for 90 days, then deleted. Change this under **Configuration →
+Settings → Logs**, or at the bottom of the Logs page (7 to 3650 days). History on the dashboard
+is always kept.
 
 ## Google Drive
 
@@ -63,7 +68,7 @@ Several scheduled runs failed in a row. Read the latest run's summary on the das
 problem, then press **Resume the schedule**.
 
 **Photos deleted in Immich come back**
-They do not: the app remembers what it uploaded. Only a **Re-import** (Run with options) uploads
+They do not: the app remembers what it uploaded. Only a **Re-import** (Options under Run now) uploads
 them again.
 
 ## The web interface
@@ -93,3 +98,12 @@ Try again later.
 Open an issue on [GitHub](https://github.com/aistuartai/Googich_takeaway/issues) with what you did,
 what happened, and the matching lines from the log. Logs never contain keys or passwords, but look
 for anything else you would rather not share, such as file names.
+
+## Known limitations
+
+- **Live Photos appear as two items**, a photo and a short video, and **edited copies sit beside
+  their originals** rather than stacked with them. Immich can stack items by hand.
+- **HEIC and RAW photos** take their date from Takeout's sidecar file, which carries no time
+  zone; the time zone under Settings fills the gap.
+- **Uploads go one at a time.** A very large first import can take many hours; later runs only
+  send what is new.

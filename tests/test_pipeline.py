@@ -1,10 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 
-from googich_takeaway.config import Config
+from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Outcome
@@ -73,7 +73,7 @@ def test_full_run_then_nothing_new(world: World) -> None:
     assert report.needs_review == 1
     message = report.message()
     assert message.outcome is Outcome.SUCCESS
-    assert message.title == "Imported 13 new photos and videos"
+    assert message.title == "Downloaded 2 archives, 13 photos and videos uploaded, 0 skipped"
     assert "Downloaded 2 archives" in message.body
     assert "1 files have no date and need review." in message.body
 
@@ -198,7 +198,7 @@ def test_export_already_in_immich_is_no_new_data(world: World) -> None:
     other.config.add_local_source("Manual", str(folder))
     message = other.pipeline().run().message()
     assert message.outcome is Outcome.NO_NEW_DATA
-    assert message.title == "Nothing new: 13 files already in Immich"
+    assert message.title == "Nothing new: 0 photos and videos uploaded, 13 skipped"
 
 
 def test_reimport_option_brings_back_files_deleted_in_immich(world: World) -> None:
@@ -264,7 +264,9 @@ def test_redownloaded_export_already_imported_is_explained(world: World) -> None
     message = report.message()
     assert report.downloaded == 2
     assert report.exports_imported == 0
-    assert message.title == "Downloaded 2 archives, already imported before"
+    assert message.title == (
+        "Downloaded 2 archives, 0 photos and videos uploaded, 0 skipped: already imported before"
+    )
     assert "was already imported on 01 Oct 2026 00:00 UTC; skipped" in message.body
 
 
@@ -383,3 +385,68 @@ def test_wrong_date_in_immich_blocks_cleanup(world: World) -> None:
     copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
     assert not copy.ready
     assert "different date" in copy.reason
+
+
+def test_hand_saved_export_waits_until_complete(world: World) -> None:
+    import os
+
+    world.configure(drive=False)
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    written = quirks_export().write(folder)
+    world.config.add_local_source("Manual", str(folder))
+    parts = sorted(p for p in written if p.name.endswith("-002.zip"))
+    if not parts:  # the fixture is one part: make a two-part export with part 001 missing
+        only = sorted(written)[0]
+        parts = [only.rename(only.with_name(only.name.replace("-001.", "-002.")))]
+    else:
+        for p in written:
+            if p.name.endswith("-001.zip"):
+                p.unlink()
+    old = (NOW - timedelta(hours=2)).timestamp()
+    for p in folder.iterdir():
+        os.utime(p, (old, old))
+    report = world.pipeline().run()
+    assert report.uploaded == 0
+    assert report.incomplete
+    assert "part 001 is missing" in report.incomplete[0][1]
+    assert "is not imported yet: part 001 is missing." in report.message().body
+
+
+def test_hand_saved_archive_still_arriving_waits(world: World) -> None:
+    import os
+
+    world.configure(drive=False)
+    folder = world.tmp / "manual"
+    folder.mkdir()
+    quirks_export().write(folder)
+    world.config.add_local_source("Manual", str(folder))
+    recent = (NOW - timedelta(minutes=5)).timestamp()
+    for p in folder.iterdir():
+        os.utime(p, (recent, recent))
+    report = world.pipeline().run()
+    assert report.uploaded == 0
+    assert "less than 30 minutes ago" in report.incomplete[0][1]
+    settled = (NOW - timedelta(minutes=45)).timestamp()
+    for p in folder.iterdir():
+        os.utime(p, (settled, settled))
+    assert world.pipeline().run().uploaded == 13
+
+
+def test_download_folder_as_a_source(world: World) -> None:
+    import os
+
+    world.configure(drive=False)
+    staging = world.config.staging_location()
+    assert staging is not None
+    staging.prepare()
+    quirks_export().write(world.tmp / "staging")
+    old = (NOW - timedelta(hours=2)).timestamp()
+    for p in (world.tmp / "staging").iterdir():
+        os.utime(p, (old, old))
+    world.config.add_download_folder_source("My Takeout downloads")
+    with pytest.raises(ConfigError, match="already a source"):
+        world.config.add_download_folder_source("Again")
+    report = world.pipeline().run()
+    assert report.problems == []
+    assert report.uploaded == 13

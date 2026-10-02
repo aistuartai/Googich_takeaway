@@ -4,7 +4,7 @@
 <h1>About</h1>
 <section class="card narrow-wide">
   <p>Googich Takeaway moves your Google Photos library into Immich, using Google Takeout exports, and keeps it topped up.</p>
-  <p>You are running version <strong>{{ version }}</strong>.{% if update_known %} The latest release is <strong>{{ update_known.latest }}</strong>, checked {{ update_known.checked_at.astimezone(zone).strftime('%d %b at %H:%M') }}.{% endif %}</p>
+  <p>You are running version <strong>{{ version }}</strong>.{% if update_known %} The latest release is <strong>{{ latest_shown }}</strong>, checked {{ update_known.checked_at.astimezone(zone).strftime('%d %b at %H:%M') }}.{% endif %}</p>
   {% if update_available %}<p class="result ok">Version {{ update_available.latest }} is available. <a href="/updates">Update it</a>.</p>{% endif %}
   <div class="actions">
     <form method="post" action="/updates/check" class="inline">

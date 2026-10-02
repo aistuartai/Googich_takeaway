@@ -48,9 +48,9 @@ run tries again. If several scheduled runs fail in a row (three, unless you chan
 schedule **pauses**: the dashboard says so, and you press **Resume the schedule** once the problem
 is fixed. Runs you start yourself do not count towards the pause.
 
-### Run with options
+### Run options
 
-Under **Run now**, *Run with options* offers two things for unusual cases:
+Under **Run now**, *Options* has two tick boxes for unusual cases. Tick one, then press **Run now**:
 
 - **Re-import files missing from Immich:** rescans exports that were already imported and uploads
   anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are

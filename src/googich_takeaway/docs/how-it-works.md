@@ -9,12 +9,15 @@ from Google Takeout exports: complete copies of your library that Google makes f
 The dashboard shows four places, from left to right:
 
 1. **Google Photos.** Your library. Google Takeout exports it to Google Drive on a schedule you
-   set up once (see [Setting up Google Takeout](takeout.md)). The figure is how many photos and
-   videos the latest export held, which is the closest measure of your library there is.
+   set up once (see [Setting up Google Takeout](takeout.md)). The figure counts every distinct
+   photo and video found in any export so far, the closest measure of your library there is. It
+   only grows: an export that holds part of the library adds what is new and lowers nothing.
 2. **Google Drive.** Takeout writes each export there as one or more archive files (`.zip` or
    `.tgz`). The app reads the folder with a service account that can see only that folder, and
-   never changes anything in your Google account.
+   never changes anything in your Google account. The figure is what the folder held when a run
+   last looked, so it updates as soon as a run starts.
 3. **Download folder.** Archives are copied here, on this server or a network share, then read.
+   While an archive downloads, its size so far is counted too.
 4. **Immich.** Photos and videos Immich does not have yet are uploaded with their correct date.
 
 The arrows animate while files are being downloaded or uploaded.
@@ -36,7 +39,7 @@ A run starts on the schedule you choose, or when you press **Run now**.
 6. **Check.** Each upload is read back to confirm Immich shows the date that was sent. Immich
    processes big imports in the background, so some checks finish on later runs.
 
-At the end the run is recorded under **Recent runs**, and a notification is sent if you set one up.
+At the end the run is recorded under **History** on the dashboard, and a notification is sent if you set one up.
 
 While a run is going, **Pause** and **Cancel** stop it at the next safe point, between or inside
 file transfers, so nothing done is lost. After Pause, **Resume** carries on where it stopped:
@@ -57,5 +60,5 @@ After Cancel, the next run carries on in the same way.
 
 The app keeps a small database in its `data` folder: which archives were downloaded, which files
 were uploaded, and your settings. That is why archives are not downloaded twice, and why photos you
-delete in Immich are not brought back by the next export. A **Re-import** (Run with options) brings
+delete in Immich are not brought back by the next export. A **Re-import** (Options under Run now) brings
 them back on purpose.

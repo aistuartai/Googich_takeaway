@@ -1,18 +1,24 @@
 {%- from "_meters.html" import meter -%}
 <div id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   {% if 'journey' in items %}{% include "_journey.html" %}{% endif %}
-  <section class="card">
+  {%- set side_schedule = 'schedule' in items and not status.running -%}
+  <div class="run-row{{ ' with-schedule' if side_schedule }}">
+  <section class="card run-card{{ ' is-running' if status.running }}{{ ' is-ready' if not status.running and not status.run_paused }}">
     <div class="status-head">
       <div>
-        <h2>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% else %}Ready{% endif %}</h2>
+        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else 'ready') }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% else %}Ready{% endif %}</h2>
         {% if status.stopping %}
         <p class="status-line">Stopping at the next safe point, between or inside file transfers. Nothing done so far is lost.</p>
         {% elif status.running %}
         <p class="status-line">Started at {{ status.run_started.astimezone(zone).strftime('%H:%M:%S') }}. This page updates by itself.</p>
         {% elif status.run_paused %}
         <p class="status-line">Press <strong>Resume</strong> to carry on from where it stopped, or <strong>Discard</strong> to leave it; the next run then skips what is already done.</p>
-        {% elif 'schedule' not in items %}
-        <p class="status-line">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
+        {% else %}
+        {% if last_run %}<p class="status-line last-run">Last run {{ last_run.started_at.astimezone(zone).strftime('%a %d %b at %H:%M') }}: <span class="run-{{ last_run.status or 'running' }}">{{ last_run.title or 'Running' }}</span></p>
+        {% else %}<p class="status-line">No runs yet. Press <strong>Run now</strong> to fetch new exports and add them to Immich.</p>{% endif %}
+        {% if 'schedule' not in items %}
+        <p class="muted">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
+        {% endif %}
         {% endif %}
       </div>
       <div class="run-controls">
@@ -35,29 +41,26 @@
           </form>
         </div>
         {% else %}
-        <form method="post" action="/runs">
+        <form method="post" action="/runs" class="run-form">
           <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
           <button type="submit" class="run">Run now</button>
+          <details class="options">
+            <summary class="button secondary">Options</summary>
+            <div class="options-panel">
+              <p class="muted">Ticked options apply when you press Run now.</p>
+              <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
+              <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
+              <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
+              <small>Fetches Drive archives downloaded before whose copy is no longer in the download folder, for example after a cleanup. Copies still there are not fetched again.</small>
+              {% if demo %}
+              <div class="options-demo">
+                <button type="submit" class="secondary" formaction="/demo/run">Play a demo run</button>
+                <small>Shows a pretend run on the dashboard. Nothing is downloaded or uploaded.</small>
+              </div>
+              {% endif %}
+            </div>
+          </details>
         </form>
-        {% endif %}
-        {% if not status.running %}
-        <details>
-          <summary>Run with options</summary>
-          <form method="post" action="/runs" class="options">
-            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-            <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
-            <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
-            <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
-            <small>Fetches Drive archives downloaded before whose copy is no longer in the download folder, for example after a cleanup. Copies still there are not fetched again.</small>
-            <button type="submit">Run</button>
-          </form>
-        </details>
-        {% if demo %}
-        <form method="post" action="/demo/run">
-          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-          <button type="submit" class="secondary">Play a demo run</button>
-        </form>
-        {% endif %}
         {% endif %}
       </div>
     </div>
@@ -106,4 +109,6 @@
     {% endfor %}
     {% endif %}
   </section>
+  {% if side_schedule %}{% include "_schedule_card.html" %}{% endif %}
+  </div>
 </div>

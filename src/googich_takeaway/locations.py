@@ -67,6 +67,8 @@ class StoredFile:
     location: Location
     name: str
     size: int
+    modified: datetime | None = None
+    """Last written, if the location says; used to wait for archives still being copied in."""
 
     def open(self) -> IO[bytes]:
         return self.location.open_read(self.name)
@@ -77,7 +79,7 @@ class StoredFile:
 
 def archives(location: Location) -> list[StoredFile]:
     return sorted(
-        StoredFile(location, f.name, f.size)
+        StoredFile(location, f.name, f.size, f.modified)
         for f in location.list()
         if f.name.lower().endswith(ARCHIVE_SUFFIXES)
     )

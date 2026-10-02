@@ -81,6 +81,7 @@ class Downloader:
         result = FetchResult()
         files = source.list_archives()
         result.listed = files
+        record_listing(self.state, source.name, files, self.clock())
         result.removed_from_source = self.state.mark_removed_from_source(
             source.name, (f.file_id for f in files), self.clock()
         )
@@ -256,3 +257,23 @@ def _safe_name(name: str) -> str:
 
 def _gb(value: int) -> str:
     return f"{value / 1000**3:.1f} GB"
+
+
+LISTING_SETTING = "sources.listing"
+"""What each source held when a run last listed it, for the dashboard."""
+
+
+def record_listing(state: State, source: str, files: list[RemoteFile], at: datetime) -> None:
+    stored = json.loads(state.get_setting(LISTING_SETTING) or "{}")
+    stored[source] = {
+        "count": len(files),
+        "bytes": sum(f.size for f in files),
+        "at": at.isoformat(),
+    }
+    state.set_setting(LISTING_SETTING, json.dumps(stored), at)
+
+
+def listings(state: State) -> dict[str, dict[str, object]]:
+    """What each source held when last listed, by source name."""
+    stored = json.loads(state.get_setting(LISTING_SETTING) or "{}")
+    return stored if isinstance(stored, dict) else {}

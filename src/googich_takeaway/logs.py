@@ -4,6 +4,8 @@
   database, rotated by size with a fixed number of old files kept.
 - The most recent records are also kept in memory so the web viewer can show and filter them
   without reading files, and a live tail can poll for anything newer.
+- Old log files are deleted once their newest line is older than the retention period (90 days
+  unless changed in Settings). Run history is never deleted.
 - A redaction filter runs on every record before it is stored anywhere. The app never logs secrets
   on purpose; this is the second line of defence for messages from libraries or mistakes.
 """
@@ -21,6 +23,7 @@ from pathlib import Path
 
 LOG_FILE_BYTES = 5 * 1024 * 1024
 LOG_FILES_KEPT = 5
+DEFAULT_RETENTION_DAYS = 90
 BUFFER_RECORDS = 5000
 
 _REDACTIONS = [
@@ -84,6 +87,25 @@ class _RedactingFilter(logging.Filter):
         record.msg = redact(message)
         record.args = None
         return True
+
+
+QUIET_PATHS = ("/status", "/activity", "/logs/tail", "/updates/banner", "/static/", "/healthz")
+"""Requests the pages make by themselves every few seconds, and static files."""
+
+
+class _QuietAccessFilter(logging.Filter):
+    """Drops access-log lines for polling and static requests that succeeded: one every few
+    seconds per open page, saying nothing. Failed ones (status 400 and up) are kept, and so is
+    every page opened and every form sent."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if not isinstance(args, tuple) or len(args) < 5:
+            return True
+        path, status = str(args[2]), args[4]
+        if isinstance(status, int) and status >= 400:
+            return True
+        return not path.startswith(QUIET_PATHS)
 
 
 class _JsonFormatter(logging.Formatter):
@@ -176,6 +198,23 @@ class Logs:
         return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+def prune_files(directory: Path, before: datetime) -> list[Path]:
+    """Delete rotated log files last written before ``before``; the current file is kept."""
+    if not directory.is_dir():
+        return []
+    removed = []
+    for path in directory.iterdir():
+        if not path.name.startswith("googich.log.") or not path.is_file():
+            continue
+        try:
+            if datetime.fromtimestamp(path.stat().st_mtime, UTC) < before:
+                path.unlink()
+                removed.append(path)
+        except OSError:
+            continue  # rotated or removed meanwhile
+    return removed
+
+
 def setup_logging(state_path: Path, level: int = logging.INFO) -> Logs:
     """Send the app's logs to rotating JSON files and the in-memory buffer, redacted."""
     directory = state_path.parent / "logs"
@@ -198,4 +237,5 @@ def setup_logging(state_path: Path, level: int = logging.INFO) -> Logs:
     # Libraries that log request URLs at INFO (httpx) are kept to warnings.
     for noisy in ("httpx", "httpcore", "apprise", "google"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").addFilter(_QuietAccessFilter())
     return Logs(buffer=buffer, directory=directory)

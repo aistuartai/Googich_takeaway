@@ -8,7 +8,7 @@ Google Takeout archives, and keeps it topped up on a schedule.
 > Immich database before the first real import.
 
 ![The dashboard: Google Photos, Google Drive, the download folder and Immich, with run
-controls, a cleanup summary and recent runs](assets/dashboard.png)
+controls, a cleanup summary and run history](assets/dashboard.png)
 
 ## What it does
 
@@ -34,7 +34,7 @@ Requirements: Docker with Compose, an Immich server, and space for one full Take
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.1/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.2/docker/compose.yaml
 less compose.yaml   # read what you are about to run
 
 # A data folder, and a master key that encrypts the credentials you enter later. Both belong to
@@ -92,11 +92,11 @@ The app checks GitHub once a day and shows a banner on every page when a new rel
 away. The app never updates itself on its own.
 
 To update by hand, pull the new image and restart. If `compose.yaml` names a fixed version, such
-as `ghcr.io/aistuartai/googich_takeaway:0.3.1` (recommended, so updates happen only when you
+as `ghcr.io/aistuartai/googich_takeaway:0.3.2` (recommended, so updates happen only when you
 choose), change that version first:
 
 ```bash
-sed -i 's/googich_takeaway:0.3.0/googich_takeaway:0.3.1/' compose.yaml
+sed -i 's/googich_takeaway:0.3.1/googich_takeaway:0.3.2/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 
@@ -113,14 +113,16 @@ then:
 4. pulls the image, restarts the container and waits for it to report the new version,
 5. restores the previous version automatically if anything fails.
 
-Progress and the result appear in the banner and under Help → Updates.
+If a run is going, the app pauses it before asking the helper, and the run resumes by itself
+once the new version starts. Progress and the result appear in the banner and under
+Help → Updates.
 
 To install it, as root on the Docker host, in the folder holding `compose.yaml` (for example
 `/opt/googich`), using the release you are running:
 
 ```bash
 cd /opt/googich
-V=0.3.1
+V=0.3.2
 base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
 install -d -m 755 /usr/local/lib/googich-updater
 curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
@@ -177,7 +179,8 @@ on first start, readable only by its owner; that protects a copy of the database
 as a backup, but not someone who can read the whole data folder.
 
 Logs are written as JSON lines in `data/logs/` and pass through a filter that removes keys,
-tokens and passwords before anything is written.
+tokens and passwords before anything is written. Log files older than 90 days are deleted;
+the period is set in Settings or on the Logs page. Run history is always kept.
 
 ## Command-line tools
 
@@ -207,15 +210,18 @@ uv run ruff check && uv run mypy && uv run pytest
 Tests use synthetic Takeout exports generated at test time, and in-memory stand-ins for Immich,
 Google Drive and SMB. No real photos are stored in the repository.
 
-## Roadmap
+## Limitations
 
-- **Unlock after restart (optional):** keep the master key protected by a passphrase, so it is
-  never stored anywhere in usable form. After each restart the app would wait to be unlocked in
-  the web interface before running again. This protects against a stolen disk or backup, at the
-  cost of runs pausing after reboots and updates until someone unlocks it.
-- Linking Live Photo pairs and stacking edited copies with their originals in Immich.
-- Reading capture dates from HEIC and RAW files directly.
-- Optional parallel uploads for very large first imports.
+- **Live Photos and edited copies are not linked.** An iPhone Live Photo arrives in Takeout as a
+  photo and a short video; both are imported as separate items. Edited copies from Google Photos
+  are imported beside their originals, not stacked with them. (Pixel motion photos are fine:
+  the video is inside the photo, and Takeout's extra copy of it is skipped.)
+- **HEIC and RAW files are dated from Takeout's sidecar file**, not from the dates inside the
+  photo. Almost every photo has a sidecar, so dates are right, but the sidecar carries no time
+  zone: photos with no time zone of their own take the one set in Settings.
+- **Uploads go one at a time**, streamed straight from the archive without unpacking it. A very
+  large first import takes as long as the network, the download folder and Immich allow for
+  one upload at a time.
 
 ## Licence
 

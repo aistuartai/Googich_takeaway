@@ -7,6 +7,66 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-02
+
+### Changed
+
+- The menu bar stays at the top of the window, and on wider screens only the page under it
+  scrolls, so the scroll bar no longer runs alongside the menu bar.
+- **Run now** is the only run button. **Options**, a button beside it, opens the tick boxes that
+  apply when it is pressed (and, in demo mode, the demo run).
+- Menus (Configuration, Help, Options) close when you click elsewhere on the page or press Escape.
+- The run box says when the last run was and what it did. While a run is going it takes the full
+  width, and the schedule beside it is hidden.
+- Run results always say how many photos and videos were uploaded and skipped, even when 0, for
+  example "Downloaded 2 archives, 13 photos and videos uploaded, 38 skipped".
+- History shows the latest run; an arrow opens the earlier ones.
+- The Logs page is redrawn: newest lines first, with new lines added at the top; levels shown as
+  coloured labels; one toolbar with Filter, Pause or Resume, Download logs, and how many days to
+  keep log files.
+- The schedule sits beside the run controls on the dashboard, not under them.
+- **Recent runs** on the dashboard is now **History**.
+- The Google Photos figure counts every distinct photo and video found across all exports, so it
+  grows with each export instead of showing only the latest one.
+- The Google Drive figure shows what the Drive folder holds, as listed at the start of each run.
+  Without a Drive source, the Google Drive icon is greyed out and leads to setting one up.
+- The download folder figure grows while an archive downloads.
+- Help → About and Help → Updates ask GitHub for the latest release as they open (at most once a
+  minute, only while update checks are on), and never show a latest release older than the
+  version running.
+
+### Added
+
+- **Downloading exports yourself**, as a full alternative to Google Drive with no Google Cloud
+  setup: the dashboard and Sources page offer the choice, the download folder itself can be the
+  source, and a new guide covers it. An export saved by hand is imported only once no part is
+  missing between the others and none has changed for half an hour.
+- **Search** in the guide: finds every section holding all the words, with the words marked.
+- New guides: **What is Immich?** and **Setting up Immich**, from installing it with Docker to
+  connecting it to this app, and **Backing up an Android phone** with the Immich app, alongside
+  the Takeout imports.
+- The menu bar shows a run going, with its stage and how far it is (for example
+  "Downloading 42%"), or "Paused" with how far the paused run got. Nothing shows when no run is
+  going or paused.
+- **Update** during a run pauses the run first, then installs; the run resumes by itself once
+  the new version starts, or straight away if the update fails.
+- Log files older than 90 days are deleted; the period is set in Settings or on the Logs page,
+  which also show how much space the logs take now. History is always kept.
+- The update banner follows a one-click update to the end. It keeps checking while the app
+  restarts, then says **Update complete** with what changed, or why the update failed, until
+  dismissed. It no longer reloads the whole page every few seconds.
+
+- The README's roadmap is replaced by a list of known limitations, also in the Troubleshooting
+  guide.
+
+### Fixed
+
+- "Cancelling at the next safe point" and similar notices stayed on the dashboard after the run
+  had stopped.
+- **Download log file** failed in browsers ("couldn't finish download"): the log grew while it
+  was sent, so more bytes arrived than announced. It now downloads every log file kept, as one
+  zip.
+
 ## [0.3.1] - 2026-10-02
 
 ### Added
@@ -260,7 +320,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...v0.2.1

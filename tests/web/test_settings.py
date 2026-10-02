@@ -38,6 +38,7 @@ class World:
             github_transport=self.github.transport(),
         )
         self.client = TestClient(app, follow_redirects=False)
+        self.app = app
         token = app.state.setup_token
         self.client.post(
             "/setup",
@@ -262,7 +263,7 @@ def test_time_zone_is_a_dropdown(world: World) -> None:
 
 def test_status_poll_reloads_page_when_idle(world: World) -> None:
     response = world.client.get("/status")
-    assert response.headers["hx-refresh"] == "true"
+    assert response.headers["hx-redirect"] == "/"  # the plain dashboard, without a notice
 
 
 def test_run_with_options_reaches_the_worker(world: World) -> None:
@@ -478,8 +479,45 @@ def test_update_in_progress_is_shown_and_refreshes(world: World) -> None:
     _helper(world, state="updating", version="9.9.9")
     page = world.client.get("/").text
     assert "Updating to 9.9.9: Downloading 9.9.9." in page
-    assert '<meta http-equiv="refresh" content="8">' in page
+    assert 'hx-get="/updates/banner" hx-trigger="every 5s"' in page  # keeps asking
     assert "Update now" not in page
+
+
+def test_update_banner_says_when_the_update_is_complete(world: World) -> None:
+    _newer_release_seen(world)
+    folder = _helper(world)
+    world.post("/updates/apply")
+    waiting = world.client.get("/updates/banner").text
+    assert "Update to 9.9.9 requested" in waiting
+    assert 'hx-trigger="every 5s"' in waiting
+    now = datetime.now(UTC).isoformat()
+    (folder / "status.json").write_text(
+        '{"helper": "1", "state": "done", "message": "Updated from 0.3.1 to 9.9.9.", '
+        f'"version": "9.9.9", "at": "{now}"}}'
+    )
+    done = world.client.get("/updates/banner").text
+    assert "Update complete." in done
+    assert "Updated from 0.3.1 to 9.9.9." in done
+    assert "every 5s" not in done  # stops asking
+    assert "Update complete." in world.client.get("/settings").text  # on every page
+    world.client.post(
+        "/updates/dismiss",
+        data={"csrf_token": world.csrf},
+        headers={**ORIGIN, "Referer": "http://testserver/settings"},
+    )
+    assert "Update complete." not in world.client.get("/settings").text
+
+
+def test_update_banner_says_why_an_update_failed(world: World) -> None:
+    folder = _helper(world)
+    now = datetime.now(UTC).isoformat()
+    (folder / "status.json").write_text(
+        '{"helper": "1", "state": "failed", "message": "Health check timed out. Rolled back '
+        f'to 0.3.1.", "version": "9.9.9", "at": "{now}"}}'
+    )
+    page = world.client.get("/").text
+    assert "Update to 9.9.9 failed." in page
+    assert "Rolled back to 0.3.1." in page
 
 
 def test_update_needs_csrf(world: World) -> None:
@@ -566,17 +604,22 @@ def test_dashboard_defaults(world: World) -> None:
         '<a class="station-icon" href="https://photos.example" target="_blank" '
         'rel="noopener noreferrer"' in page
     )  # the Immich icon opens Immich
-    assert page.count('<a href="/cleanup#') == 2  # under Google Drive and the download folder
-    assert '<a class="station-icon" href="/sources"' in page
+    # Only a local folder source: Google Drive is greyed out, and leads to its setup.
+    assert page.count('<a href="/cleanup#') == 1  # under the download folder
+    assert '<div class="station station-drive station-off">' in page
+    assert (
+        '<a class="station-icon" href="/sources?how=drive#add" title="Set up Google Drive">' in page
+    )
+    assert "Not set up: exports arrive as archives you download yourself." in page
     assert '<a class="station-icon" href="/destinations#downloads"' in page
     assert (
         'href="https://photos.example" target="_blank" rel="noopener noreferrer">Open Immich'
         in page
     )
-    assert "<h2>Recent runs</h2>" in page
+    assert "<h2>History</h2>" in page
     for summary in ("sum-sources", "sum-destinations", "sum-cleanup"):
         assert f'id="{summary}"' not in page
-    assert page.index("<h2>Recent runs</h2>") < page.index("<summary>Configure dashboard</summary>")
+    assert page.index("<h2>History</h2>") < page.index("<summary>Configure dashboard</summary>")
 
 
 def test_dashboard_items_can_be_chosen(world: World) -> None:
@@ -585,7 +628,7 @@ def test_dashboard_items_can_be_chosen(world: World) -> None:
     assert world.post("/dashboard/items", data=form).status_code == 303
     page = world.client.get("/").text
     assert 'class="journey"' not in page
-    assert "<h2>Recent runs</h2>" not in page
+    assert "<h2>History</h2>" not in page
     for summary in ("sum-sources", "sum-destinations", "sum-cleanup"):
         assert f'id="{summary}"' in page
     assert 'href="/cleanup">Go to Cleanup' in page
@@ -686,7 +729,9 @@ def test_paused_run_shows_how_far_it_got(world: World) -> None:
             datetime.now(UTC),
         )
     page = world.client.get("/").text
-    assert "<h2>Run paused</h2>" in page
+    assert '<span class="state-dot paused" aria-hidden="true"></span>Run paused</h2>' in page
+    assert 'class="activity paused"' in page  # and in the menu bar, with how far it got
+    assert "Paused: uploading <strong>30%</strong>" in page
     assert "How far it got" in page
     assert "31 of 120 files, 1 failed" in page
     assert 'action="/runs/resume"' in page
@@ -716,3 +761,273 @@ def test_cleanup_asks_before_deleting(world: World) -> None:
     assert not (world.tmp / "s" / name).exists()
     missing = world.client.get("/cleanup/staged/nope/confirm")
     assert missing.headers["location"].startswith("/cleanup?error=")
+
+
+def test_one_run_now_button_with_options(world: World) -> None:
+    _ready(world)
+    page = world.client.get("/").text
+    form = page[page.index('<form method="post" action="/runs" class="run-form">') :]
+    form = form[: form.index("</form>")]
+    assert ">Run now</button>" in form
+    assert 'name="reimport"' in form
+    assert 'name="download_again"' in form
+    assert page.count('action="/runs"') == 1  # no second Run button
+    world.post("/runs", data={"reimport": "1"})
+    worker = world.client.app.state.worker  # type: ignore[attr-defined]
+    assert worker._manual_requested.reimport
+
+
+def test_log_download_is_a_zip_of_every_log_file(world: World) -> None:
+    import io
+    import zipfile
+
+    logs = world.tmp / "logs"
+    logs.mkdir(exist_ok=True)
+    (logs / "googich.log").write_text('{"message": "new"}\n')
+    (logs / "googich.log.1").write_text('{"message": "old"}\n')
+    response = world.client.get("/logs/download")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"].startswith('attachment; filename="googich-logs-')
+    assert int(response.headers["content-length"]) == len(response.content)
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read("googich.log") == b'{"message": "new"}\n'
+        assert archive.read("googich.log.1") == b'{"message": "old"}\n'
+
+
+def test_log_retention_is_set_in_settings_and_on_the_logs_page(world: World) -> None:
+    assert (
+        'name="days" type="number" min="7" max="3650" value="90"'
+        in world.client.get("/settings").text
+    )
+    response = world.post("/settings/logs", data={"days": "30"})
+    assert response.headers["location"].endswith("/settings?saved=logs#logs")
+    page = world.client.get("/logs").text
+    assert 'value="30"' in page
+    assert 'name="back" value="logs"' in page
+    response = world.post("/settings/logs", data={"days": "2", "back": "logs"})
+    assert response.headers["location"].endswith("/logs?saved=retention-invalid")
+    assert "between 7 and 3650" in world.client.get("/logs?saved=retention-invalid").text
+    response = world.post("/settings/logs", data={"days": "60", "back": "logs"})
+    assert response.headers["location"].endswith("/logs?saved=retention")
+    assert (
+        "Log files older than 60 days are deleted" in world.client.get("/logs?saved=retention").text
+    )
+    assert "as a whole number" in world.post("/settings/logs", data={"days": "x"}).text
+
+
+def test_about_and_updates_check_github_as_they_open(world: World) -> None:
+    from datetime import timedelta
+
+    from googich_takeaway import __version__
+
+    world.github.body = {**world.github.body, "tag_name": "v0.0.1"}
+    with State(world.tmp / "state.db") as state:
+        # Saved before this version was installed: older than what is running.
+        old = datetime.now(UTC) - timedelta(minutes=2)
+        state.set_setting(
+            "updates.latest",
+            json.dumps(
+                {"latest": "0.0.1", "url": "https://github.com/x", "checked_at": old.isoformat()}
+            ),
+            old,
+        )
+    page = world.client.get("/about").text
+    assert world.github.calls == 1  # older than the running version, so asked again
+    assert f"The latest release is <strong>{__version__}</strong>" in page  # never behind
+    world.client.get("/updates")
+    assert world.github.calls == 1  # at most once a minute
+    world.post("/updates/daily", data={})  # checks switched off: pages do not ask
+    with State(world.tmp / "state.db") as state:
+        state.set_setting("updates.view_attempted", None, datetime.now(UTC))
+    world.client.get("/about")
+    assert world.github.calls == 1
+
+
+def test_drive_figure_shows_what_the_last_run_listed(world: World) -> None:
+    from googich_takeaway.downloads import record_listing
+    from googich_takeaway.sources.base import RemoteFile
+
+    _ready(world)
+    world.post(
+        "/sources/drive",
+        data={"name": "Takeout", "folder_id": FOLDER_ID},
+        files={
+            "key_file": (
+                "key.json",
+                json.dumps(service_account_info()).encode(),
+                "application/json",
+            )
+        },
+    )
+    with State(world.tmp / "state.db") as state:
+        files = [
+            RemoteFile(f"id{n}", f"takeout-x-00{n}.zip", 2_000_000_000, datetime.now(UTC), "", None)
+            for n in range(3)
+        ]
+        record_listing(state, f"gdrive:{FOLDER_ID}", files, datetime.now(UTC))
+        record_listing(state, "gdrive:some-removed-source", files, datetime.now(UTC))
+    page = world.client.get("/").text
+    assert '<p class="station-figure">3</p>' in page
+    assert "archives in Drive, 6.0 GB, seen " in page
+    assert "station-off" not in page  # set up: not greyed out
+
+
+def test_download_folder_figure_grows_while_downloading(world: World) -> None:
+    from googich_takeaway.progress import Stage
+
+    _ready(world)
+    staging = world.tmp / "s"
+    staging.mkdir(exist_ok=True)
+    (staging / "takeout-20261001T010203Z-001.zip").write_bytes(b"x" * 1_000_000)
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        tracker = worker.tracker
+        tracker.plan(Stage.DOWNLOAD, [("takeout-20261001T010203Z-002.zip", 4_000_000)])
+        tracker.begin(Stage.DOWNLOAD, "takeout-20261001T010203Z-002.zip", 4_000_000)
+        tracker.advance(1_500_000)
+        page = world.client.get("/status").text
+        assert "archive waiting or kept, 2.5 MB, one more arriving" in page
+        tracker.advance(1_000_000)
+        assert (
+            "archive waiting or kept, 3.5 MB, one more arriving" in world.client.get("/status").text
+        )
+    finally:
+        worker.release_from_demo()
+
+
+def test_menu_bar_shows_a_run_only_while_one_is_going(world: World) -> None:
+    from googich_takeaway.progress import Stage
+
+    _ready(world)
+    assert '<a id="activity" href="/" class="activity" hidden' in world.client.get("/settings").text
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        tracker = worker.tracker
+        tracker.plan(Stage.DOWNLOAD, [("takeout-x-001.zip", 1000)])
+        tracker.begin(Stage.DOWNLOAD, "takeout-x-001.zip", 1000)
+        tracker.advance(420)
+        page = world.client.get("/settings").text
+        assert 'class="activity running"' in page
+        assert "Downloading <strong>42%</strong>" in page
+        assert 'hx-trigger="every 3s"' in page
+        badge = world.client.get("/activity").text
+        assert "Downloading <strong>42%</strong>" in badge
+        # Running: the run box takes the full width, without the schedule beside it.
+        dashboard = world.client.get("/").text
+        assert 'class="run-row"' in dashboard
+        assert 'id="schedule-summary"' not in dashboard
+    finally:
+        worker.release_from_demo()
+    dashboard = world.client.get("/").text
+    assert 'class="run-row with-schedule"' in dashboard
+    assert 'id="schedule-summary"' in dashboard
+    assert 'hx-trigger="every 30s"' in world.client.get("/activity").text
+
+
+def test_history_shows_the_latest_run_and_hides_the_rest(world: World) -> None:
+    _ready(world)
+    with State(world.tmp / "state.db") as state:
+        for n in range(3):
+            at = datetime(2026, 10, 1 + n, 9, tzinfo=UTC)
+            run = state.start_run("manual", at)
+            state.finish_run(run, "success", f"Run {n} done", "", at)
+    page = world.client.get("/").text
+    history = page[page.index("<h2>History</h2>") :]
+    assert (
+        history.index("Run 2 done") < history.index("2 earlier runs") < history.index("Run 1 done")
+    )
+    assert '<details class="more-runs">' in history  # closed until opened
+    assert re.search(
+        r"Last run Sat 03 Oct at \d\d:\d\d: <span class=\"run-success\">Run 2 done", page
+    )
+
+
+def test_retention_shows_how_much_the_logs_take(world: World) -> None:
+    logs = world.tmp / "logs"
+    logs.mkdir(exist_ok=True)
+    (logs / "googich.log").write_bytes(b"x" * 1_500_000)
+    (logs / "googich.log.1").write_bytes(b"x" * 1_000_000)
+    assert "Now: <strong>2.5 MB</strong> in 2 log files." in world.client.get("/settings").text
+    logs_page = world.client.get("/logs").text
+    assert "2.5 MB in 2 log files. Files older than 90 days are deleted" in logs_page
+    # On the Logs page it sits in the toolbar beside Download, above the log lines.
+    toolbar = logs_page[logs_page.index('class="log-toolbar"') : logs_page.index('id="log-body"')]
+    assert toolbar.index(">Filter</button>") < toolbar.index(">Pause</a>")
+    assert toolbar.index(">Download logs</a>") < toolbar.index('class="keep-form"')
+    held = world.client.get("/logs?follow=0").text
+    assert ">Resume</a>" in held
+    assert ">Pause</a>" not in held
+    assert 'name="follow" value="0"' in held  # filtering keeps it paused
+
+
+def test_demo_run_button_is_inside_the_options(world: World) -> None:
+    _ready(world)
+    page = world.client.get("/").text
+    assert 'formaction="/demo/run"' not in page  # not in demo mode
+
+
+def test_logs_are_shown_newest_first_and_new_lines_go_on_top(world: World) -> None:
+    import logging
+
+    for n in (1, 2):
+        logging.getLogger("googich.test.order").warning("order line %d", n)
+    page = world.client.get("/logs?level=WARNING&q=order+line").text
+    assert page.index("order line 2") < page.index("order line 1")
+    last = re.search(r'id="log-tail" class="tail-marker" hx-get="/logs/tail\?after=(\d+)', page)
+    assert last
+    assert 'hx-target="#log-body" hx-swap="afterbegin"' in page
+    for n in (3, 4):
+        logging.getLogger("googich.test.order").warning("order line %d", n)
+    tail = world.client.get(f"/logs/tail?after={last[1]}&level=WARNING&q=order+line").text
+    assert tail.index("order line 4") < tail.index("order line 3")
+    assert "order line 2" not in tail
+    assert 'id="log-tail" class="tail-marker" hx-swap-oob="true"' in tail  # remembers line 4
+
+
+def test_run_notices_go_once_the_run_has_ended(world: World) -> None:
+    _ready(world)
+    for key in ("cancelling", "pausing", "started", "resumed"):
+        page = world.client.get(f"/?notice={key}").text
+        assert 'class="result ok notice"' not in page  # no run going: nothing to say
+    assert "No run is going." in world.client.get("/?notice=idle").text
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        assert "Cancelling at the next safe point." in world.client.get("/?notice=cancelling").text
+    finally:
+        worker.release_from_demo()
+
+
+def test_choose_how_exports_arrive(world: World) -> None:
+    page = world.client.get("/").text
+    assert 'href="/sources?how=drive#add">Automatically, from Google Drive</a>' in page
+    assert 'href="/sources?how=manual#add">I download them myself</a>' in page
+    manual = world.client.get("/sources?how=manual").text
+    assert 'name="how" value="manual" checked' in manual
+    assert "Choose the download folder</a> first" in manual  # none set yet
+    assert world.post("/sources/download-folder").status_code == 400
+    world.post("/destinations/downloads", data={"staging": str(world.tmp / "s")})
+    page = world.client.get("/sources?how=manual").text
+    assert ">Use the download folder</button>" in page
+    assert (
+        world.post("/sources/download-folder", data={"name": "My Takeout downloads"}).status_code
+        == 303
+    )
+    page = world.client.get("/sources").text
+    assert "Your downloads" in page
+    assert f"Archives you save into the download folder: <code>{world.tmp / 's'}</code>" in page
+    assert "The download folder is already a source." in page
+    assert "already a source" in world.post("/sources/download-folder").text
+    source_id = re.search(r"/sources/(\d+)/test", page)
+    assert source_id
+    assert "No Takeout archives saved there yet" in world.htmx(f"/sources/{source_id[1]}/test")
+    world.post(
+        "/destinations/immich",
+        data={"url": "http://immich.test", "public_url": "", "api_key": KEY},
+    )
+    dashboard = world.client.get("/").text
+    assert "Bring your Google Photos home" not in dashboard  # setup complete without Drive
+    assert '<div class="station station-drive station-off">' in dashboard

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -99,6 +99,28 @@ _MIGRATIONS: dict[int, str] = {
             completed_at TEXT NOT NULL,
             summary      TEXT NOT NULL
         ) STRICT;
+    """,
+    6: """
+        CREATE TABLE seen_items (
+            sha1          TEXT PRIMARY KEY,
+            first_export  TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL
+        ) STRICT;
+        INSERT OR IGNORE INTO seen_items (sha1, first_export, first_seen_at)
+            SELECT sha1, export_id, uploaded_at FROM uploads;
+    """,
+    7: """
+        CREATE TABLE sources_new (
+            id         INTEGER PRIMARY KEY,
+            kind       TEXT NOT NULL CHECK (kind IN ('gdrive', 'local', 'download-folder')),
+            name       TEXT NOT NULL UNIQUE,
+            location   TEXT NOT NULL,
+            enabled    INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO sources_new SELECT id, kind, name, location, enabled, created_at FROM sources;
+        DROP TABLE sources;
+        ALTER TABLE sources_new RENAME TO sources;
     """,
 }
 
@@ -289,6 +311,23 @@ class State:
             "SELECT count(*) FROM uploads WHERE destination = ?", (destination,)
         ).fetchone()
         return int(row[0])
+
+    def record_seen_items(self, export_id: str, sha1s: Iterable[str], at: datetime) -> None:
+        """Remember every distinct photo or video found in any export."""
+        self._db.execute("BEGIN IMMEDIATE")  # one transaction: an export holds thousands
+        try:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO seen_items (sha1, first_export, first_seen_at) "
+                "VALUES (?, ?, ?)",
+                ((sha1, export_id, _to_text(at)) for sha1 in sha1s),
+            )
+            self._db.execute("COMMIT")
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+
+    def seen_item_count(self) -> int:
+        return int(self._db.execute("SELECT count(*) FROM seen_items").fetchone()[0])
 
     def download_totals(self) -> tuple[int, int]:
         """Distinct archives ever downloaded, and their total size."""

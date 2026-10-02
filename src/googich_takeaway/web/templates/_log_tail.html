@@ -1,0 +1,2 @@
+{#- A table row, so it parses in the same response as the log rows; it swaps itself by id. -#}
+{% if follow %}<tr id="log-tail" class="tail-marker"{% if oob %} hx-swap-oob="true"{% endif %} hx-get="/logs/tail?after={{ last_seq }}&level={{ level }}&q={{ q|urlencode }}" hx-trigger="every 3s" hx-target="#log-body" hx-swap="afterbegin"><td colspan="4"></td></tr>{% endif %}

@@ -5,6 +5,25 @@
   <h1>Guide</h1>
   <p>How Googich Takeaway works, how to set up each part, and what to do when something goes wrong. New here? Start with <a href="/help/first-setup">First-time setup</a>.</p>
 </div>
+{% include "_help_search.html" %}
+{% if q %}
+<section class="search-results" aria-live="polite">
+  <h2>{% if hits %}{{ hits|length }} {{ 'result' if hits|length == 1 else 'results' }} for “{{ q }}”{% else %}Nothing found for “{{ q }}”{% endif %}</h2>
+  {% if hits %}
+  <ol class="hits">
+    {% for hit in hits %}
+    <li>
+      <a href="/help/{{ hit.topic.slug }}{% if hit.anchor %}#{{ hit.anchor }}{% endif %}">{{ hit.topic.title }}{% if hit.anchor %}: {{ hit.section }}{% endif %}</a>
+      <p>{{ hit.snippet }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p>Try fewer or different words, or browse the topics below.</p>
+  {% endif %}
+  <p><a href="/help">Clear the search</a></p>
+</section>
+{% endif %}
 <ol class="topic-list">
   {% for topic in topics %}
   <li>

@@ -14,12 +14,13 @@
     {% for source in sources %}
       <tr>
         <td>{{ source.name }}</td>
-        <td>{{ 'Google Drive' if source.kind == 'gdrive' else 'Local folder' }}</td>
+        <td>{{ {'gdrive': 'Google Drive', 'local': 'Local folder', 'download-folder': 'Your downloads'}[source.kind] }}</td>
         <td>
           {% if source.kind == 'gdrive' %}
             {% if folder_names[source.id] %}<strong>{{ folder_names[source.id] }}</strong><br>{% else %}<span class="muted">Press Test to show the folder's name.</span><br>{% endif %}
             <small>Folder ID <code>{{ source.location }}</code> <a href="https://drive.google.com/drive/folders/{{ source.location|urlencode }}" target="_blank" rel="noopener noreferrer">Open in Google Drive ↗</a></small>
             {% if accounts[source.id] %}<br><small>Share the folder with <code>{{ accounts[source.id] }}</code> as Viewer.</small>{% endif %}
+          {% elif source.kind == 'download-folder' %}Archives you save into the download folder{% if staging %}: <code>{{ staging }}</code>{% endif %}
           {% else %}<code>{{ source.location }}</code>{% endif %}
           <div id="test-{{ source.id }}" aria-live="polite"></div>
         </td>
@@ -49,32 +50,79 @@
   {% endif %}
 </section>
 
-<section class="card">
-  <div class="summary-head"><h2>Add a Google Drive folder</h2><a href="/help/google-drive">How to set this up</a></div>
-  <form method="post" action="/sources/drive" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label>Name <input name="name" placeholder="Google Takeout" required maxlength="60"></label>
-    <label>Folder ID
-      <input name="folder_id" autocomplete="off" spellcheck="false" required>
-      <small>Open the folder in Google Drive; the ID is the part of the address after <code>/folders/</code>.</small>
+<section class="settings-group" id="add">
+  <header><h2>Add a source</h2><p>How your Takeout exports reach this app. Choose one; you can add the other later.</p></header>
+  <div class="card source-choice">
+  {%- set chosen = request.query_params.get('how', 'drive' if not sources or sources|selectattr('kind', 'equalto', 'gdrive')|list else 'manual') -%}
+  <fieldset class="choice-cards">
+    <legend class="visually-hidden">How exports arrive</legend>
+    <label class="choice-card">
+      <input type="radio" name="how" value="drive" {{ 'checked' if chosen != 'manual' }}>
+      <strong>Automatically, from Google Drive</strong>
+      <span>Takeout saves each export to Google Drive, and the app fetches it on schedule. Nothing to do once set up.</span>
+      <span class="choice-cost">Setup: about 15 minutes in Google Cloud, once.</span>
     </label>
-    <label>Service account key (JSON file)
-      <input type="file" name="key_file" accept="application/json,.json" required>
-      <small>Stored encrypted and never shown again. The service account only needs Viewer access to this one folder. See the README for setup steps.</small>
+    <label class="choice-card">
+      <input type="radio" name="how" value="manual" {{ 'checked' if chosen == 'manual' }}>
+      <strong>I download the exports myself</strong>
+      <span>Takeout emails you download links; you save the archives into a folder this app reads. No Google Cloud.</span>
+      <span class="choice-cost">Each export: a few minutes of downloading, every month or two.</span>
     </label>
-    <div class="actions"><button type="submit">Add</button></div>
-  </form>
-</section>
+  </fieldset>
 
-<section class="card">
-  <h2>Add a local folder</h2>
-  <form method="post" action="/sources/local">
-    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <label>Name <input name="name" placeholder="Manual downloads" required maxlength="60"></label>
-    <label>Folder <input name="path" placeholder="/data/manual" required>
-      <small>A folder holding Takeout <code>.zip</code> or <code>.tgz</code> archives.</small>
-    </label>
-    <div class="actions"><button type="submit">Add</button></div>
-  </form>
+  <div class="choice-panel choice-drive">
+    <div class="summary-head"><h3>Add a Google Drive folder</h3><a href="/help/google-drive">Guide: Connecting Google Drive</a></div>
+    <ol class="steps">
+      <li>In Takeout, choose <strong>Add to Drive</strong> as the delivery method (<a href="/help/takeout">Setting up Google Takeout</a>).</li>
+      <li>Create a service account with read-only access, and download its key (<a href="/help/google-drive">the guide</a> walks through it).</li>
+      <li>Share the Takeout folder in Drive with the service account, as Viewer, then add it here.</li>
+    </ol>
+    <form method="post" action="/sources/drive" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <label>Name <input name="name" placeholder="Google Takeout" required maxlength="60"></label>
+      <label>Folder ID
+        <input name="folder_id" autocomplete="off" spellcheck="false" required>
+        <small>Open the folder in Google Drive; the ID is the part of the address after <code>/folders/</code>.</small>
+      </label>
+      <label>Service account key (JSON file)
+        <input type="file" name="key_file" accept="application/json,.json" required>
+        <small>Stored encrypted and never shown again. The service account only needs Viewer access to this one folder.</small>
+      </label>
+      <div class="actions"><button type="submit">Add Google Drive folder</button></div>
+    </form>
+  </div>
+
+  <div class="choice-panel choice-manual">
+    <div class="summary-head"><h3>Use archives you download</h3><a href="/help/manual-downloads">Guide: Downloading exports yourself</a></div>
+    <ol class="steps">
+      <li>In Takeout, choose <strong>Send download link via email</strong> as the delivery method.</li>
+      <li>When the email arrives, download every part (<code>…-001.zip</code>, <code>…-002.zip</code> and so on) within a week, before the links expire.</li>
+      <li>Save them into the folder below. The next run imports the export once all its parts are there and none has changed for half an hour.</li>
+    </ol>
+    {% if has_download_source %}
+    <p class="result ok">The download folder is already a source.</p>
+    {% elif staging %}
+    <form method="post" action="/sources/download-folder" class="manual-choice">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <input type="hidden" name="name" value="My Takeout downloads">
+      <p><strong>Save them into the download folder</strong>, <code>{{ staging }}</code>. Simplest: on an SMB share you can save to it straight from your browser.</p>
+      <div class="actions"><button type="submit">Use the download folder</button></div>
+    </form>
+    {% else %}
+    <p class="error"><a href="/destinations#downloads">Choose the download folder</a> first; you can then save archives straight into it.</p>
+    {% endif %}
+    <details class="other-folder">
+      <summary>Or use another folder on this server</summary>
+      <form method="post" action="/sources/local">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+        <label>Name <input name="name" placeholder="Manual downloads" required maxlength="60"></label>
+        <label>Folder <input name="path" placeholder="/data/manual" required>
+          <small>A folder inside the container holding Takeout <code>.zip</code> or <code>.tgz</code> archives, mapped in <code>compose.yaml</code>. Archives here are read where they are, not copied.</small>
+        </label>
+        <div class="actions"><button type="submit" class="secondary">Add folder</button></div>
+      </form>
+    </details>
+  </div>
+  </div>
 </section>
 {% endblock %}

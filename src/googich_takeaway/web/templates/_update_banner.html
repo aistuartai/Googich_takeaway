@@ -1,0 +1,35 @@
+{#- The update banner. While an update installs it asks the server every 5 seconds, and keeps asking
+    while the app restarts (requests fail then), until the new version answers. -#}
+{%- set kind = banner['kind'] if banner else none -%}
+{%- if kind in ('updating', 'waiting') -%}
+<div id="update-banner" class="update-banner" role="status" hx-get="/updates/banner" hx-trigger="every 5s" hx-swap="outerHTML">
+  {% if kind == 'updating' %}Updating to {{ banner['helper'].version }}: {{ banner['helper'].message }}{% elif banner['pausing'] %}Update to {{ banner['version'] }} requested. Pausing the run first; it resumes by itself after the update.{% else %}Update to {{ banner['version'] }} requested; waiting for the update helper on the host.{% endif %}
+  The app restarts during the update; this message updates by itself.
+</div>
+{%- elif kind == 'done' -%}
+<div id="update-banner" class="update-banner done" role="status">
+  <strong>Update complete.</strong> {{ banner['helper'].message }} You are running {{ version }}.
+  <a href="/">Reload the page</a>
+  {% if request.state.csrf is defined %}<form method="post" action="/updates/dismiss" class="inline"><input type="hidden" name="csrf_token" value="{{ request.state.csrf }}"><button type="submit" class="link">Dismiss</button></form>{% endif %}
+</div>
+{%- elif kind == 'failed' -%}
+<div id="update-banner" class="update-banner failed" role="alert">
+  <strong>Update{% if banner['helper'].version %} to {{ banner['helper'].version }}{% endif %} failed.</strong> {{ banner['helper'].message }} You are running {{ version }}. <a href="/updates">Updates</a>
+  {% if request.state.csrf is defined %}<form method="post" action="/updates/dismiss" class="inline"><input type="hidden" name="csrf_token" value="{{ request.state.csrf }}"><button type="submit" class="link">Dismiss</button></form>{% endif %}
+</div>
+{%- elif kind == 'available' -%}
+<div id="update-banner" class="update-banner" role="status">
+  Version {{ banner['update'].latest }} is available; you have {{ version }}.
+  <a href="{{ banner['update'].url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
+  {% if banner['helper'] and request.state.csrf is defined %}
+  <form method="post" action="/updates/apply" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <button type="submit" class="link">Update now</button>
+  </form>
+  {% else %}
+  <a href="/updates">How to update</a>
+  {% endif %}
+</div>
+{%- else -%}
+<div id="update-banner" hidden></div>
+{%- endif %}

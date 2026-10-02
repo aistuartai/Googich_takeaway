@@ -18,6 +18,9 @@ def world(tmp_path: Path) -> World:
 DOCS = help.DOCS
 
 
+NOW = datetime(2026, 11, 1, tzinfo=UTC)
+
+
 def test_every_topic_has_a_page_and_every_page_a_topic() -> None:
     files = {p.stem for p in DOCS.glob("*.md")} - {"README"}
     assert files == set(help.BY_SLUG)
@@ -105,8 +108,13 @@ def test_google_photos_station(world: World) -> None:
     assert '<p class="station-figure">48,210</p>' in page
     assert '<a class="station-icon" href="https://photos.google.com/"' in page
     assert '<a href="/help/takeout">Takeout setup</a>' in page
-    assert "items in the latest export, 01 Oct 2026" in page
+    assert "items found across your exports; 48,210 in the latest, 01 Oct 2026" in page
     assert "47,980 of the latest export's 48,210" in page
+    # Items from every export add up: a later, smaller export does not lower the figure.
+    with State(world.tmp / "state.db") as state:
+        state.record_seen_items("20261101T010203Z", (f"{n:040x}" for n in range(48_300)), NOW)
+    page = world.client.get("/").text
+    assert '<p class="station-figure">48,300</p>' in page
 
 
 def test_takeout_schedule_on_sources_page_and_reminder(world: World) -> None:
@@ -155,3 +163,33 @@ def test_takeout_schedule_on_sources_page_and_reminder(world: World) -> None:
     nearly_a_year = (datetime.now(UTC) - timedelta(days=360)).date().isoformat()
     world.post("/schedule/takeout", data={"started": nearly_a_year})
     assert "Your Takeout schedule ends soon" in world.client.get("/").text
+
+
+def test_guide_search_finds_sections_and_marks_the_words(world: World) -> None:
+    page = world.client.get("/help?q=api+key").text
+    assert "results for “api key”" in page
+    assert 'href="/help/immich-setup#connect-googich-takeaway"' in page
+    assert "<mark>API</mark> <mark>Key</mark>s" in page
+    assert 'name="q" value="api key"' in page
+    nothing = world.client.get("/help?q=zzzqqq").text
+    assert "Nothing found for “zzzqqq”" in nothing
+    # Search terms are shown as text, never as markup.
+    hostile = world.client.get("/help?q=%3Cscript%3Ealert(1)%3C/script%3E").text
+    assert "<script>alert" not in hostile
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in hostile
+    assert 'class="help-search"' in world.client.get("/help/cleanup").text  # on every guide page
+
+
+def test_search_needs_every_word() -> None:
+    assert help.search("immich")
+    assert not help.search("immich zzzqqq")
+    assert help.search("   ") == []
+
+
+def test_immich_guides_are_listed() -> None:
+    slugs = [t.slug for t in help.TOPICS]
+    assert slugs.index("what-is-immich") < slugs.index("immich-setup") < slugs.index("first-setup")
+    setup = help.page("immich-setup")
+    assert setup is not None
+    assert "docker compose up -d" in setup.html
+    assert "The first user to register becomes the administrator." in setup.html

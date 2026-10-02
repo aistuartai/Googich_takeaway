@@ -71,7 +71,7 @@ def test_run_is_recorded_and_notified(world: World) -> None:
     assert message.outcome is Outcome.SUCCESS
     runs = State(world.path).recent_runs()
     assert [(r.trigger, r.status) for r in runs] == [("manual", "success")]
-    assert runs[0].title == "Imported 13 new photos and videos"
+    assert runs[0].title == "Downloaded 2 archives, 13 photos and videos uploaded, 0 skipped"
     assert [m.outcome for m in world.sent] == [Outcome.SUCCESS]
 
 
@@ -294,3 +294,65 @@ def test_resuming_a_download_again_run_does_not_fetch_finished_archives(world: W
     world.worker.run_once(Trigger.MANUAL, options)
     media = [r for r in world.drive.requests if "/files/takeout-" in r]
     assert len(media) == fetched  # nothing downloaded again on resume
+
+
+def test_update_during_a_run_pauses_it_first_and_resumes_after(world: World) -> None:
+    from googich_takeaway.progress import Stage
+    from googich_takeaway.worker import RESUME_AFTER_UPDATE
+
+    world.configure()
+    tracker = world.worker.tracker
+    begin = tracker.begin
+    done: list[bool] = []
+
+    def update_pressed(stage: Stage, name: str, size: int | None = None) -> None:
+        if stage is Stage.UPLOAD and not done:
+            # Update now, pressed mid-run: the request waits for the pause.
+            assert world.worker.pause_then(lambda: done.append(True))
+            assert done == []
+        begin(stage, name, size)
+
+    tracker.begin = update_pressed  # type: ignore[method-assign]
+    assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.STOPPED
+    assert done == [True]  # sent once the run had stopped
+    assert world.worker.status().run_paused
+    assert State(world.path).get_setting(RESUME_AFTER_UPDATE) == "1"
+    tracker.begin = begin  # type: ignore[method-assign]
+    world.worker.resume_after_update()  # what start-up does after the update
+    assert State(world.path).get_setting(RESUME_AFTER_UPDATE) is None
+    trigger, options = world.worker._due_trigger() or (None, None)
+    assert trigger is Trigger.MANUAL
+    assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
+    assert len(world.immich.assets) == 13
+
+
+def test_update_when_idle_is_sent_straight_away(world: World) -> None:
+    done: list[bool] = []
+    assert not world.worker.pause_then(lambda: done.append(True))
+    assert done == [True]
+
+
+def test_old_log_files_are_deleted_and_history_kept(world: World) -> None:
+    import os
+    from datetime import timedelta
+
+    state = State(world.path)
+    old = NOW - timedelta(days=120)
+    for trigger in ("manual", "manual", "schedule"):
+        run = state.start_run(trigger, old)
+        state.finish_run(run, "success", "Done", "", old)
+    recent = state.start_run("manual", NOW)
+    state.finish_run(recent, "success", "Done", "", NOW)
+    logs = world.tmp / "logs"
+    logs.mkdir()
+    (logs / "googich.log").write_text("current\n")
+    for name, age in (("googich.log.1", 10), ("googich.log.2", 100)):
+        (logs / name).write_text("old\n")
+        stamp = (NOW - timedelta(days=age)).timestamp()
+        os.utime(logs / name, (stamp, stamp))
+    world.worker.prune_logs()
+    assert len(state.recent_runs()) == 4  # History is never pruned
+    assert sorted(p.name for p in logs.iterdir()) == ["googich.log", "googich.log.1"]
+    world.config().save_log_retention("7")
+    world.worker.prune_logs()
+    assert sorted(p.name for p in logs.iterdir()) == ["googich.log"]

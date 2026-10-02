@@ -6,9 +6,11 @@ the session's CSRF token. Responses carry a strict Content Security Policy: scri
 load only from this server, and the pages contain no inline script.
 """
 
+import io
 import json
 import logging
 import time
+import zipfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -20,16 +22,17 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from googich_takeaway import __version__, cleanup, reminders, updates
+from googich_takeaway import __version__, cleanup, downloads, reminders, updates
 from googich_takeaway.config import (
     BAR_STYLES,
     COLOUR_SCHEMES,
     DASHBOARD_ITEMS,
+    DOWNLOAD_FOLDER_KIND,
     MAX_KEY_FILE_BYTES,
     MOTION,
     THEMES,
@@ -49,14 +52,14 @@ from googich_takeaway.locations import (
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.logs import LogBuffer, Logs
 from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, RunOptions
-from googich_takeaway.progress import format_duration, format_size
+from googich_takeaway.progress import Stage, format_duration, format_size
 from googich_takeaway.schedule import TAKEOUT_FREQUENCIES, WEEKDAYS, Schedule, upcoming_runs
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.sources.local import LocalSource
 from googich_takeaway.state import State
 from googich_takeaway.web import auth, demo, help
-from googich_takeaway.worker import Worker
+from googich_takeaway.worker import PAUSED_RUN, Worker
 
 log = logging.getLogger("googich.web")
 
@@ -76,6 +79,9 @@ NOTICES = {
     "schedule-paused": "Scheduled runs are paused. Run now still works.",
     "schedule-resumed": "Scheduled runs are on again.",
 }
+RUN_NOTICES = {"started", "pausing", "cancelling", "resumed"}
+"""Notices about the run going now: not shown once it has ended (a reload, or the page coming
+back after the run)."""
 TIMEZONES = [
     *sorted(
         z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/"))
@@ -210,7 +216,77 @@ def create_app(
         known = updates.cached(config.state) if updates.enabled(config.state) else None
         context.setdefault("update", known if known and known.newer else None)
         context.setdefault("helper", updates.helper_status(data_dir))
+        context.setdefault("banner", update_banner(config))
+        context.setdefault("activity", activity(config.state))
         return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+    def activity(state: State) -> dict[str, object] | None:
+        """What the menu bar says about runs: the stage working now and how far it is, or how
+        far a paused run got. None when nothing is going on, so the menu bar shows nothing."""
+        if worker.status_running():
+            stopping = worker.tracker.stopping
+            snapshot = worker.progress()
+            view = next((v for v in snapshot.stages if v.stage == snapshot.stage), None)
+            if view is None and snapshot.stages:
+                view = snapshot.stages[-1]
+            if stopping:
+                label = "Pausing" if stopping == "pause" else "Cancelling"
+            else:
+                label = view.label if view is not None else "Starting"
+            return {
+                "kind": "stopping" if stopping else "running",
+                "label": label,
+                "percent": int(view.fraction * 100) if view is not None and view.total else None,
+            }
+        stored = state.get_setting(PAUSED_RUN)
+        if stored is not None:
+            # The furthest stage the paused run reached, as on the dashboard.
+            stages = [v for v in json.loads(stored).get("progress", []) if v.get("total")]
+            last = stages[-1] if stages else None
+            return {
+                "kind": "paused",
+                "label": f"Paused: {str(last['label']).lower()}" if last else "Paused",
+                "percent": int(last["done"] / last["total"] * 100) if last else None,
+            }
+        return None
+
+    @app.get("/activity", response_class=HTMLResponse)
+    def activity_view(request: Request, state: StateDep) -> Response:
+        """Polled by the menu bar on every page, so a run started elsewhere shows up."""
+        return templates.TemplateResponse(request, "_activity.html", {"activity": activity(state)})
+
+    def update_banner(config: Config) -> dict[str, object] | None:
+        """What the banner at the top of every page says about updates, if anything.
+
+        While an update installs it polls /updates/banner, so it keeps checking while the app
+        restarts and says when the update is complete, or why it failed, until dismissed."""
+        state = config.state
+        helper = updates.helper_status(data_dir)
+        requested = state.get_setting("updates.requested")
+        if helper is not None:
+            if helper.state == "updating":
+                return {"kind": "updating", "helper": helper}
+            if requested:
+                finished = helper.version == requested and helper.state in ("done", "failed")
+                if not finished:
+                    pausing = worker.status_running()
+                    return {"kind": "waiting", "version": requested, "pausing": pausing}
+                state.set_setting("updates.requested", None, clock())
+                if helper.state == "failed":
+                    worker.resume_after_update()  # the app did not restart, so resume here
+            recent = helper.at is not None and clock() - helper.at < timedelta(days=7)
+            acknowledged = state.get_setting("updates.helper_ack")
+            if (
+                helper.state in ("done", "failed")
+                and recent
+                and helper.at is not None
+                and acknowledged != helper.at.isoformat()
+            ):
+                return {"kind": helper.state, "helper": helper}
+        known = updates.cached(state) if updates.enabled(state) else None
+        if known and known.newer:
+            return {"kind": "available", "update": known, "helper": helper}
+        return None
 
     proxy_hint_logged: list[bool] = []
 
@@ -346,24 +422,48 @@ def create_app(
         data["at"] = datetime.fromisoformat(data["at"])
         return data if isinstance(data, dict) else None
 
+    downloading_now: list[str] = []
+
     def journey(config: Config, state: State) -> dict[str, object]:
         drive_count, drive_bytes = state.download_totals()
         location = config.staging_location()
         folder_count: int | None = 0
         folder_bytes = 0
+        arriving = False
         if location is not None:
+            active = worker.tracker.active() if worker.status_running() else None
+            name = active[1].name if active and active[0] is Stage.DOWNLOAD else None
+            if downloading_now != [name or ""]:
+                # A download finished or started: read the folder again, so it is counted once.
+                listing_cache.pop(location.describe(), None)
+                downloading_now[:] = [name or ""]
             found = folder_listing(location)
             if found is None:
                 folder_count = None
             else:
                 folder_count, folder_bytes = len(found), sum(a.size for a in found)
+                if active and name and all(a.name != name for a in found):
+                    folder_bytes += min(active[1].done, active[1].size)  # arriving now
+                    arriving = True
+        drive_names = {f"gdrive:{s.location}" for s in config.sources() if s.kind == "gdrive"}
+        listed = [v for k, v in downloads.listings(state).items() if k in drive_names]
+        photos = latest_export(state)
         return {
+            "uses_drive": bool(drive_names),
+            "has_sources": bool(config.sources()),
             "drive_count": drive_count,
             "drive_bytes": drive_bytes,
+            "drive_listed": sum(int(str(v["count"])) for v in listed) if listed else None,
+            "drive_listed_bytes": sum(int(str(v["bytes"])) for v in listed),
+            "drive_listed_at": max(datetime.fromisoformat(str(v["at"])) for v in listed)
+            if listed
+            else None,
             "folder_count": folder_count,
             "folder_bytes": folder_bytes,
+            "folder_arriving": arriving,
             "immich_count": state.upload_count("immich"),
-            "photos": latest_export(state),
+            "photos": photos,
+            "photos_seen": state.seen_item_count(),
         }
 
     def cached_call(key: str, seconds: float, read: Callable[[], object]) -> object:
@@ -439,6 +539,11 @@ def create_app(
             "drive_bytes": drive_bytes,
         }
 
+    def dashboard_notice(key: str) -> str | None:
+        if key in RUN_NOTICES and not worker.run_pending_or_going():
+            return None
+        return NOTICES.get(key)
+
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request, config: ConfigDep, state: StateDep) -> Response:
         items = config.dashboard_items()
@@ -460,7 +565,8 @@ def create_app(
             progress=worker.progress(),
             failures=config.scheduled_failures(),
             runs=state.recent_runs(15) if "runs" in items else [],
-            notice=NOTICES.get(request.query_params.get("notice", "")),
+            last_run=next(iter(state.recent_runs(1)), None),
+            notice=dashboard_notice(request.query_params.get("notice", "")),
             reminders=reminders.takeout_reminders(config, state, clock()),
             zone=_zone(config.general().timezone),
         )
@@ -502,7 +608,9 @@ def create_app(
         """Polled by the dashboard while a run is going; reloads the page when it ends."""
         current = worker.status()
         if not current.running:
-            return Response(status_code=200, headers={"HX-Refresh": "true"})
+            # Back to the plain dashboard: a "Pausing…" or "Started" notice in the address
+            # would otherwise come back with the reload.
+            return Response(status_code=200, headers={"HX-Redirect": "/"})
         return templates.TemplateResponse(
             request,
             "_status.html",
@@ -543,6 +651,9 @@ def create_app(
             config,
             "logs.html",
             entries=entries,
+            retention_days=config.log_retention_days(),
+            log_usage=log_usage(config.state),
+            saved=request.query_params.get("saved"),
             level=level.upper() if level.upper() in LOG_LEVELS else "INFO",
             levels=LOG_LEVELS,
             q=q[:200],
@@ -557,35 +668,70 @@ def create_app(
         request: Request, config: ConfigDep, after: int = 0, level: str = "INFO", q: str = ""
     ) -> Response:
         entries = log_store.buffer.query(level=level, text=q[:200], after=after)
-        return templates.TemplateResponse(
-            request,
-            "_log_rows.html",
-            {
-                "entries": entries,
-                "zone": _zone(config.general().timezone),
-                "last_seq": entries[-1].seq if entries else after,
-                "follow": True,
-                "level": level,
-                "q": q[:200],
-            },
-        )
+        context = {
+            "entries": entries,
+            "zone": _zone(config.general().timezone),
+            "last_seq": entries[-1].seq if entries else after,
+            "follow": True,
+            "oob": True,
+            "level": level,
+            "q": q[:200],
+        }
+        rows = templates.get_template("_log_rows.html").render(context)
+        tail = templates.get_template("_log_tail.html").render(context)
+        return HTMLResponse(rows + tail)
+
+    def log_usage(state: State) -> dict[str, int]:
+        """How much space the log files take now."""
+        sizes = []
+        for path in log_store.files():
+            try:
+                sizes.append(path.stat().st_size)
+            except OSError:
+                continue
+        return {"files": len(sizes), "bytes": sum(sizes)}
 
     @app.get("/logs/download")
     def logs_download() -> Response:
-        path = log_store.current_file
-        if not path.exists():
+        """Every log file kept, oldest first, in one zip.
+
+        Each file is read whole before anything is sent: the current file grows while the app
+        runs, and streaming it from disk sent more bytes than the Content-Length announced,
+        so browsers gave up on the download."""
+        files = log_store.files()
+        if not files:
             return Response("No log file yet.", status_code=404, media_type="text/plain")
-        return FileResponse(
-            path,
-            media_type="application/x-ndjson",
-            filename=f"googich-{datetime.now(UTC):%Y%m%d-%H%M%S}.log",
+        packed = io.BytesIO()
+        with zipfile.ZipFile(packed, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in reversed(files):
+                try:
+                    data = path.read_bytes()
+                    written = datetime.fromtimestamp(path.stat().st_mtime)
+                except OSError:
+                    continue  # rotated away meanwhile
+                entry = zipfile.ZipInfo(path.name, written.timetuple()[:6])
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                archive.writestr(entry, data)
+        stamp = f"{datetime.now(UTC):%Y%m%d-%H%M%S}"
+        return Response(
+            packed.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="googich-logs-{stamp}.zip"'},
         )
 
     # --- help --------------------------------------------------------------------------------
 
     @app.get("/help", response_class=HTMLResponse)
-    def help_index(request: Request, config: ConfigDep) -> Response:
-        return page(request, config, "help.html", topics=help.TOPICS)
+    def help_index(request: Request, config: ConfigDep, q: str = "") -> Response:
+        query = " ".join(q.split())[:100]
+        return page(
+            request,
+            config,
+            "help.html",
+            topics=help.TOPICS,
+            q=query,
+            hits=help.search(query) if query else [],
+        )
 
     @app.get("/help/{slug}", response_class=HTMLResponse)
     def help_page(request: Request, config: ConfigDep, slug: str) -> Response:
@@ -594,14 +740,23 @@ def create_app(
             return page(request, config, "help.html", topics=help.TOPICS, status_code=404)
         return page(request, config, "help_page.html", doc=found, topics=help.TOPICS)
 
+    def latest_release(config: Config) -> tuple[updates.UpdateInfo | None, str | None]:
+        """The latest release, checked as the page opens, and the version to show for it: never
+        older than the version running, which a reading saved before an update could be."""
+        known = updates.check_on_view(config.state, clock, github_transport)
+        if known is None:
+            return None, None
+        return known, __version__ if updates.is_newer(__version__, known.latest) else known.latest
+
     @app.get("/about", response_class=HTMLResponse)
     def about(request: Request, config: ConfigDep) -> Response:
-        known = updates.cached(config.state)
+        known, latest = latest_release(config)
         return page(
             request,
             config,
             "about.html",
             update_known=known,
+            latest_shown=latest,
             update_available=known if known and known.newer else None,
             repository=updates.REPOSITORY,
             zone=_zone(config.general().timezone),
@@ -814,12 +969,14 @@ def create_app(
     # so it is shown again; passwords, keys and notification addresses never are.
 
     def settings_page(request: Request, config: Config, error: str | None = None) -> Response:
-        """Time zone, and look and feel."""
+        """Time zone, look and feel, and how long logs are kept."""
         return page(
             request,
             config,
             "settings.html",
             general=config.general(),
+            retention_days=config.log_retention_days(),
+            log_usage=log_usage(config.state),
             timezones=TIMEZONES,
             themes=THEMES,
             colour_schemes=COLOUR_SCHEMES,
@@ -858,6 +1015,24 @@ def create_app(
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=look#look", status_code=303)
+
+    @app.post("/settings/logs")
+    def save_log_retention(
+        request: Request,
+        config: ConfigDep,
+        days: Annotated[str, Form()] = "",
+        back: Annotated[str, Form()] = "",
+    ) -> Response:
+        try:
+            config.save_log_retention(days)
+        except ConfigError as error:
+            if back == "logs":
+                return RedirectResponse("/logs?saved=retention-invalid", status_code=303)
+            return settings_page(request, config, error=str(error))
+        worker.prune_logs()  # a shorter period applies straight away
+        if back == "logs":  # only ever these two places
+            return RedirectResponse("/logs?saved=retention", status_code=303)
+        return RedirectResponse("/settings?saved=logs#logs", status_code=303)
 
     def schedule_page(
         request: Request,
@@ -1033,11 +1208,12 @@ def create_app(
 
     @app.get("/updates", response_class=HTMLResponse)
     def updates_view(request: Request, config: ConfigDep) -> Response:
-        known = updates.cached(config.state)
+        known, latest = latest_release(config)
         return page(
             request,
             config,
             "updates.html",
+            latest_shown=latest,
             updates_enabled=updates.enabled(config.state),
             update_known=known,
             update_available=known if known and known.newer else None,
@@ -1047,17 +1223,47 @@ def create_app(
 
     @app.post("/updates/apply")
     def apply_update(config: ConfigDep) -> Response:
-        """Ask the host helper to install the newest release the app itself found."""
+        """Ask the host helper to install the newest release the app itself found.
+
+        A run going now is paused first, so the restart cuts nothing off; it resumes by itself
+        once the new version starts."""
         known = updates.cached(config.state)
         if known is None or not known.newer:
             return RedirectResponse("/updates?saved=no-update", status_code=303)
-        try:
-            updates.request_update(data_dir, known.latest)  # never a version from the browser
-        except ValueError as error:
-            log.warning("Update request refused: %s", error)
+        if updates.helper_status(data_dir) is None:
             return RedirectResponse("/updates?saved=no-helper", status_code=303)
-        log.warning("Update to %s requested from the web interface", known.latest)
+        version = known.latest  # never a version from the browser
+        config.state.set_setting("updates.requested", version, clock())
+
+        def send() -> None:
+            try:
+                updates.request_update(data_dir, version)
+            except (ValueError, OSError) as error:
+                log.warning("Update request refused: %s", error)
+                with State(settings.state_path) as state:
+                    state.set_setting("updates.requested", None, clock())
+                return
+            log.warning("Update to %s requested from the web interface", version)
+
+        if worker.pause_then(send):
+            return RedirectResponse("/updates?saved=update-after-pause", status_code=303)
         return RedirectResponse("/updates?saved=update-requested", status_code=303)
+
+    @app.get("/updates/banner", response_class=HTMLResponse)
+    def updates_banner(request: Request, config: ConfigDep) -> Response:
+        """Polled by the banner while an update installs."""
+        return templates.TemplateResponse(
+            request, "_update_banner.html", {"banner": update_banner(config)}
+        )
+
+    @app.post("/updates/dismiss")
+    def dismiss_update_banner(request: Request, config: ConfigDep) -> Response:
+        helper = updates.helper_status(data_dir)
+        if helper is not None and helper.at is not None:
+            config.state.set_setting("updates.helper_ack", helper.at.isoformat(), clock())
+        back = request.headers.get("referer", "/")
+        path = urlsplit(back).path or "/"
+        return RedirectResponse(path if path.startswith("/") else "/", status_code=303)
 
     @app.post("/updates/check")
     def check_updates(state: StateDep) -> Response:
@@ -1212,6 +1418,8 @@ def create_app(
             sources=config.sources(),
             accounts=accounts,
             folder_names=folder_names,
+            staging=config.general().describe() if config.general().configured else None,
+            has_download_source=any(s.kind == DOWNLOAD_FOLDER_KIND for s in config.sources()),
             error=error,
             status_code=400 if error else 200,
         )
@@ -1238,6 +1446,18 @@ def create_app(
                 config.set_drive_folder_name(source_id, drive.check_folder())
         except (SourceError, ConfigError):
             pass
+        return RedirectResponse("/sources", status_code=303)
+
+    @app.post("/sources/download-folder")
+    def add_download_folder(
+        request: Request, config: ConfigDep, name: Annotated[str, Form()] = ""
+    ) -> Response:
+        if not config.general().configured:
+            return sources_page(request, config, error="Choose the download folder first.")
+        try:
+            config.add_download_folder_source(name)
+        except ConfigError as error:
+            return sources_page(request, config, error=str(error))
         return RedirectResponse("/sources", status_code=303)
 
     @app.post("/sources/local")
@@ -1282,6 +1502,22 @@ def create_app(
         try:
             if source.kind == "local":
                 files = LocalSource(Path(source.location)).list_archives()
+            elif source.kind == DOWNLOAD_FOLDER_KIND:
+                location = config.staging_location()
+                if location is None:
+                    return result(request, False, "No download folder is set.")
+                try:
+                    found = list_archives(location)
+                except LocationError as error:
+                    return result(request, False, f"Cannot read the download folder: {error}")
+                count, size = len(found), sum(a.size for a in found) / 1000**3
+                if not count:
+                    return result(request, True, "Connected. No Takeout archives saved there yet.")
+                return result(
+                    request,
+                    True,
+                    f"Connected. {count} archives in the download folder, {size:.1f} GB.",
+                )
             else:
                 with drive_factory(source.location, config.drive_key(source_id)) as drive:
                     files = drive.list_archives()

@@ -3,8 +3,9 @@
 ## Finding out about new releases
 
 Once a day the app asks GitHub whether a new release is out, and shows a banner at the top of
-every page when there is one. Press **Check now** under **Help → Updates**, or **Check for
-updates** under **Help → About**, to ask straight away. A check can be repeated once a
+every page when there is one. Opening **Help → Updates** or **Help → About** also asks, if the
+last answer is more than 10 minutes old, so the latest release they show is current. Press
+**Check now** under Help → Updates to ask straight away. A check can be repeated once a
 minute: GitHub allows 60 anonymous checks an hour from each network address, shared by everything
 on your network.
 
@@ -34,6 +35,10 @@ container, then:
 3. sets that version in `compose.yaml`, keeping a copy of the old file,
 4. pulls the image, restarts the container, and waits for it to report the new version,
 5. restores the previous version automatically if anything fails.
+
+If a run is going when you press Update, the app pauses it first, at the next safe point, and
+only then asks the helper to install. Once the new version starts, the paused run resumes by
+itself. If the update fails, the run resumes straight away.
 
 Progress and the result appear in the banner and under Help → Updates. Installation steps are
 in the project's README, under *One-click updates*.

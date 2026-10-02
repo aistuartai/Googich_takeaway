@@ -119,6 +119,12 @@ _PART_NAME = re.compile(
 )
 
 
+def part_number(name: str) -> int | None:
+    """The part number of a Takeout archive (1 for ``…-001.zip``), or None for other names."""
+    match = _PART_NAME.match(name)
+    return int(match["part"]) if match else None
+
+
 def group_exports[N: Named](paths: Sequence[N]) -> dict[str, list[N]]:
     """Group archive parts by export, parts in order.
 

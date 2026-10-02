@@ -1,0 +1,24 @@
+{#- The schedule, beside the run controls. -#}
+<section class="card schedule-card" id="schedule-summary" aria-labelledby="sum-schedule">
+  <div class="summary-head"><h2 id="sum-schedule">Schedule</h2><a href="/schedule">Change</a></div>
+  <div class="schedule-row">
+    <div>
+      <p>{{ schedule.describe() }}.</p>
+      {% if status.paused %}
+      <p class="warn-text"><strong>Paused{% if status.paused_by_user %} by you{% endif %}.</strong> Scheduled runs wait until you resume; Run now still works.</p>
+      {% elif status.next_run %}
+      <p class="schedule-next">Next run <strong>{{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}</strong></p>
+      {% elif schedule.mode.value == 'off' %}
+      <p class="muted">Scheduled runs are off; runs happen only when you press Run now.</p>
+      {% else %}
+      <p class="muted">Nothing is scheduled.</p>
+      {% endif %}
+    </div>
+    {% if schedule.mode.value != 'off' %}
+    <form method="post" action="{{ '/schedule/resume' if status.paused else '/schedule/pause' }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" class="secondary">{{ 'Resume schedule' if status.paused else 'Pause schedule' }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
