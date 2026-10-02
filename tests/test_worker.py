@@ -395,3 +395,18 @@ def test_the_last_scheduled_run_is_found_after_many_manual_runs(world: World) ->
         run = state.start_run("manual", NOW - timedelta(hours=60 - n))
         state.finish_run(run, "success", "Done", "", NOW)
     assert state.last_run_started("schedule") == NOW - timedelta(days=3)
+
+
+def test_pause_while_reading_resumes_without_reading_again(world: World) -> None:
+    """Pausing during "Reading archives": Resume takes what was read from the scan cache."""
+    world.configure()
+    original = _stop_at_first_upload(world, "pause", at="upload")
+    assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.STOPPED
+    state = State(world.path)
+    complete = state._db.execute("SELECT count(*) FROM scan_parts WHERE complete = 1").fetchone()
+    assert complete[0] == 2  # both parts read to the end and remembered
+    world.worker.tracker.begin = original  # type: ignore[method-assign]
+    assert world.worker.resume_paused()
+    _, options = world.worker._due_trigger() or (None, None)
+    assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
+    assert len(world.immich.assets) == 13

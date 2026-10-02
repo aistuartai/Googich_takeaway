@@ -11,6 +11,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Pause and Resume no longer read the archives again.** What reading an export finds (each
+  file's checksum and dates, each metadata file) is saved as it goes, so a run paused, cancelled
+  or stopped while reading or uploading carries on where it was: finished parts are not read at
+  all, and in a part read halfway, files already done are skipped (`.zip`) or only unpacked,
+  not checked again (`.tgz`). Saved scans are deleted once the export is fully in Immich, or
+  after 60 days. State database schema 9.
 - **Several uploads at once.** Photos and other files up to 32 MB go to Immich three at a time
   by default (1 to 8, under Settings → Uploads); larger files still stream one at a time.
   With Immich taking 100 ms per upload, a test export went 2.6 times faster at three and 4.3

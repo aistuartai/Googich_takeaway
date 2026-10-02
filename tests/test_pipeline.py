@@ -467,3 +467,11 @@ def test_a_damaged_export_does_not_stop_the_others(world: World) -> None:
     report = world.pipeline().run()
     assert report.uploaded == 13  # the good export still went in
     assert any("20250101T000000Z not imported" in p for p in report.problems)
+
+
+def test_a_finished_export_forgets_what_reading_it_found(world: World) -> None:
+    world.configure()
+    report = world.pipeline().run()
+    assert report.uploaded == 13
+    rows = world.config.state._db.execute("SELECT count(*) FROM scan_parts").fetchone()[0]
+    assert rows == 0

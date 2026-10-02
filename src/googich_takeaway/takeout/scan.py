@@ -10,7 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from googich_takeaway.takeout.archives import ArchiveSource, Readable, iter_entries
 from googich_takeaway.takeout.dates import DateInputs, DateResolver, ResolvedDate
@@ -23,6 +23,14 @@ from googich_takeaway.takeout.metadata import (
     SidecarData,
     parse_sidecar,
     read_media_metadata,
+)
+from googich_takeaway.takeout.scan_cache import (
+    MEDIA,
+    OTHER,
+    SIDECAR,
+    CachedEntry,
+    ScanCache,
+    archive_key,
 )
 from googich_takeaway.takeout.sidecars import (
     VIDEO_EXTENSIONS,
@@ -90,43 +98,96 @@ class _Media:
     metadata: MediaMetadata
 
 
+SAVE_EVERY = 200
+"""Entries read between saves to the scan cache: at most this many are read again after a
+pause or a crash."""
+
+
 def scan_export(
     archives: Sequence[ArchiveSource],
     resolver: DateResolver,
     now: datetime,
     progress: ProgressCallback | None = None,
+    cache: ScanCache | None = None,
+    resumed: ProgressCallback | None = None,
 ) -> ExportScan:
-    """Scan all parts of one export. ``now`` bounds plausible dates, for reproducibility."""
+    """Scan all parts of one export. ``now`` bounds plausible dates, for reproducibility.
+
+    With ``cache``, what was read is saved as it goes, and what an earlier run saved is used
+    instead of reading it again (its size is reported to ``resumed``, not ``progress``)."""
     scan = ExportScan(archives=list(archives))
     media: dict[str, _Media] = {}
     sidecars: dict[str, SidecarData] = {}
     seen: set[str] = set()
 
+    def use(archive: ArchiveSource, entry: CachedEntry) -> None:
+        if entry.path in seen:
+            scan.repeated_paths.append(entry.path)
+            return
+        seen.add(entry.path)
+        if entry.kind == MEDIA:
+            media[entry.path] = _Media(
+                archive, entry.size, entry.sha1, entry.media or MediaMetadata()
+            )
+        elif entry.kind == SIDECAR and entry.sidecar is not None:
+            sidecars[entry.path] = entry.sidecar
+        else:
+            scan.ignored.append(entry.path)
+
     for archive in archives:
-        for entry in iter_entries(archive):
-            if entry.path in seen:
-                scan.repeated_paths.append(entry.path)
-                _drain(entry.stream, progress)
-                continue
-            seen.add(entry.path)
-            if is_sidecar_candidate(entry.path) and entry.size <= MAX_SIDECAR_BYTES:
-                data = entry.stream.read(MAX_SIDECAR_BYTES + 1)
-                if progress:
-                    progress(len(data))
-                parsed = parse_sidecar(data)
-                if parsed is not None:
-                    sidecars[entry.path] = parsed
+        key = archive_key(archive.name, _archive_size(archive))
+        complete, saved = cache.load(key) if cache else (False, [])
+        if complete:
+            for cached in saved:
+                use(archive, cached)
+            if resumed:
+                resumed(_archive_size(archive))
+            continue
+        known = {cached.path: cached for cached in saved}
+        pending: list[CachedEntry] = []
+        try:
+            for entry in iter_entries(archive):
+                done = known.get(entry.path)
+                if done is not None:  # read by an earlier run: not read again
+                    use(archive, done)
+                    if resumed:
+                        resumed(entry.size)
+                    continue
+                if entry.path in seen:
+                    scan.repeated_paths.append(entry.path)
+                    _drain(entry.stream, progress)
+                    continue
+                seen.add(entry.path)
+                if is_sidecar_candidate(entry.path) and entry.size <= MAX_SIDECAR_BYTES:
+                    data = entry.stream.read(MAX_SIDECAR_BYTES + 1)
+                    if progress:
+                        progress(len(data))
+                    parsed = parse_sidecar(data)
+                    if parsed is not None:
+                        sidecars[entry.path] = parsed
+                        pending.append(CachedEntry(entry.path, SIDECAR, sidecar=parsed))
+                    else:
+                        scan.ignored.append(entry.path)
+                        pending.append(CachedEntry(entry.path, OTHER))
+                elif is_media(entry.path):
+                    sha1, size, head, tail = _hash(entry.stream, progress)
+                    extension = PurePosixPath(entry.path).suffix
+                    metadata = read_media_metadata(extension, head, tail)
+                    media[entry.path] = _Media(archive, size, sha1, metadata)
+                    pending.append(CachedEntry(entry.path, MEDIA, size, sha1, media=metadata))
                 else:
                     scan.ignored.append(entry.path)
-            elif is_media(entry.path):
-                sha1, size, head, tail = _hash(entry.stream, progress)
-                extension = PurePosixPath(entry.path).suffix
-                media[entry.path] = _Media(
-                    archive, size, sha1, read_media_metadata(extension, head, tail)
-                )
-            else:
-                scan.ignored.append(entry.path)
-                _drain(entry.stream, progress)
+                    _drain(entry.stream, progress)
+                    pending.append(CachedEntry(entry.path, OTHER))
+                if cache and len(pending) >= SAVE_EVERY:
+                    cache.save(key, pending)
+                    pending = []
+        finally:
+            # Also on Pause or an error: what was read so far is kept for the next run.
+            if cache and pending:
+                cache.save(key, pending)
+        if cache:
+            cache.save(key, [], complete=True)
 
     for path in sorted(media):
         if path.lower().endswith(".mp") and any(
@@ -227,3 +288,9 @@ def _mark_duplicates(items: list[ScannedItem]) -> list[ScannedItem]:
         else:
             result.append(replace(item, duplicate_of=kept))
     return result
+
+
+def _archive_size(archive: ArchiveSource) -> int:
+    if isinstance(archive, Path):
+        return archive.stat().st_size
+    return archive.size

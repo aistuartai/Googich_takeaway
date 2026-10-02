@@ -39,6 +39,7 @@ from googich_takeaway.state import State
 from googich_takeaway.takeout.archives import ArchiveError, group_exports, part_number
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, scan_export
+from googich_takeaway.takeout.scan_cache import CachedEntry, archive_key, decode_all, encode
 
 log = logging.getLogger("googich.run")
 
@@ -341,7 +342,14 @@ class Pipeline:
         log.info("Importing export %s (%d parts)", export_id, len(parts))
         if self.tracker:
             self.tracker.begin(Stage.SCAN, export_id, sum(p.size for p in parts))
-        scan = scan_export(parts, resolver, self.clock(), progress=self._scan_progress)
+        scan = scan_export(
+            parts,
+            resolver,
+            self.clock(),
+            progress=self._scan_progress,
+            cache=StateScanCache(self.state, self.clock),
+            resumed=self._scan_resumed,
+        )
         if self.tracker:
             self.tracker.end(Stage.SCAN, export_id)
         checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
@@ -387,6 +395,8 @@ class Pipeline:
             self.state.mark_export_complete(
                 export_key, export_id, json.dumps(summary), self.clock()
             )
+            # Fully in Immich: what reading it found is not needed again.
+            self.state.forget_scan_parts(archive_key(p.name, p.size) for p in parts)
 
     def _remember_export(
         self, export_id: str, scan: ExportScan, plan: ImportPlan, result: ImportResult
@@ -417,6 +427,11 @@ class Pipeline:
         }
         self.state.set_json(LATEST_EXPORT_SETTING, counts, self.clock())
 
+    def _scan_resumed(self, amount: int) -> None:
+        """Bytes an earlier run already read: counted as done, but not towards the speed."""
+        if self.tracker:
+            self.tracker.already_have(amount)
+
     def _scan_progress(self, amount: int) -> None:
         if self.progress:
             self.progress(amount)
@@ -426,6 +441,22 @@ class Pipeline:
     def _skip(self, export_id: str, why: str) -> None:
         if self.tracker:
             self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
+
+
+class StateScanCache:
+    """The scan cache (``takeout.scan_cache``), kept in the state database."""
+
+    def __init__(self, state: State, clock: Callable[[], datetime]) -> None:
+        self._state = state
+        self._clock = clock
+
+    def load(self, archive: str) -> tuple[bool, list[CachedEntry]]:
+        complete, rows = self._state.scan_part(archive)
+        return complete, decode_all(rows)
+
+    def save(self, archive: str, entries: list[CachedEntry], complete: bool = False) -> None:
+        rows = [(entry.path, encode(entry)) for entry in entries]
+        self._state.save_scan_part(archive, rows, complete, self._clock())
 
 
 def _identity(archive: StoredFile) -> str:

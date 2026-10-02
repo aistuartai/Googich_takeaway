@@ -53,6 +53,9 @@ class Named(Protocol):
 
 
 class OpenableArchive(Named, Protocol):
+    @property
+    def size(self) -> int: ...
+
     def open(self) -> IO[bytes]: ...
 
 

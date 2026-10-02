@@ -314,6 +314,8 @@ class Worker:
         try:
             with State(self._state_path) as state:
                 cutoff = now - timedelta(days=self._config(state).log_retention_days())
+                # Saved scans of exports never finished (deleted, or abandoned): 60 days on.
+                state.forget_scan_parts(before=now - timedelta(days=60))
             files = logs.prune_files(self._state_path.parent / "logs", cutoff)
         except Exception:  # tidying up must never stop the worker
             log.exception("Could not delete old logs")

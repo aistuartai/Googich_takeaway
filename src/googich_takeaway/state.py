@@ -16,7 +16,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 SESSION_SEEN_EVERY = timedelta(minutes=1)
 
 _MIGRATIONS: dict[int, str] = {
@@ -127,6 +127,19 @@ _MIGRATIONS: dict[int, str] = {
     """,
     8: """
         CREATE INDEX uploads_by_export ON uploads (destination, export_id, status);
+    """,
+    9: """
+        CREATE TABLE scan_parts (
+            archive    TEXT PRIMARY KEY,
+            complete   INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        ) STRICT;
+        CREATE TABLE scan_entries (
+            archive TEXT NOT NULL REFERENCES scan_parts (archive) ON DELETE CASCADE,
+            path    TEXT NOT NULL,
+            entry   TEXT NOT NULL,
+            PRIMARY KEY (archive, path)
+        ) STRICT;
     """,
 }
 
@@ -593,6 +606,51 @@ class State:
     def delete_source(self, source_id: int) -> None:
         self._sources = None
         self._db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+    # --- what reading an export found (takeout.scan_cache) ---------------------------------------
+
+    def scan_part(self, archive: str) -> tuple[bool, list[tuple[str, str]]]:
+        row = self._db.execute(
+            "SELECT complete FROM scan_parts WHERE archive = ?", (archive,)
+        ).fetchone()
+        if row is None:
+            return False, []
+        rows = self._db.execute(
+            "SELECT path, entry FROM scan_entries WHERE archive = ? ORDER BY rowid", (archive,)
+        ).fetchall()
+        return bool(row[0]), [(r[0], r[1]) for r in rows]
+
+    def save_scan_part(
+        self, archive: str, entries: list[tuple[str, str]], complete: bool, at: datetime
+    ) -> None:
+        with self.transaction():
+            self._db.execute(
+                "INSERT INTO scan_parts (archive, complete, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (archive) DO UPDATE SET complete = max(complete, excluded.complete), "
+                "updated_at = excluded.updated_at",
+                (archive, int(complete), _to_text(at)),
+            )
+            self._db.executemany(
+                "INSERT OR REPLACE INTO scan_entries (archive, path, entry) VALUES (?, ?, ?)",
+                ((archive, path, entry) for path, entry in entries),
+            )
+
+    def forget_scan_parts(
+        self, archives: Iterable[str] = (), before: datetime | None = None
+    ) -> int:
+        """Drop saved scans: of these archive parts, and of any not touched since ``before``."""
+        names = list(archives)
+        with self.transaction():
+            gone = 0
+            for name in names:
+                gone += self._db.execute(
+                    "DELETE FROM scan_parts WHERE archive = ?", (name,)
+                ).rowcount
+            if before is not None:
+                gone += self._db.execute(
+                    "DELETE FROM scan_parts WHERE updated_at < ?", (_to_text(before),)
+                ).rowcount
+        return gone
 
     # --- runs and completed exports ------------------------------------------------------------
 
