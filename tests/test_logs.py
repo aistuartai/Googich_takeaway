@@ -146,3 +146,14 @@ def test_tail_after_a_restart_starts_again() -> None:
         assert [e.message for e in buffer.query(after=4000)] == ["after restart"]
     finally:
         logger.removeHandler(buffer)
+
+
+def test_share_reads_are_not_logged_one_by_one(tmp_path: Path) -> None:
+    import logging
+
+    from googich_takeaway.logs import setup_logging
+
+    setup_logging(tmp_path / "state.db")
+    for name in ("smbprotocol", "smbprotocol.open", "smbclient"):
+        assert not logging.getLogger(name).isEnabledFor(logging.INFO)
+    assert logging.getLogger("smbprotocol.open").isEnabledFor(logging.WARNING)

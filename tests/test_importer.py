@@ -257,3 +257,21 @@ def test_uploads_deleted_in_immich_stop_being_checked(tmp_path: Path) -> None:
     assert (check.verified, check.remaining) == (12, 0)  # nothing left waiting forever
     statuses = [rec.status for rec in all_uploads(r.state, "immich")]
     assert statuses.count(UploadStatus.GONE) == 1
+
+
+def test_catching_up_is_shown_then_cleared(monkeypatch: pytest.MonkeyPatch) -> None:
+    from googich_takeaway import importer
+    from googich_takeaway.progress import Stage, Tracker
+
+    clock = iter([100.0, 100.2, 101.5])
+    monkeypatch.setattr("googich_takeaway.importer.time.monotonic", lambda: next(clock))
+    tracker = Tracker()
+    tracker.start_run()
+    tracker.plan(Stage.UPLOAD, [("a.jpg", 1)])
+    catching_up = importer.CatchingUp("takeout-x-002.tgz", tracker)
+    catching_up(4_000_000_000)
+    view = next(v for v in tracker.snapshot().stages if v.stage is Stage.UPLOAD)
+    assert view.detail.startswith("Catching up in takeout-x-002.tgz: 4.0 GB")
+    catching_up.found()
+    view = next(v for v in tracker.snapshot().stages if v.stage is Stage.UPLOAD)
+    assert view.detail == ""

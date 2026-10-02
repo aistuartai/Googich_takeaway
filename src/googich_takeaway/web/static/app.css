@@ -681,3 +681,4 @@ pre.command { background: var(--surface); border: 1px solid var(--line); border-
 pre.command code { background: none; padding: 0; color: var(--ink); white-space: pre; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .8125rem; }
 .helper-upgrade { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1rem 0; }
 .station-pending { color: var(--ink); margin-top: .2rem; }
+.stage-detail { margin: -.9rem 0 .6rem; font-weight: 600; color: var(--ink); }

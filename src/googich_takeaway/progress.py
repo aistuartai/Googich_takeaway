@@ -74,6 +74,8 @@ class StageView:
     files_skipped: int = 0
     recent: list[Item] = field(default_factory=list)
     """The last few files finished."""
+    detail: str = ""
+    """What the stage is doing besides moving files, e.g. catching up in an archive."""
 
     @property
     def fraction(self) -> float:
@@ -119,6 +121,7 @@ class _StageState:
     window_bytes: int = 0
     window_start: float = 0.0
     started_at: float | None = None
+    detail: str = ""
 
 
 class RunStopped(BaseException):
@@ -178,6 +181,11 @@ class Tracker:
         kind = self._stop_kind
         if kind is not None:
             raise RunStopped(kind)
+
+    def set_detail(self, stage: Stage, text: str) -> None:
+        """Say what a stage is doing between files; empty to clear it."""
+        with self._lock:
+            self._stages[stage].detail = text
 
     def finish_run(self) -> dict[Stage, float]:
         """End the run; returns the rates measured, to remember for the next run's estimates."""
@@ -389,6 +397,7 @@ class Tracker:
             files_failed=state.files_failed,
             files_skipped=state.files_skipped,
             recent=list(state.recent),
+            detail=state.detail,
         )
 
 

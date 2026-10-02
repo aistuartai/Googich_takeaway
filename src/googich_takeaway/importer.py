@@ -14,6 +14,7 @@ files already sent are found by Immich's duplicate check and adopted, never sent
 """
 
 import io
+import time
 from collections.abc import Callable
 from concurrent.futures import ALL_COMPLETED, FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
@@ -30,7 +31,7 @@ from googich_takeaway.destinations.immich import (
     ImmichNotFoundError,
 )
 from googich_takeaway.destinations.xmp import build_xmp
-from googich_takeaway.progress import ItemState, Stage, Tracker
+from googich_takeaway.progress import ItemState, Stage, Tracker, format_size
 from googich_takeaway.state import State, UploadRecord, UploadStatus
 from googich_takeaway.takeout.archives import ArchiveSource, Readable, iter_entries
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem
@@ -318,7 +319,9 @@ def _upload(
     with ThreadPoolExecutor(max_workers=parallel, thread_name_prefix="googich-upload") as pool:
         try:
             for archive in sorted(archives, key=lambda a: a.name):
-                for entry in iter_entries(archive, only=archives[archive]):
+                passed = CatchingUp(archive.name, tracker)
+                for entry in iter_entries(archive, only=archives[archive], skipped=passed):
+                    passed.found()
                     found.add(entry.path)
                     item = wanted[entry.path]
                     if parallel > 1 and item.size <= PARALLEL_MAX_BYTES:
@@ -354,6 +357,35 @@ def _upload(
         result.failed.append((item, why))
         if tracker:
             tracker.end(Stage.UPLOAD, item.path, ItemState.FAILED, why)
+
+
+class CatchingUp:
+    """Progress while the upload passes over files already done, to reach the next new one.
+
+    A resumed run must read a .tgz from its start; without this the bar would sit at 0% for
+    as long as that takes."""
+
+    def __init__(self, archive: str, tracker: Tracker | None) -> None:
+        self._archive = archive
+        self._tracker = tracker
+        self._passed = 0
+        self._shown_at = 0.0
+
+    def __call__(self, size: int) -> None:
+        self._passed += size
+        now = time.monotonic()
+        if self._tracker and now - self._shown_at >= 1.0:
+            self._shown_at = now
+            self._tracker.set_detail(
+                Stage.UPLOAD,
+                f"Catching up in {self._archive}: {format_size(self._passed)} of files already "
+                "done passed over, to reach the next new one.",
+            )
+
+    def found(self) -> None:
+        if self._tracker and self._shown_at:
+            self._tracker.set_detail(Stage.UPLOAD, "")
+        self._shown_at = 0.0
 
 
 def _verify(

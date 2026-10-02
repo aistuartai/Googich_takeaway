@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- While uploading, the dashboard says when it is catching up: a resumed run passes over the
+  files already done to reach the next new one (a `.tgz` must be read from its start for that),
+  and the bar used to sit at 0% meanwhile. Before uploading, it says it is checking which files
+  Immich already has.
+- Files on an SMB share are read with 1 MB buffers, so small reads (zip directories, metadata
+  files) cost far fewer round trips.
+
+### Fixed
+
+- The SMB library logged every block read from a share, dozens of lines a second, which cost
+  CPU, slowed reading and filled the logs. Only its warnings and errors are kept.
+
 ## [0.3.7] - 2026-10-02
 
 ### Added

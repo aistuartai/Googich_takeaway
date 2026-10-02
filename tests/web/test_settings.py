@@ -1130,3 +1130,18 @@ def test_photos_waiting_and_in_immich_count_up_while_uploading(world: World) -> 
         assert "7 of the latest export's 20" in page
     finally:
         worker.release_from_demo()
+
+
+def test_stage_details_show_on_the_dashboard(world: World) -> None:
+    from googich_takeaway.progress import Stage
+
+    _ready(world)
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        worker.tracker.plan(Stage.UPLOAD, [("a.jpg", 10)])
+        worker.tracker.set_detail(Stage.UPLOAD, "Catching up in takeout-x-002.tgz: 4.0 GB")
+        page = world.client.get("/status").text
+        assert '<p class="stage-detail">Catching up in takeout-x-002.tgz: 4.0 GB</p>' in page
+    finally:
+        worker.release_from_demo()

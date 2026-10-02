@@ -8,7 +8,7 @@ import re
 import tarfile
 import zipfile
 import zlib
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Protocol
@@ -79,12 +79,15 @@ def _open(source: ArchiveSource) -> IO[bytes]:
 
 
 def iter_entries(
-    source: ArchiveSource, only: Collection[str] | None = None
+    source: ArchiveSource,
+    only: Collection[str] | None = None,
+    skipped: Callable[[int], None] | None = None,
 ) -> Iterator[ArchiveEntry]:
     """Yield every regular file in a zip or tgz archive, in archive order.
 
     With ``only``, yield just those paths, and stop as soon as all have been found: a zip
-    opens only those entries, and a tgz is not read past the last one."""
+    opens only those entries, and a tgz is not read past the last one. ``skipped`` is told
+    the size of each file passed over on the way, so progress can show the catching up."""
     kind = archive_format(source)
     wanted = None if only is None else set(only)
     if wanted is not None and not wanted:
@@ -92,18 +95,27 @@ def iter_entries(
     try:
         with _open(source) as handle:
             if kind == "zip":
-                yield from _iter_zip(handle, source.name, wanted)
+                yield from _iter_zip(handle, source.name, wanted, skipped)
             else:
-                yield from _iter_tgz(handle, source.name, wanted)
+                yield from _iter_tgz(handle, source.name, wanted, skipped)
     except _READ_ERRORS as error:
         raise ArchiveError(f"{source.name}: {error}") from error
 
 
-def _iter_zip(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator[ArchiveEntry]:
+def _iter_zip(
+    handle: IO[bytes],
+    name: str,
+    wanted: set[str] | None,
+    skipped: Callable[[int], None] | None = None,
+) -> Iterator[ArchiveEntry]:
     # Zip needs random access to its central directory; local files and SMB handles both seek.
     with zipfile.ZipFile(handle) as archive:
         for info in archive.infolist():
-            if info.is_dir() or (wanted is not None and info.filename not in wanted):
+            if info.is_dir():
+                continue
+            if wanted is not None and info.filename not in wanted:
+                if skipped:
+                    skipped(info.file_size)
                 continue
             with archive.open(info) as stream:
                 guarded = _GuardedStream(stream, name, info.filename)
@@ -133,7 +145,12 @@ class _BoundedTarInfo(tarfile.TarInfo):
             raise tarfile.HeaderError(f"a {self.size}-byte header; refusing to read it")
 
 
-def _iter_tgz(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator[ArchiveEntry]:
+def _iter_tgz(
+    handle: IO[bytes],
+    name: str,
+    wanted: set[str] | None,
+    skipped: Callable[[int], None] | None = None,
+) -> Iterator[ArchiveEntry]:
     # Stream mode ("r|gz") reads sequentially, which suits network shares; no seeking. Reads of
     # 1 MB, not tarfile's 10 KB, mean far fewer round trips to an SMB share.
     with tarfile.open(
@@ -143,6 +160,8 @@ def _iter_tgz(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator
             if not member.isfile():
                 continue  # directories, links and devices are never followed
             if wanted is not None and member.name not in wanted:
+                if skipped:
+                    skipped(member.size)
                 continue
             stream = archive.extractfile(member)
             if stream is None:

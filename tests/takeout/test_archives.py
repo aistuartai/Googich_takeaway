@@ -143,3 +143,15 @@ def test_a_huge_tar_header_is_refused_without_reading_it(tmp_path: Path) -> None
     path.write_bytes(gzip.compress(block + b"\0" * 4096))
     with pytest.raises(ArchiveError, match="header"):
         list(iter_entries(path))
+
+
+def test_files_passed_over_are_reported(tmp_path: Path) -> None:
+    names = [f"Takeout/p{n}.jpg" for n in range(4)]
+    path = tmp_path / "takeout-x-001.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        for name in names:
+            archive.writestr(name, b"x" * 100)
+    passed: list[int] = []
+    found = [e.path for e in iter_entries(path, only={names[2]}, skipped=passed.append)]
+    assert found == [names[2]]
+    assert passed == [100, 100]  # the two before it; it stops after the last one wanted

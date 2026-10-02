@@ -233,7 +233,8 @@ def setup_logging(state_path: Path, level: int = logging.INFO) -> Logs:
         root.addHandler(handler)
     root.setLevel(level)
     # Libraries that log request URLs at INFO (httpx) are kept to warnings.
-    for noisy in ("httpx", "httpcore", "apprise", "google"):
+    # smbprotocol logs every block read from a share at INFO: dozens of lines a second.
+    for noisy in ("httpx", "httpcore", "apprise", "google", "smbprotocol", "smbclient", "spnego"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").addFilter(_QuietAccessFilter())
     return Logs(buffer=buffer, directory=directory)

@@ -352,7 +352,15 @@ class Pipeline:
         )
         if self.tracker:
             self.tracker.end(Stage.SCAN, export_id)
+        if self.tracker:
+            self.tracker.set_detail(
+                Stage.SCAN,
+                f"Checking which of {len(scan.unique_items()):,} photos and videos Immich "
+                "already has.",
+            )
         checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
+        if self.tracker:
+            self.tracker.set_detail(Stage.SCAN, "")
         plan = plan_import(
             export_id, scan, checks, self.state, self.destination, self.options.reimport
         )

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import IO, Any, Protocol
 
 ARCHIVE_SUFFIXES = (".zip", ".tgz", ".tar.gz")
+SMB_BUFFER = 1024 * 1024
 
 
 class LocationError(Exception):
@@ -250,7 +251,11 @@ class SmbLocation:
 
     def open_read(self, name: str) -> IO[bytes]:
         with self._errors(f"open {name}"):
-            handle: IO[bytes] = self._smb.open_file(self._path(name), mode="rb", **self._auth)
+            # 1 MB buffers: small reads (zip directories, metadata files) then cost one round trip
+            # to the share per megabyte, not per few kilobytes.
+            handle: IO[bytes] = self._smb.open_file(
+                self._path(name), mode="rb", buffering=SMB_BUFFER, **self._auth
+            )
             return handle
 
     def open_append(self, name: str, create_owner_only: bool = True) -> IO[bytes]:
