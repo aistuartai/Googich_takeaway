@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Respon
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from googich_takeaway import __version__, cleanup, updates
 from googich_takeaway.config import (
@@ -89,6 +90,10 @@ class WebSettings:
     """Defaults to $GOOGICH_MASTER_KEY_FILE, or master.key next to the state database."""
     demo: bool = False
     """Offer a simulated run for previewing the progress views (GOOGICH_DEMO=1)."""
+    trusted_proxies: tuple[str, ...] = ()
+    """Reverse proxies (IP addresses or networks) whose X-Forwarded-Proto and X-Forwarded-For
+    headers are believed (GOOGICH_TRUSTED_PROXIES). Without them, the app behind an HTTPS proxy
+    sees plain http and refuses form posts as cross-site."""
 
 
 ImmichFactory = Callable[[str, str], ImmichClient]
@@ -848,6 +853,11 @@ def create_app(
         return templates.TemplateResponse(request, "_result.html", {"ok": ok, "message": message})
 
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    if settings.trusted_proxies:
+        # Added last, so it is the outermost layer: the origin check, Secure cookies and login
+        # throttling all see the scheme and client address the proxy reports. Only these
+        # proxies' forwarded headers are believed; anyone else's are ignored.
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=list(settings.trusted_proxies))
     return app
 
 

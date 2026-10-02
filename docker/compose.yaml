@@ -18,7 +18,7 @@
 
 services:
   googich:
-    image: ghcr.io/aistuartai/googich_takeaway:0.2.0
+    image: ghcr.io/aistuartai/googich_takeaway:0.2.1
     container_name: googich
     restart: unless-stopped
     ports:
@@ -26,6 +26,9 @@ services:
     environment:
       TZ: Australia/Melbourne
       GOOGICH_MASTER_KEY_FILE: /run/secrets/master_key
+      # Behind an HTTPS reverse proxy (Nginx Proxy Manager, Caddy, Traefik): its IP address, so
+      # the app knows browsers use https. Without it, saving forms fails as "Cross-site".
+      # GOOGICH_TRUSTED_PROXIES: 192.168.1.10
     secrets:
       - master_key
     volumes:

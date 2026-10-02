@@ -225,3 +225,48 @@ def test_null_origin_is_refused(tmp_path: Path, clock: Clock) -> None:
 
 def test_health_answers_head_for_monitors(tmp_path: Path, clock: Clock) -> None:
     assert make(tmp_path, clock).head("/healthz").status_code == 200
+
+
+def proxied(tmp_path: Path, clock: Clock, trusted: tuple[str, ...]) -> TestClient:
+    app = create_app(
+        WebSettings(tmp_path / "state.db", trusted_proxies=trusted),
+        clock=clock,
+        throttle=LoginThrottle(clock=clock.monotonic),
+        start_worker=False,
+    )
+    # The test client plays the proxy at 192.0.2.10; the headers below describe the browser.
+    return TestClient(
+        app, base_url="http://googich.example", follow_redirects=False, client=("192.0.2.10", 5000)
+    )
+
+
+HTTPS_PROXY = {
+    "X-Forwarded-Proto": "https",
+    "X-Forwarded-For": "192.0.2.50",
+    "Origin": "https://googich.example",
+}
+
+
+def test_behind_a_trusted_https_proxy_forms_work_and_cookies_are_secure(
+    tmp_path: Path, clock: Clock
+) -> None:
+    client = proxied(tmp_path, clock, ("192.0.2.10",))
+    token = client.app.state.setup_token  # type: ignore[attr-defined]
+    response = client.post(
+        "/setup",
+        data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
+        headers=HTTPS_PROXY,
+    )
+    assert response.status_code == 303
+    assert "secure" in response.headers["set-cookie"].lower()
+
+
+def test_forwarded_headers_from_untrusted_clients_are_ignored(tmp_path: Path, clock: Clock) -> None:
+    client = proxied(tmp_path, clock, ("192.0.2.1",))  # some other proxy, not this client
+    token = client.app.state.setup_token  # type: ignore[attr-defined]
+    response = client.post(
+        "/setup",
+        data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
+        headers=HTTPS_PROXY,
+    )
+    assert response.status_code == 403  # still refused: the https claim is not believed

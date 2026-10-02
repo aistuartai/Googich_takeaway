@@ -18,21 +18,44 @@ if [ "$1 $2" = "compose up" ]; then
 fi
 """
 CURL = """#!/bin/bash
-url="${@: -1}"
+# Stand-in for curl: understands -o FILE and -w FORMAT as the helper uses them.
+out=""; fmt=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w) fmt="$2"; shift 2 ;;
+    -H|--max-time) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+reply() {  # code body
+  if [ -n "$out" ]; then printf '%s' "$2" > "$out"; else printf '%s' "$2"; fi
+  [ -n "$fmt" ] && printf '%s' "$1"
+  return 0
+}
 case "$url" in
   *releases/tags/v0.1.2)
-    printf '{\\n "tag_name": "v0.1.2",\\n "draft": false,\\n "prerelease": false\\n}' ;;
-  *releases/tags/v0.1.3) printf '{"tag_name": "v0.1.3", "draft": false, "prerelease": true}' ;;
+    if [ -n "$STUB_RATE_LIMITED" ]; then reply 403 '{"message": "API rate limit exceeded"}'
+    else reply 200 '{
+ "tag_name": "v0.1.2",
+ "draft": false,
+ "prerelease": false
+}'; fi ;;
+  *releases/tags/v0.1.3) reply 200 '{"tag_name": "v0.1.3", "draft": false, "prerelease": true}' ;;
+  *releases/tags/*) reply 404 '{"message": "Not Found"}' ;;
   *healthz) running=$(cat "$STUB_RUNNING"); [ "$running" = "$STUB_BROKEN" ] && exit 7
             printf '{"status":"ok","version":"%s"}' "$running" ;;
-  *) exit 22 ;;
+  *) exit 6 ;;
 esac
 """
 
 pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
 
 
-def run(tmp_path: Path, request: str, broken: str = "none") -> tuple[dict[str, str], str, str]:
+def run(
+    tmp_path: Path, request: str, broken: str = "none", rate_limited: bool = False
+) -> tuple[dict[str, str], str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name, body in (("docker", DOCKER), ("curl", CURL), ("sleep", "#!/bin/bash\nexit 0\n")):
@@ -52,6 +75,7 @@ def run(tmp_path: Path, request: str, broken: str = "none") -> tuple[dict[str, s
         "STUB_RUNNING": str(tmp_path / "running"),
         "STUB_BROKEN": broken,
         "GOOGICH_COMPOSE_DIR": str(compose_dir),
+        "STUB_RATE_LIMITED": "1" if rate_limited else "",
     }
     subprocess.run(["bash", str(SCRIPT)], env=env, check=False, timeout=60)  # noqa: S603, S607
     status = json.loads((updater / "status.json").read_text())
@@ -89,5 +113,14 @@ def test_rolls_back_when_the_new_version_is_unhealthy(tmp_path: Path) -> None:
     status, compose, running = run(tmp_path, '{"version": "0.1.2"}', broken="0.1.2")
     assert status["state"] == "failed"
     assert "Rolled back to 0.1.1" in status["message"]
+    assert "googich_takeaway:0.1.1" in compose
+    assert running.strip() == "0.1.1"
+
+
+def test_rate_limited_github_is_not_mistaken_for_an_unpublished_release(tmp_path: Path) -> None:
+    status, compose, running = run(tmp_path, '{"version": "0.1.2"}', rate_limited=True)
+    assert status["state"] == "failed"
+    assert "Could not ask GitHub to confirm 0.1.2 (HTTP 403" in status["message"]
+    assert "not a published release" not in status["message"]
     assert "googich_takeaway:0.1.1" in compose
     assert running.strip() == "0.1.1"

@@ -31,7 +31,7 @@ Requirements: Docker with Compose, an Immich server, and space for one full Take
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.2.0/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.2.1/docker/compose.yaml
 less compose.yaml   # read what you are about to run
 
 # A data folder, and a master key that encrypts the credentials you enter later. Both belong to
@@ -54,6 +54,20 @@ version, so the app changes only when you update it.
 Edit `compose.yaml` first if you want a different port, time zone, or a large local disk for
 downloads. The web interface is meant for your local network; put it behind HTTPS (a reverse
 proxy) if you reach it from anywhere else.
+
+### Behind a reverse proxy (HTTPS)
+
+Behind Nginx Proxy Manager, Caddy, Traefik or similar, tell the app the proxy's IP address, so it
+knows browsers reach it over https. Without this, saving any form fails with "Cross-site request
+refused", and the session cookie is not marked secure. In `compose.yaml`:
+
+```yaml
+    environment:
+      GOOGICH_TRUSTED_PROXIES: 192.168.1.10   # the proxy's address; separate several with commas
+```
+
+Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are believed. The proxy
+must pass the original `Host` header, which Nginx Proxy Manager does by default.
 
 ## First-time setup in the web interface
 
@@ -130,7 +144,7 @@ To install it, as root on the Docker host, in the folder holding `compose.yaml` 
 
 ```bash
 cd /opt/googich
-V=0.2.0
+V=0.2.1
 base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
 install -d -m 755 /usr/local/lib/googich-updater
 curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh

@@ -354,7 +354,12 @@ def _serve(args: argparse.Namespace) -> int:
         logging.getLogger("googich").warning(
             "Demo mode: a simulated run can be played from the dashboard"
         )
-    app = create_app(WebSettings(args.state, demo=demo), logs=logs)
+    proxies = tuple(
+        p.strip() for p in os.environ.get("GOOGICH_TRUSTED_PROXIES", "").split(",") if p.strip()
+    )
+    if proxies:
+        logging.getLogger("googich").info("Trusting forwarded headers from %s", ", ".join(proxies))
+    app = create_app(WebSettings(args.state, demo=demo, trusted_proxies=proxies), logs=logs)
     uvicorn.run(
         app,
         host=args.host,

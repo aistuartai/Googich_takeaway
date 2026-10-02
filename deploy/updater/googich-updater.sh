@@ -56,9 +56,31 @@ if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
 fi
 
 status updating "Checking that $version is a published release." "$version"
-release=$(curl -fsS --max-time 20 -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/$REPOSITORY/releases/tags/v$version" 2>/dev/null || true)
-flat=$(printf '%s' "$release" | tr -d '\n\r\t ')
+answer="$UPDATER_DIR/.release.json"
+code=000
+for attempt in 1 2 3; do
+  code=$(curl -sS --max-time 20 -o "$answer" -w '%{http_code}' \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$REPOSITORY/releases/tags/v$version" 2>/dev/null || true)
+  case "$code" in
+    200|404) break ;;
+  esac
+  # Rate limited (GitHub allows 60 anonymous requests an hour per address), a server error or
+  # no network: wait and try again rather than calling a real release unpublished.
+  [ "$attempt" -lt 3 ] && sleep 20
+done
+if [ "$code" = "404" ]; then
+  rm -f "$answer"
+  status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
+  exit 1
+fi
+if [ "$code" != "200" ]; then
+  rm -f "$answer"
+  status failed "Could not ask GitHub to confirm $version (HTTP $code: rate limited, offline or a GitHub problem). Nothing was changed; try again later." "$version"
+  exit 1
+fi
+flat=$(tr -d '\n\r\t ' < "$answer")
+rm -f "$answer"
 if ! { printf '%s' "$flat" | grep -q "\"tag_name\":\"v$version\"" \
        && printf '%s' "$flat" | grep -q '"draft":false' \
        && printf '%s' "$flat" | grep -q '"prerelease":false'; }; then

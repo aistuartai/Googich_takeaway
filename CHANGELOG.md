@@ -7,6 +7,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-02
+
+### Fixed
+
+- Behind an HTTPS reverse proxy, every form was refused as "Cross-site request refused": the app
+  saw plain http from the proxy while the browser said https. Set `GOOGICH_TRUSTED_PROXIES` to
+  the proxy's address and the app believes its forwarded scheme and client address, which also
+  marks the session cookie secure and throttles logins by the real client. Headers from any other
+  address are ignored.
+- The update helper no longer reports a real release as "not a published release" when GitHub
+  is rate limiting anonymous requests (60 an hour per address) or cannot be reached. It retries,
+  and if GitHub still cannot be asked it says so and changes nothing.
+
 ## [0.2.0] - 2026-10-02
 
 A new look, one-click updates, and safer defaults for new installs.
@@ -164,7 +177,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.0
