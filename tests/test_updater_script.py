@@ -189,13 +189,54 @@ def test_refuses_an_updater_folder_the_container_could_tamper_with(tmp_path: Pat
 
 
 INSTALL = SCRIPT.parent / "install-updater.sh"
+HELPER_FILES = ("googich-updater.sh", "googich-updater.path", "googich-updater.service")
+
+
+def _release(tmp_path: Path, tamper: str = "") -> Path:
+    """The release's helper files and SHA256SUMS, as the release workflow publishes them."""
+    import hashlib
+
+    release = tmp_path / "release"
+    release.mkdir()
+    sums = []
+    for name in HELPER_FILES:
+        data = (SCRIPT.parent / name).read_bytes()
+        sums.append(f"{hashlib.sha256(data).hexdigest()}  {name}\n")
+        (release / name).write_bytes(data + (b"# changed\n" if name == tamper else b""))
+    (release / "SHA256SUMS").write_text("".join(sums))
+    return release
 
 
 def test_installer_sets_everything_up_from_the_running_release(tmp_path: Path) -> None:
     """install-updater.sh, with stand-ins for the commands that need root or the network."""
+    result, site, calls = _install(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "releases/download/v0.3.4/googich-updater.sh" in calls
+    assert "releases/download/v0.3.4/SHA256SUMS" in calls
+    assert "systemctl enable --now googich-updater.path" in calls
+    assert (tmp_path / "lib" / "googich-updater.sh").stat().st_mode & 0o777 == 0o755
+    path_unit = (tmp_path / "units" / "googich-updater.path").read_text()
+    assert f"PathChanged={site}/data/updater/request.json" in path_unit
+    service = (tmp_path / "units" / "googich-updater.service").read_text()
+    assert f"GOOGICH_COMPOSE_DIR={site}" in service
+    assert (site / "data" / "updater").stat().st_mode & 0o7777 == 0o1770
+    assert not (site / "data" / "updater" / ".lock").exists()
+
+
+def test_installer_refuses_files_that_do_not_match_their_checksums(tmp_path: Path) -> None:
+    result, _, _ = _install(tmp_path, tamper="googich-updater.sh")
+    assert result.returncode == 1
+    assert "do not match the release's checksums" in result.stderr
+    assert not (tmp_path / "lib" / "googich-updater.sh").exists()  # nothing installed
+
+
+def _install(
+    tmp_path: Path, tamper: str = ""
+) -> tuple[subprocess.CompletedProcess[str], Path, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "log"
+    release = _release(tmp_path, tamper)
     stubs = {
         "id": "#!/bin/bash\necho 0\n",
         "curl": f"""#!/bin/bash
@@ -204,7 +245,7 @@ while [ $# -gt 0 ]; do
   case "$1" in -o) out="$2"; shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac
 done
 echo "curl $url" >> "{log}"
-cp "{SCRIPT.parent}/$(basename "$url")" "$out"
+cp "{release}/$(basename "$url")" "$out"
 """,
         "systemctl": f'#!/bin/bash\necho "systemctl $*" >> "{log}"\n',
         "chown": f'#!/bin/bash\necho "chown $*" >> "{log}"\n',
@@ -238,19 +279,7 @@ exec /usr/bin/install "${args[@]}"
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, result.stderr
-    calls = log.read_text()
-    assert "Googich_takeaway/v0.3.4/deploy/updater/googich-updater.sh" in calls
-    assert "systemctl enable --now googich-updater.path" in calls
-    assert (tmp_path / "lib" / "googich-updater.sh").stat().st_mode & 0o777 == 0o755
-    path_unit = (tmp_path / "units" / "googich-updater.path").read_text()
-    assert f"PathChanged={site}/data/updater/request.json" in path_unit
-    assert (
-        f"GOOGICH_COMPOSE_DIR={site}"
-        in (tmp_path / "units" / "googich-updater.service").read_text()
-    )
-    assert (site / "data" / "updater").stat().st_mode & 0o7777 == 0o1770
-    assert not (site / "data" / "updater" / ".lock").exists()
+    return result, site, log.read_text() if log.exists() else ""
 
 
 def test_installer_needs_a_fixed_version(tmp_path: Path) -> None:

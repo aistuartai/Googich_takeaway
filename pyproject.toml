@@ -1,6 +1,6 @@
 [project]
 name = "googich-takeaway"
-version = "0.3.4"
+version = "0.3.5"
 description = "Self-hosted tool that moves Google Photos into Immich using Google Takeout archives."
 readme = "README.md"
 license = "MIT"
@@ -52,6 +52,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/googich_takeaway"]
+
+# The update helper's files ship inside the app too, so it can show their checksums.
+[tool.hatch.build.targets.wheel.force-include]
+"deploy/updater" = "googich_takeaway/updater_files"
 
 [tool.ruff]
 line-length = 100

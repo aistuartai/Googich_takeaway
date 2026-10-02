@@ -126,7 +126,12 @@ def create_app(
     if logs is None:
         logging.getLogger().addHandler(log_store.buffer)  # tests and embedded use
     templates = Jinja2Templates(directory=HERE / "templates")
-    templates.env.globals.update(version=__version__, default_look=Look(), demo=settings.demo)
+    templates.env.globals.update(
+        version=__version__,
+        default_look=Look(),
+        demo=settings.demo,
+        installer_sha256=updates.installer_sha256(),
+    )
     templates.env.filters.update(
         duration=format_duration, size=format_size, export_date=_export_date
     )

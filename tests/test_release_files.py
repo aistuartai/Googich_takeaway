@@ -34,7 +34,8 @@ def test_every_versioned_link_names_the_current_release() -> None:
     """Install and update commands point at this release's files."""
     version = _version()
     for path in ("README.md", "src/googich_takeaway/docs/updates.md"):
-        found = set(re.findall(r"Googich_takeaway/v(\d+\.\d+\.\d+)/", (ROOT / path).read_text()))
+        text = (ROOT / path).read_text()
+        found = set(re.findall(r"Googich_takeaway/(?:releases/download/)?v(\d+\.\d+\.\d+)/", text))
         assert found == {version}, f"bump the version in links in {path}"
 
 

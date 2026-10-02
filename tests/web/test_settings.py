@@ -1040,7 +1040,7 @@ def test_an_old_update_helper_is_offered_a_one_command_upgrade(world: World) -> 
     page = world.client.get("/updates").text
     assert "The update helper can be upgraded." in page
     assert (
-        f"raw.githubusercontent.com/aistuartai/Googich_takeaway/v{__version__}/deploy/updater/"
+        f"github.com/aistuartai/Googich_takeaway/releases/download/v{__version__}/"
         "install-updater.sh" in page
     )
     assert "sudo bash install-updater.sh /opt/googich" in page
@@ -1075,3 +1075,13 @@ def test_uploads_at_a_time_is_set_in_settings(world: World) -> None:
     assert world.post("/settings/uploads", data={"parallel": "6"}).status_code == 303
     assert 'value="6"' in world.client.get("/settings").text
     assert "between 1 and 8" in world.post("/settings/uploads", data={"parallel": "20"}).text
+
+
+def test_install_command_checks_the_installer_against_the_app(world: World) -> None:
+    import hashlib
+
+    from tests.test_updater_script import INSTALL
+
+    expected = hashlib.sha256(INSTALL.read_bytes()).hexdigest()
+    page = world.client.get("/updates").text
+    assert f'echo "{expected}  install-updater.sh" | sha256sum -c' in page

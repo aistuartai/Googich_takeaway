@@ -49,20 +49,25 @@ Progress and the result appear in the banner and under Help → Updates.
 On the Docker host, run:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.4/deploy/updater/install-updater.sh
+curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.5/install-updater.sh
 sudo bash install-updater.sh /opt/googich
 ```
 
-Change `/opt/googich` if `compose.yaml` is somewhere else. Help → Updates shows the same
-command, for the version you are running.
+Change `/opt/googich` if `compose.yaml` is somewhere else. In a Proxmox container, run it inside
+the container with `pct exec <id> -- bash -c '…'`, without `sudo`.
+
+**Help → Updates shows the same command for the version you run, with one more line** that
+checks the installer's SHA-256 against the copy inside the app, so a changed download is caught
+before it runs. The installer then checks every helper file it downloads against the release's
+published checksums, and installs nothing if one does not match.
 
 **The same command upgrades it.** When a release brings a newer helper, Help → Updates (and the
 *Update complete* banner) says so; run the command again.
 
 What it does, as root:
 
-1. reads the version you run from `compose.yaml`, and downloads that release's helper files from
-   GitHub;
+1. reads the version you run from `compose.yaml`, downloads that release's helper files from
+   GitHub, and checks each against the release's SHA-256 sums;
 2. installs the script in `/usr/local/lib/googich-updater/` and two systemd units that watch
    for requests from the app;
 3. makes `data/updater` belong to root with the sticky bit set (mode `1770`): the app can add

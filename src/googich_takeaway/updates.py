@@ -238,6 +238,24 @@ def helper_status(data_dir: Path) -> HelperStatus | None:
     )
 
 
+def installer_sha256() -> str | None:
+    """SHA-256 of this release's install-updater.sh, from the copy shipped inside the app.
+
+    Shown beside the install command, so the downloaded installer can be checked against a
+    source already trusted (the app image), not only against GitHub."""
+    import hashlib
+    from importlib.resources import files
+
+    shipped = files("googich_takeaway").joinpath("updater_files", "install-updater.sh")
+    in_checkout = Path(__file__).parents[2] / "deploy" / "updater" / "install-updater.sh"
+    for read in (shipped.read_bytes, in_checkout.read_bytes):  # installed app, then a checkout
+        try:
+            return hashlib.sha256(read()).hexdigest()
+        except OSError:
+            continue
+    return None
+
+
 def request_update(data_dir: Path, version: str) -> None:
     """Ask the host helper to install ``version``. Raises ValueError if it cannot be asked."""
     if parse_version(version) is None:

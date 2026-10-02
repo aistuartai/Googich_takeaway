@@ -34,13 +34,21 @@ else
 fi
 
 say "Installing the update helper from release $version for $dir"
-base="https://raw.githubusercontent.com/$REPOSITORY/v$version/deploy/updater"
+# Release files, not the repository: the release workflow publishes them with SHA-256 sums
+# (and a build attestation), and every file must match its sum before anything is installed.
+base="https://github.com/$REPOSITORY/releases/download/v$version"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-for file in googich-updater.sh googich-updater.path googich-updater.service; do
-  curl -fsSL "$base/$file" -o "$work/$file" || die "could not download $file for $version"
+for file in SHA256SUMS googich-updater.sh googich-updater.path googich-updater.service; do
+  curl -fsSL "$base/$file" -o "$work/$file" \
+    || die "could not download $file for $version (releases before 0.3.5 have no helper files)"
 done
-head -1 "$work/googich-updater.sh" | grep -q '^#!/bin/bash' || die "the downloaded helper looks wrong"
+(
+  cd "$work"
+  grep -E '  googich-updater\.(sh|path|service)$' SHA256SUMS > wanted.sums
+  [ "$(wc -l < wanted.sums)" = 3 ] || exit 1
+  sha256sum --quiet -c wanted.sums
+) || die "the downloaded helper files do not match the release's checksums; nothing installed"
 
 # Point the units at this folder (they name /opt/googich).
 sed -i "s|/opt/googich|$dir|g" "$work/googich-updater.path" "$work/googich-updater.service"

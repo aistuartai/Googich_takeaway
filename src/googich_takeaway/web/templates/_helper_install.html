@@ -1,4 +1,6 @@
-{#- The one command that installs or upgrades the update helper, for this release. -#}
-<pre class="command"><code>curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v{{ version }}/deploy/updater/install-updater.sh
-sudo bash install-updater.sh /opt/googich</code></pre>
-<small>Run it on the Docker host, in any folder; change <code>/opt/googich</code> if <code>compose.yaml</code> is elsewhere. Read the script first if you like: it is short, and it runs as root.</small>
+{#- The one command that installs or upgrades the update helper, for this release. The checksum
+    comes from the copy inside this app, so the download is checked against more than GitHub. -#}
+<pre class="command"><code>curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v{{ version }}/install-updater.sh
+{% if installer_sha256 %}echo "{{ installer_sha256 }}  install-updater.sh" | sha256sum -c \
+  && {% endif %}sudo bash install-updater.sh /opt/googich</code></pre>
+<small>Run it on the Docker host, in any folder; change <code>/opt/googich</code> if <code>compose.yaml</code> is elsewhere (in a Proxmox container, run it inside with <code>pct exec</code>, without <code>sudo</code>). {% if installer_sha256 %}The second line checks the installer matches the one this app came with; the installer then checks every file it downloads.{% endif %}</small>
