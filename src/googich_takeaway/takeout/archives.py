@@ -111,9 +111,31 @@ def _iter_zip(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator
                     return
 
 
+MAX_TAR_HEADER = 1024 * 1024
+"""Largest long-name or PAX header accepted: tarfile reads these whole, so a tiny crafted
+archive could otherwise claim gigabytes and exhaust memory. Real ones are a few hundred bytes."""
+
+
+class _BoundedTarInfo(tarfile.TarInfo):
+    def _proc_gnulong(self, tarfile: tarfile.TarFile) -> tarfile.TarInfo:
+        self._check_header()
+        return super()._proc_gnulong(tarfile)  # type: ignore[misc, no-any-return]
+
+    def _proc_pax(self, tarfile: tarfile.TarFile) -> tarfile.TarInfo:
+        self._check_header()
+        return super()._proc_pax(tarfile)  # type: ignore[misc, no-any-return]
+
+    def _check_header(self) -> None:
+        if self.size > MAX_TAR_HEADER:
+            raise tarfile.HeaderError(f"a {self.size}-byte header; refusing to read it")
+
+
 def _iter_tgz(handle: IO[bytes], name: str, wanted: set[str] | None) -> Iterator[ArchiveEntry]:
-    # Stream mode ("r|gz") reads sequentially, which suits network shares; no seeking.
-    with tarfile.open(fileobj=handle, mode="r|gz") as archive:
+    # Stream mode ("r|gz") reads sequentially, which suits network shares; no seeking. Reads of
+    # 1 MB, not tarfile's 10 KB, mean far fewer round trips to an SMB share.
+    with tarfile.open(
+        fileobj=handle, mode="r|gz", bufsize=1 << 20, tarinfo=_BoundedTarInfo
+    ) as archive:
         for member in archive:
             if not member.isfile():
                 continue  # directories, links and devices are never followed

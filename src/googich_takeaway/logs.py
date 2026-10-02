@@ -65,17 +65,6 @@ class LogEntry:
     logger: str
     message: str
 
-    def as_json(self) -> str:
-        return json.dumps(
-            {
-                "time": self.time.isoformat(timespec="milliseconds"),
-                "level": self.level,
-                "logger": self.logger,
-                "message": self.message,
-            },
-            ensure_ascii=False,
-        )
-
 
 class _RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -172,6 +161,8 @@ class LogBuffer(logging.Handler):
         needle = text.casefold()
         found: list[LogEntry] = []
         with self._guard:
+            if after > self._seq:
+                after = 0  # the app restarted since the page asked: numbering began again
             # Newest first, stopping at ``after``: the live tail asks every few seconds and
             # usually needs only the last few lines, not a copy of all of them.
             for e in reversed(self._entries):

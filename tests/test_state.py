@@ -164,3 +164,19 @@ def test_sessions_are_checked_without_writing_every_time(tmp_path: Path) -> None
         assert seen == (AT + timedelta(minutes=5)).isoformat()
         assert state.get_session("h", AT + timedelta(days=8)) is None  # expired
         assert state._db.execute("PRAGMA synchronous").fetchone()[0] == 1  # NORMAL
+
+
+def test_a_failed_batch_leaves_no_transaction_open(tmp_path: Path) -> None:
+    def fail_in_the_middle(state: State) -> None:
+        with state.transaction():
+            state.start_run("manual", AT)
+            raise sqlite3.OperationalError("disk I/O error")
+
+    with State(tmp_path / "s.db") as state:
+        with pytest.raises(sqlite3.OperationalError):
+            fail_in_the_middle(state)
+        assert not state._db.in_transaction
+        assert state.recent_runs() == []  # rolled back
+        with state.transaction():  # a later batch still commits
+            state.start_run("manual", AT)
+        assert len(state.recent_runs()) == 1

@@ -140,6 +140,8 @@ class UploadStatus(StrEnum):
     """Read back from the destination with the expected date."""
     DATE_MISMATCH = "date-mismatch"
     """Read back with a different date from the one sent."""
+    GONE = "gone"
+    """Deleted in Immich before its date could be checked: nothing left to check."""
 
 
 @dataclass(frozen=True)
@@ -263,10 +265,11 @@ class State:
         self._db.execute("BEGIN IMMEDIATE")
         try:
             yield
+            self._db.execute("COMMIT")
         except BaseException:
-            self._db.execute("ROLLBACK")
+            if self._db.in_transaction:  # also when COMMIT itself failed: never left half-open
+                self._db.execute("ROLLBACK")
             raise
-        self._db.execute("COMMIT")
 
     def record_upload(self, record: UploadRecord) -> None:
         self._db.execute(
@@ -619,6 +622,12 @@ class State:
             )
             for row in rows
         ]
+
+    def last_run_started(self, trigger: str) -> datetime | None:
+        row = self._db.execute(
+            "SELECT max(started_at) FROM runs WHERE trigger = ?", (trigger,)
+        ).fetchone()
+        return _from_text(row[0]) if row and row[0] else None
 
     def abandon_unfinished_runs(self, at: datetime) -> int:
         """Runs left open by a crash or restart are closed as interrupted."""

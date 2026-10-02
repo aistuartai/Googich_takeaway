@@ -27,6 +27,10 @@ class ImmichError(Exception):
     """Immich could not be reached or answered with an error."""
 
 
+class ImmichNotFoundError(ImmichError):
+    """Immich has no such asset (404), for example because it was deleted there."""
+
+
 class CheckAction(StrEnum):
     ACCEPT = "accept"
     """Immich does not have this file; it would be uploaded."""
@@ -215,6 +219,8 @@ class ImmichClient:
             raise ImmichError("Immich rejected the API key (401)")
         if response.status_code == 403:
             raise ImmichError(f"API key lacks permission for {method} {path} (403)")
+        if response.status_code == 404:
+            raise ImmichNotFoundError(f"Immich has nothing at {method} {path} (404)")
         if response.is_error:
             raise ImmichError(f"Immich answered {response.status_code} for {method} {path}")
         try:

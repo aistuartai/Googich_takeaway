@@ -13,6 +13,7 @@ Matching works on archive paths across all parts of one export, so split exports
 Only files in the same folder are paired. Results are deterministic and record which rule matched.
 """
 
+import bisect
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
@@ -145,6 +146,9 @@ def _match_folder(
         if sidecar.path in titles:
             by_title[titles[sidecar.path]].append(sidecar)
 
+    # Sidecars without a (n), sorted by stem, so a prefix finds its candidates by bisection.
+    plain_stems = sorted((s.stem, s.path, s) for s in sidecars if s.duplicate == 0)
+
     # Pass 1: names derived from the media name.
     for media in media_paths:
         found = _by_name(_name(media), by_stem)
@@ -156,9 +160,7 @@ def _match_folder(
     for media in media_paths:
         if media in results or len(_name(media)) < MIN_TRUNCATED_MEDIA:
             continue
-        found = _by_truncated_media(
-            _name(media), [s for s in sidecars if s.path not in used], titles
-        )
+        found = _by_truncated_media(_name(media), plain_stems, used, titles)
         if found:
             results[media] = SidecarMatch(media, found.path, MatchRule.TRUNCATED_MEDIA)
             used.add(found.path)
@@ -200,8 +202,9 @@ def _by_name(name: str, by_stem: Mapping[tuple[int, str], list[_Sidecar]]) -> _S
     """Sidecar whose stem is the media name, plain or with ``.supplemental-metadata``,
     possibly truncated (the longest such stem wins). Tries the ``(n)`` duplicate reading first.
 
-    Every acceptable stem is a prefix of ``<name>.supplemental-metadata`` (see ``_stem_fits``),
-    so the candidates are looked up prefix by prefix, longest first."""
+    An acceptable stem is a prefix of ``<name>.supplemental-metadata`` that still covers the
+    whole media name, or is at least ``MIN_TRUNCATED_STEM`` long (cut by Takeout's length limit,
+    not an unrelated shorter name). So candidates are looked up prefix by prefix, longest first."""
     readings: list[tuple[str, int]] = []
     duplicate = _DUPLICATE.match(name)
     if duplicate:
@@ -218,26 +221,24 @@ def _by_name(name: str, by_stem: Mapping[tuple[int, str], list[_Sidecar]]) -> _S
     return None
 
 
-def _stem_fits(stem: str, base: str) -> bool:
-    full = base + SUPPLEMENTAL
-    if stem in (base, full):
-        return True
-    if not full.startswith(stem):
-        return False
-    # Truncated: either it still covers the whole media name, or it is long enough to have
-    # been cut by Takeout's length limit rather than being an unrelated shorter name.
-    return len(stem) >= len(base) or len(stem) >= MIN_TRUNCATED_STEM
-
-
 def _by_truncated_media(
-    name: str, sidecars: list[_Sidecar], titles: Mapping[str, str]
+    name: str,
+    plain_stems: list[tuple[str, str, _Sidecar]],
+    used: set[str],
+    titles: Mapping[str, str],
 ) -> _Sidecar | None:
     if len(name) < MIN_TRUNCATED_MEDIA:
         return None
     stem, dot, extension = name.rpartition(".")
     if not dot:
         stem, extension = name, ""
-    candidates = [s for s in sidecars if s.duplicate == 0 and s.stem.startswith(stem)]
+    start = bisect.bisect_left(plain_stems, (stem,))
+    candidates = []
+    for found_stem, path, sidecar in plain_stems[start:]:
+        if not found_stem.startswith(stem):
+            break
+        if path not in used:
+            candidates.append(sidecar)
     titled = [s for s in candidates if s.path in titles]
     if titled:
         # Titles hold the full original name: require it to start and end like the media file.

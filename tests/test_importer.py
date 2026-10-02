@@ -240,3 +240,20 @@ def test_parallel_uploads_send_everything_once(tmp_path: Path, parallel: int) ->
     assert len(result.uploaded) == 13
     assert len(server.assets) == 13
     assert len(all_uploads(run.state, "immich")) == 13
+
+
+def test_uploads_deleted_in_immich_stop_being_checked(tmp_path: Path) -> None:
+    from googich_takeaway.importer import verify_pending
+
+    r = Run(tmp_path, FakeImmichServer(metadata_delay_reads=10**6))
+    plan = r.plan()
+    with r.client() as client:
+        run_import(plan, client, r.state, "immich", lambda: NOW, r.sleeps.append, verify_attempts=1)
+    gone = next(iter(r.server.assets))
+    del r.server.assets[gone]  # deleted in Immich before Immich had processed it
+    r.server.metadata_delay_reads = 0
+    with r.client() as client:
+        check = verify_pending(r.state, client, "immich", lambda: NOW)
+    assert (check.verified, check.remaining) == (12, 0)  # nothing left waiting forever
+    statuses = [rec.status for rec in all_uploads(r.state, "immich")]
+    assert statuses.count(UploadStatus.GONE) == 1

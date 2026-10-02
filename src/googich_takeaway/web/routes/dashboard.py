@@ -137,7 +137,7 @@ def register(app: FastAPI, web: Shared) -> None:
         """Before Pause or Cancel: say exactly what happens to the file being worked on."""
         if kind not in ("pause", "cancel"):
             kind = "pause"
-        if not worker.status().running:
+        if not worker.status_running():
             return RedirectResponse("/?notice=idle", status_code=303)
         active = worker.tracker.active()
         return page(

@@ -130,3 +130,19 @@ def test_polling_requests_are_not_logged_but_pages_and_failures_are() -> None:
     assert access("/logs/tail?after=1", 500)  # failures are kept
     assert access("/logs", 200)  # pages opened are kept
     assert access("/runs", 303)
+
+
+def test_tail_after_a_restart_starts_again() -> None:
+    import logging
+
+    from googich_takeaway.logs import LogBuffer
+
+    buffer = LogBuffer()
+    logger = logging.getLogger("googich.test.restart")
+    logger.addHandler(buffer)
+    try:
+        logger.warning("after restart")
+        # The page still asks from a number the old process had reached.
+        assert [e.message for e in buffer.query(after=4000)] == ["after restart"]
+    finally:
+        logger.removeHandler(buffer)

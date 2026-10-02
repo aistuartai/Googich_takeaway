@@ -51,7 +51,7 @@ def register(app: FastAPI, web: Shared) -> None:
             staged=staged,
             partials=partials,
             drive=cleanup.drive_exports(state, drive_labels(config)),
-            running=worker.status().running,
+            running=worker.status_running(),
             message=message,
             error=error,
             zone=_zone(config.general().timezone),
@@ -76,7 +76,7 @@ def register(app: FastAPI, web: Shared) -> None:
             "cleanup_confirm.html",
             copy=copy,
             folder=config.general().describe(),
-            running=worker.status().running,
+            running=worker.status_running(),
         )
 
     @app.get("/cleanup/partial/{name}/confirm", response_class=HTMLResponse)
@@ -94,7 +94,7 @@ def register(app: FastAPI, web: Shared) -> None:
             "cleanup_confirm.html",
             partial=found,
             folder=config.general().describe(),
-            running=worker.status().running,
+            running=worker.status_running(),
         )
 
     @app.post("/cleanup/staged/{export_id}")
@@ -107,7 +107,7 @@ def register(app: FastAPI, web: Shared) -> None:
         staging = config.staging_location()
         if staging is None:
             return RedirectResponse("/cleanup?error=No+download+folder+is+set.", status_code=303)
-        if worker.status().running:
+        if worker.status_running():
             return RedirectResponse(
                 "/cleanup?error=Wait+for+the+current+run+to+finish.", status_code=303
             )
@@ -124,7 +124,7 @@ def register(app: FastAPI, web: Shared) -> None:
     @app.post("/cleanup/partial/{name}")
     def delete_partial(config: ConfigDep, name: str) -> Response:
         staging = config.staging_location()
-        if staging is None or worker.status().running:
+        if staging is None or worker.status_running():
             return RedirectResponse(
                 "/cleanup?error=Not+possible+while+a+run+is+going.", status_code=303
             )

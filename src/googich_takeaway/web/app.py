@@ -32,10 +32,11 @@ from googich_takeaway.locations import (
     close_shared_smb,
 )
 from googich_takeaway.logs import LogBuffer, Logs
+from googich_takeaway.pipeline import DriveFactory, ImmichFactory
 from googich_takeaway.progress import format_duration, format_size
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
-from googich_takeaway.summaries import Summaries, drive_labels, latest_export
+from googich_takeaway.summaries import Summaries, drive_labels
 from googich_takeaway.web import auth
 from googich_takeaway.web.common import (
     BODY_LIMIT,
@@ -45,8 +46,6 @@ from googich_takeaway.web.common import (
     OPEN_BODY_LIMIT,
     RUN_NOTICES,
     UNSAFE_METHODS,
-    DriveFactory,
-    ImmichFactory,
     WebSettings,
     _body_refused,
     _csrf_ok,
@@ -256,9 +255,7 @@ def create_app(
 
     summaries = Summaries(worker)
     listing_cache = summaries.listing_cache
-    folder_listing = summaries.folder_listing
     journey = summaries.journey
-    cached_call = summaries.cached_call
     source_summaries = summaries.source_summaries
     destination_summary = summaries.destination_summary
     cleanup_summary = summaries.cleanup_summary
@@ -311,11 +308,8 @@ def create_app(
         source_summaries=source_summaries,
         destination_summary=destination_summary,
         cleanup_summary=cleanup_summary,
-        folder_listing=folder_listing,
-        latest_export=latest_export,
         drive_labels=drive_labels,
         dashboard_notice=dashboard_notice,
-        cached_call=cached_call,
         log_usage=log_usage,
         listing_cache=listing_cache,
     )

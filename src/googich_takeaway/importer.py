@@ -27,6 +27,7 @@ from googich_takeaway.destinations.immich import (
     CheckResult,
     ImmichClient,
     ImmichError,
+    ImmichNotFoundError,
 )
 from googich_takeaway.destinations.xmp import build_xmp
 from googich_takeaway.progress import ItemState, Stage, Tracker
@@ -177,6 +178,11 @@ def verify_pending(
         expected = datetime.fromisoformat(record.capture_date)
         try:
             dates = client.asset_dates(record.asset_id)
+        except ImmichNotFoundError:
+            # Deleted in Immich since: stop asking, or it would be asked about on every run,
+            # and, being among the oldest, crowd out the uploads still waiting.
+            state.mark_verified(destination, record.sha1, UploadStatus.GONE, clock())
+            continue
         except ImmichError:
             check.still_pending += 1
             continue

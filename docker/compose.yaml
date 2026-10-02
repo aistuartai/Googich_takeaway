@@ -42,6 +42,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Ceilings, so a damaged or hostile archive cannot take the whole host down with it. A
+    # normal import stays well under these.
+    mem_limit: 2g
+    pids_limit: 256
     # The app's own unprivileged user. ./data and secrets/ must belong to it (step 1). To run as
     # another user, change this and chown the folders to match.
     user: "10001:10001"

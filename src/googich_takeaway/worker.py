@@ -323,7 +323,7 @@ class Worker:
 
     def _next_due(self, state: State, config: Config) -> datetime | None:
         schedule = config.schedule()
-        last = next((r.started_at for r in state.recent_runs(50) if r.trigger == "schedule"), None)
+        last = state.last_run_started(Trigger.SCHEDULE.value)  # however many manual runs since
         zone = ZoneInfo(config.general().timezone)
         return next_run(schedule, self._clock(), zone, last)
 

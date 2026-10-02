@@ -129,3 +129,17 @@ def test_only_the_wanted_entries_are_read(tmp_path: Path, kind: str) -> None:
     found = [(e.path, e.stream.read()) for e in iter_entries(path, only={names[1], names[3]})]
     assert found == [(names[1], names[1].encode()), (names[3], names[3].encode())]
     assert list(iter_entries(path, only=set())) == []
+
+
+def test_a_huge_tar_header_is_refused_without_reading_it(tmp_path: Path) -> None:
+    """A tiny .tgz claiming a 2 GB long-name header must fail fast, not fill memory."""
+    import gzip
+
+    header = tarfile.TarInfo("././@LongLink")
+    header.type = tarfile.GNUTYPE_LONGNAME
+    header.size = 2 * 1024**3
+    block = header.tobuf(format=tarfile.GNU_FORMAT)[:512]
+    path = tmp_path / "takeout-x-001.tgz"
+    path.write_bytes(gzip.compress(block + b"\0" * 4096))
+    with pytest.raises(ArchiveError, match="header"):
+        list(iter_entries(path))

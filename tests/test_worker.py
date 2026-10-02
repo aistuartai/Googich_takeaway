@@ -383,3 +383,15 @@ def test_a_finished_update_request_is_settled_by_the_worker(world: World) -> Non
     world.worker.settle_update_request()
     assert state.get_setting("updates.requested") is None
     assert state.get_setting(RESUME_AFTER_UPDATE) is None  # the paused run was resumed
+
+
+def test_the_last_scheduled_run_is_found_after_many_manual_runs(world: World) -> None:
+    from datetime import timedelta
+
+    state = State(world.path)
+    scheduled = state.start_run("schedule", NOW - timedelta(days=3))
+    state.finish_run(scheduled, "success", "Done", "", NOW - timedelta(days=3))
+    for n in range(60):
+        run = state.start_run("manual", NOW - timedelta(hours=60 - n))
+        state.finish_run(run, "success", "Done", "", NOW)
+    assert state.last_run_started("schedule") == NOW - timedelta(days=3)

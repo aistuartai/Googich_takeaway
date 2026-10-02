@@ -16,12 +16,13 @@ from fastapi.templating import Jinja2Templates
 
 from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
-from googich_takeaway.locations import Location, SmbSettings, StoredFile
+from googich_takeaway.locations import SmbSettings, StoredFile
 from googich_takeaway.logs import Logs
+from googich_takeaway.pipeline import DriveFactory, ImmichFactory
 from googich_takeaway.state import State
 from googich_takeaway.updates import UpdateInfo
 from googich_takeaway.web import auth
-from googich_takeaway.web.common import DriveFactory, ImmichFactory, WebSettings
+from googich_takeaway.web.common import WebSettings
 from googich_takeaway.worker import Worker
 
 
@@ -50,11 +51,8 @@ class Shared:
     source_summaries: Callable[[Config, State], list[dict[str, object]]]
     destination_summary: Callable[[Config, State], dict[str, object]]
     cleanup_summary: Callable[[Config, State], dict[str, object]]
-    folder_listing: Callable[[Location], list[StoredFile] | None]
-    latest_export: Callable[[State], dict[str, object] | None]
     drive_labels: Callable[[Config], dict[str, str]]
     dashboard_notice: Callable[[str], str | None]
-    cached_call: Callable[[str, float, Callable[[], object]], object]
     log_usage: Callable[[], dict[str, int]]
     listing_cache: dict[str, tuple[float, list[StoredFile] | None]]
     """Download folder listings, read at most every 10 seconds; cleared after a delete."""

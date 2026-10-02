@@ -7,8 +7,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Several uploads at once.** Photos and other files up to 32 MB go to Immich three at a time
+  by default (1 to 8, under Settings → Uploads); larger files still stream one at a time.
+  With Immich taking 100 ms per upload, a test export went 2.6 times faster at three and 4.3
+  times faster at six.
+
 ### Changed
 
+- After a large import only the first 200 uploads are checked against Immich straight away;
+  the rest are checked on later runs, once Immich has processed them, instead of asking about
+  every file while it is still busy.
+- `.tgz` archives are read in 1 MB blocks instead of 10 KB, far fewer round trips to an SMB
+  share.
+- Matching photos with very long names to their metadata files no longer slows down sharply
+  in big folders (20,000 such files: 22 s down to 1.5 s).
+- The example `compose.yaml` sets memory and process ceilings (`mem_limit: 2g`,
+  `pids_limit: 256`).
 - The update helper and its installer change `data/updater` only from inside it, after checking
   it really is that folder and not a link the container swapped in, and the helper requires
   mode exactly `1770`. The installer reads the version from `compose.yaml` strictly (a comment
@@ -30,6 +46,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A file the upload step could not find in its archive was silently skipped while its export
+  was marked complete; it is now reported as failed and tried again.
+- After more than 50 manual runs the schedule could lose track of its last scheduled run.
+- The live log stopped showing new lines after the app restarted, until the page was reloaded.
+- A failed batch save could leave the database mid-save, so later batched saves did nothing.
+- Uploads deleted in Immich before their date was checked were asked about on every run, and
+  kept "still being processed" showing; they are now marked as gone.
+- A crafted `.tgz` with a huge name header could exhaust memory; such headers are refused.
 - "Resuming the paused run" and "Run started" stayed on the dashboard for the whole run; they
   now go as soon as the progress shows.
 

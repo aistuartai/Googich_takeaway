@@ -97,12 +97,6 @@ class LoginThrottle:
     def _now(self) -> float:
         return self.clock()
 
-    def retry_after(self, address: str) -> float:
-        """Seconds until ``address`` may try again; 0 if allowed now."""
-        with self._lock:
-            _, until, _ = self._failures.get(address, (0, 0.0, 0.0))
-            return max(0.0, until - self._now())
-
     def attempt(self, address: str) -> float:
         """Start an attempt: 0 if allowed (and counted as failed until ``succeeded``), else the
         seconds to wait. The check and the count are one step."""
@@ -120,10 +114,6 @@ class LoginThrottle:
             if len(self._failures) > 1000:
                 self._forget_old(now)
             return 0.0
-
-    def failed(self, address: str) -> None:
-        """Record a failure outside ``attempt`` (kept for callers that check first)."""
-        self.attempt(address)
 
     def _forget_old(self, now: float) -> None:
         for key, (_, until, last) in list(self._failures.items()):

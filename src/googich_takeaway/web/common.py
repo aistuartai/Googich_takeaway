@@ -1,7 +1,6 @@
 """Constants and helpers shared by the web application's modules."""
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -12,9 +11,7 @@ from fastapi import Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.schedule import Schedule
-from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.web import auth
 
@@ -87,10 +84,6 @@ class WebSettings:
     """Reverse proxies (IP addresses or networks) whose X-Forwarded-Proto and X-Forwarded-For
     headers are believed (GOOGICH_TRUSTED_PROXIES). Without them, the app behind an HTTPS proxy
     sees plain http and refuses form posts as cross-site."""
-
-
-ImmichFactory = Callable[[str, str], ImmichClient]
-DriveFactory = Callable[[str, dict[str, object]], GoogleDriveSource]
 
 
 def _export_state(
