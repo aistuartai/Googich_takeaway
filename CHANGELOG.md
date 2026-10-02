@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-02
+
+### Changed
+
+- The container image runs Python 3.14 (was 3.13). The full test suite passes on both, and CI
+  now tests every change on Python 3.13 and 3.14.
+
 ## [0.3.2] - 2026-10-02
 
 ### Changed
@@ -320,7 +327,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...v0.3.0
