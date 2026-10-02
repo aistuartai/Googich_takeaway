@@ -363,3 +363,44 @@ def test_update_banner_and_setting(world: World) -> None:
     assert "Version 9.9.9 is available" in world.client.get("/").text
     world.post("/settings/updates", data={})  # switch the check off
     assert "Version 9.9.9 is available" not in world.client.get("/").text
+
+
+def test_failed_smb_save_keeps_what_was_typed_except_the_password(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from tests.fake_smb import FakeSmb
+
+    monkeypatch.setitem(sys.modules, "smbclient", FakeSmb())
+    form = {
+        "storage": "smb", "timezone": "Australia/Melbourne", "smb_server": "optimus.local",
+        "smb_share": "GoogichDump", "smb_folder": "takeout", "smb_username": "googich",
+        "smb_password": "typed-but-wrong", "smb_domain": "HOME", "smb_port": "4455",
+    }  # fmt: skip
+    response = world.post("/settings/general", data=form)
+    assert response.status_code == 400
+    page = response.text
+    for value in ("optimus.local", "GoogichDump", "takeout", "googich", "HOME", "4455"):
+        assert f'value="{value}"' in page
+    assert 'value="smb" checked' in page
+    assert '<option value="Australia/Melbourne" selected>' in page
+    assert "typed-but-wrong" not in page
+    assert "Enter the password again" in page
+
+
+def test_failed_schedule_save_keeps_what_was_typed(world: World) -> None:
+    response = world.post(
+        "/settings/schedule",
+        data={
+            "mode": "weekly",
+            "at": "25:99",
+            "weekday": "2",
+            "every_hours": "24",
+            "pause_after": "3",
+        },
+    )
+    assert response.status_code == 400
+    assert 'value="25:99"' in response.text
+    assert 'value="weekly" selected' in response.text
+    assert '<option value="2" selected>' in response.text

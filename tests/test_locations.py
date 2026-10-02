@@ -102,3 +102,45 @@ def test_free_space_never_raises() -> None:
             return object()  # missing every field
 
     assert smb(Broken()).free_space() is None
+
+
+def test_one_shared_connection_per_share(monkeypatch: pytest.MonkeyPatch) -> None:
+    from googich_takeaway import locations
+
+    fake = FakeSmb()
+    monkeypatch.setitem(sys.modules, "smbclient", fake)
+    closed: list[str] = []
+    monkeypatch.setattr(SmbLocation, "close", lambda self: closed.append(self.describe()))
+    first = locations.shared_smb(SETTINGS)
+    assert locations.shared_smb(SETTINGS) is first  # reused, not a new connection
+    other = SmbSettings("nas.local", "Photos", "other", "photos", SMB_LOGIN)
+    second = locations.shared_smb(other)
+    assert second is not first
+    assert closed == [first.describe()]  # the old share's connection is closed
+    locations.close_shared_smb()
+    assert closed == [first.describe(), second.describe()]
+
+
+def test_probe_always_disconnects(monkeypatch: pytest.MonkeyPatch) -> None:
+    from googich_takeaway import locations
+
+    monkeypatch.setitem(sys.modules, "smbclient", FakeSmb())
+    closed: list[bool] = []
+    monkeypatch.setattr(SmbLocation, "close", lambda self: closed.append(True))
+    locations.probe_smb(SETTINGS)
+    with pytest.raises(LocationError):
+        locations.probe_smb(SmbSettings("nas.local", "Photos", "x", "photos", "wrong"))
+    assert closed == [True, True]
+
+
+def test_connection_limit_is_explained() -> None:
+    class Busy(FakeSmb):
+        def makedirs(self, path: str, exist_ok: bool = False, **kwargs: object) -> None:
+            raise OSError(
+                "[Error 0] [NtStatus 0xc00000d0] Unknown NtStatus error returned "
+                "'STATUS_REQUEST_NOT_ACCEPTED': '\\\\\\\\optimus\\\\share'"
+            )
+
+    with pytest.raises(LocationError, match="Windows desktop editions accept 20") as caught:
+        smb(Busy()).prepare()
+    assert "STATUS_REQUEST_NOT_ACCEPTED" in str(caught.value)

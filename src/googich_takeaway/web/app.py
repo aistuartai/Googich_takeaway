@@ -35,7 +35,7 @@ from googich_takeaway.config import (
 )
 from googich_takeaway.credentials import SecretBox, load_master_key, master_key_path
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
-from googich_takeaway.locations import LocationError, SmbSettings
+from googich_takeaway.locations import LocationError, SmbSettings, close_shared_smb
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.logs import LogBuffer, Logs
 from googich_takeaway.notify import Message, Outcome
@@ -132,6 +132,7 @@ def create_app(
         yield
         if start_worker:
             worker.stop()
+        close_shared_smb()
 
     app = FastAPI(
         title="Googich Takeaway",
@@ -529,8 +530,16 @@ def create_app(
     # --- settings ------------------------------------------------------------------------------
 
     def settings_page(
-        request: Request, config: Config, error: str | None = None, saved: str | None = None
+        request: Request,
+        config: Config,
+        error: str | None = None,
+        saved: str | None = None,
+        draft: dict[str, str] | None = None,
+        failed: str | None = None,
     ) -> Response:
+        """``draft`` holds what was typed into a form that failed to save, so it is shown again.
+
+        Passwords and keys are never put back into the page."""
         return page(
             request,
             config,
@@ -551,6 +560,8 @@ def create_app(
             has_urls=config.has_notification_urls(),
             error=error,
             saved=saved,
+            draft=draft or {},
+            failed=failed,
             status_code=400 if error else 200,
         )
 
@@ -569,7 +580,8 @@ def create_app(
         try:
             config.save_immich(url, public_url, api_key or None)
         except ConfigError as error:
-            return settings_page(request, config, error=str(error))
+            draft = {"url": url, "public_url": public_url}
+            return settings_page(request, config, str(error), draft=draft, failed="immich")
         return RedirectResponse("/settings?saved=immich", status_code=303)
 
     @app.post("/settings/immich/test", response_class=HTMLResponse)
@@ -626,7 +638,18 @@ def create_app(
             else:
                 config.save_general(staging, timezone)
         except ConfigError as error:
-            return settings_page(request, config, error=str(error))
+            draft = {
+                "storage": storage,
+                "staging": staging,
+                "timezone": timezone,
+                "smb_server": smb_server,
+                "smb_share": smb_share,
+                "smb_folder": smb_folder,
+                "smb_username": smb_username,
+                "smb_domain": smb_domain,
+                "smb_port": smb_port,
+            }
+            return settings_page(request, config, str(error), draft=draft, failed="downloads")
         return RedirectResponse("/settings?saved=general", status_code=303)
 
     @app.post("/settings/storage/test", response_class=HTMLResponse)
@@ -678,7 +701,14 @@ def create_app(
         try:
             config.save_schedule(mode, at, weekday, every_hours, pause_after)
         except ConfigError as error:
-            return settings_page(request, config, error=str(error))
+            draft = {
+                "mode": mode,
+                "at": at,
+                "weekday": weekday,
+                "every_hours": every_hours,
+                "pause_after": pause_after,
+            }
+            return settings_page(request, config, str(error), draft=draft, failed="schedule")
         return RedirectResponse("/settings?saved=schedule", status_code=303)
 
     @app.post("/settings/notifications")

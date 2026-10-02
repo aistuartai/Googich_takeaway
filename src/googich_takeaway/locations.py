@@ -11,6 +11,7 @@ Archives are handed around as ``StoredFile`` objects: a name, a size and a way t
 import contextlib
 import os
 import shutil
+import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -300,6 +301,40 @@ class SmbLocation:
         self._cache.clear()
 
 
+# One live connection per configured share, shared by the worker and web requests. Opening a new
+# SMB connection for every operation exhausts servers with connection limits: a Windows desktop
+# edition accepts only 20 at once.
+_SHARED: dict[SmbSettings, SmbLocation] = {}
+_SHARED_LOCK = threading.Lock()
+
+
+def shared_smb(settings: SmbSettings) -> SmbLocation:
+    """The pooled location for ``settings``; connections for any other settings are closed."""
+    with _SHARED_LOCK:
+        location = _SHARED.get(settings)
+        if location is None:
+            for old in list(_SHARED):
+                _SHARED.pop(old).close()
+            location = SmbLocation(settings)
+            _SHARED[settings] = location
+        return location
+
+
+def close_shared_smb() -> None:
+    with _SHARED_LOCK:
+        for old in list(_SHARED):
+            _SHARED.pop(old).close()
+
+
+def probe_smb(settings: SmbSettings) -> None:
+    """Check a share can be used (for saving settings), then disconnect straight away."""
+    location = SmbLocation(settings)
+    try:
+        location.prepare()
+    finally:
+        location.close()
+
+
 def _is_not_found(error: Exception) -> bool:
     return (
         type(error).__name__ in ("SMBOSError", "FileNotFoundError")
@@ -308,7 +343,25 @@ def _is_not_found(error: Exception) -> bool:
     )
 
 
+_EXPLAINED = {
+    "STATUS_REQUEST_NOT_ACCEPTED": (
+        "the server refused a new connection because it has reached its limit; Windows desktop "
+        "editions accept 20 at once. Close unused connections to it, or wait about 15 minutes "
+        "for idle ones to drop, then try again"
+    ),
+    "STATUS_LOGON_FAILURE": "the user name or password was not accepted",
+    "STATUS_BAD_NETWORK_NAME": "the share name was not found on the server",
+    "STATUS_ACCESS_DENIED": "the account is not allowed to write to that folder",
+    "STATUS_IO_TIMEOUT": "the server did not answer in time",
+}
+
+
 def _smb_reason(error: Exception) -> str:
     """A short reason without echoing credentials (smbprotocol messages never include them)."""
     text = str(error).splitlines()[0] if str(error) else type(error).__name__
+    for status, plain in _EXPLAINED.items():
+        if status in text:
+            return f"{plain}; server said {status}"
+    if isinstance(error, (ConnectionError, TimeoutError, OSError)) and "Errno" in text:
+        return f"cannot connect to the server ({text[:120]})"
     return text[:200]

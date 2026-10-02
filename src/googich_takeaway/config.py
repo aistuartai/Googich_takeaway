@@ -19,8 +19,9 @@ from googich_takeaway.locations import (
     LocalLocation,
     Location,
     LocationError,
-    SmbLocation,
     SmbSettings,
+    probe_smb,
+    shared_smb,
 )
 from googich_takeaway.notify import DEFAULT_OUTCOMES, Notifier, Outcome, invalid_urls
 from googich_takeaway.schedule import Mode, Schedule, parse_time
@@ -154,7 +155,7 @@ class Config:
         if general.storage == "smb":
             if general.smb is None:
                 return None
-            return SmbLocation(self._smb_settings(general.smb, self._smb_password()))
+            return shared_smb(self._smb_settings(general.smb, self._smb_password()))
         return LocalLocation(general.staging) if general.staging else None
 
     def save_general(self, staging: str, timezone: str) -> None:
@@ -208,7 +209,7 @@ class Config:
         zone = _zone_name(timezone)
         settings = self._smb_settings(public, secret)
         try:
-            (test or (lambda s: SmbLocation(s).prepare()))(settings)
+            (test or probe_smb)(settings)
         except LocationError as error:
             raise ConfigError(str(error)) from None
         now = self._clock()
