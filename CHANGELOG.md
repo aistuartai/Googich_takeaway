@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-02
+
+Fixes for real-world use: SMB shares on Windows desktops, settings forms, and full-size
+libraries of tens of thousands of photos.
+
 ### Fixed
 
 - SMB download folders no longer exhaust the server's connection limit. Every operation opened a
@@ -120,5 +125,6 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.0
