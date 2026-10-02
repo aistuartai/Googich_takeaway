@@ -197,10 +197,6 @@ class Logs:
     buffer: LogBuffer
     directory: Path
 
-    @property
-    def current_file(self) -> Path:
-        return self.directory / "googich.log"
-
     def files(self) -> list[Path]:
         """Log files, newest first."""
         if not self.directory.is_dir():

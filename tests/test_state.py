@@ -15,6 +15,14 @@ from googich_takeaway.state import (
 AT = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
 
 
+def all_uploads(state: State, destination: str) -> list[UploadRecord]:
+    """Every upload record, for checking in tests."""
+    rows = state._db.execute(
+        "SELECT sha1 FROM uploads WHERE destination = ? ORDER BY sha1", (destination,)
+    ).fetchall()
+    return [r for r in (state.get_upload(destination, row[0]) for row in rows) if r is not None]
+
+
 def record(sha1: str = "a" * 40, status: UploadStatus = UploadStatus.UPLOADED) -> UploadRecord:
     return UploadRecord(
         destination="immich",
@@ -48,7 +56,7 @@ def test_record_upload_replaces_existing(tmp_path: Path) -> None:
     with State(tmp_path / "state.db") as state:
         state.record_upload(record())
         state.record_upload(record(status=UploadStatus.ADOPTED))
-        assert len(state.uploads("immich")) == 1
+        assert len(all_uploads(state, "immich")) == 1
         found = state.get_upload("immich", "a" * 40)
         assert found is not None
         assert found.status is UploadStatus.ADOPTED

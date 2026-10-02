@@ -103,7 +103,7 @@ def test_setup_writes_redacted_json_lines_owner_only(
         text = path.read_text()
         assert "sup3rs3cret" not in text
         assert "abcdefghijklmnopqrstuvwxyz" not in text
-    line = json.loads(stored.current_file.read_text().splitlines()[-1])
+    line = json.loads((stored.directory / "googich.log").read_text().splitlines()[-1])
     assert set(line) == {"time", "level", "logger", "message"}
     assert "Traceback" in line["message"]
     assert any("[redacted]" in e.message for e in stored.buffer.query())

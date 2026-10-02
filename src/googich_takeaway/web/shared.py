@@ -66,7 +66,7 @@ def _shared(request: Request) -> Shared:
 
 
 def open_state(request: Request) -> Iterator[State]:
-    with State(_shared(request).settings.state_path) as state:
+    with State(_shared(request).settings.state_path, remember=True) as state:
         yield state
 
 

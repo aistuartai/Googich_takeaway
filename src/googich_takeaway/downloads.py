@@ -126,14 +126,6 @@ class Downloader:
         except LocationError:
             return False
 
-    def download(self, source: Source, file: RemoteFile) -> StoredFile:
-        location = self.location
-        try:
-            location.prepare()
-        except LocationError as error:
-            raise SourceError(f"download folder: {error}") from None
-        return self._download(location, source, file)
-
     def _download(self, location: Location, source: Source, file: RemoteFile) -> StoredFile:
         try:
             return self._transfer(location, source, file)

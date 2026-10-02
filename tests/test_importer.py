@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.importer import Decision, ImportPlan, ImportResult, plan_import, run_import
-from googich_takeaway.state import State, UploadStatus
+from googich_takeaway.state import State, UploadRecord, UploadStatus
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, scan_export
 from tests.fake_immich import KEY, FakeImmichServer
@@ -14,6 +14,14 @@ NOW = datetime(2026, 10, 1, tzinfo=UTC)
 RESOLVER = DateResolver(default_timezone=ZoneInfo("Australia/Melbourne"))
 EXPORT = "20261001T010203Z"
 F = f"{ROOT}/Photos from 2019"
+
+
+def all_uploads(state: State, destination: str) -> list[UploadRecord]:
+    """Every upload record, for checking in tests."""
+    rows = state._db.execute(
+        "SELECT sha1 FROM uploads WHERE destination = ? ORDER BY sha1", (destination,)
+    ).fetchall()
+    return [r for r in (state.get_upload(destination, row[0]) for row in rows) if r is not None]
 
 
 class Run:
@@ -51,7 +59,7 @@ def test_first_import_uploads_every_dated_file_and_verifies(tmp_path: Path) -> N
     assert len(result.verified) == 13
     assert not result.failed
     assert len(r.server.assets) == 13
-    records = r.state.uploads("immich")
+    records = all_uploads(r.state, "immich")
     assert {rec.status for rec in records} == {UploadStatus.VERIFIED}
 
 
@@ -184,7 +192,7 @@ def test_dry_plan_changes_nothing(tmp_path: Path) -> None:
     r = Run(tmp_path)
     r.plan()
     assert not r.server.assets
-    assert r.state.uploads("immich") == []
+    assert all_uploads(r.state, "immich") == []
 
 
 def test_verify_pending_respects_limit_and_budget(tmp_path: Path) -> None:
@@ -207,5 +215,5 @@ def test_verify_pending_respects_limit_and_budget(tmp_path: Path) -> None:
         assert second.verified == 1
         rest = verify_pending(r.state, client, "immich", lambda: NOW)
     assert rest.remaining == 0
-    statuses = {rec.status for rec in r.state.uploads("immich")}
+    statuses = {rec.status for rec in all_uploads(r.state, "immich")}
     assert statuses == {UploadStatus.VERIFIED}

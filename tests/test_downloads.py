@@ -47,7 +47,7 @@ def test_second_fetch_skips_already_downloaded(tmp_path: Path) -> None:
     assert [f.name for f in result.skipped] == ["takeout-x-001.zip"]
 
 
-def test_ignore_history_and_forget_download_again(tmp_path: Path) -> None:
+def test_ignore_history_downloads_missing_copies_again(tmp_path: Path) -> None:
     s = Setup(tmp_path)
     s.drive.add("a", "takeout-x-001.zip", DATA)
     s.downloader().fetch_new(s.source)
@@ -56,8 +56,6 @@ def test_ignore_history_and_forget_download_again(tmp_path: Path) -> None:
     for copy in (tmp_path / "staging").glob("*.zip"):
         copy.unlink()  # cleaned up
     assert len(s.downloader().fetch_new(s.source, ignore_history=True).downloaded) == 1
-    assert s.state.forget_download(s.source.name, "a", NOW) == 1
-    assert len(s.downloader().fetch_new(s.source).downloaded) == 1
 
 
 def test_changed_file_at_source_is_downloaded_again(tmp_path: Path) -> None:
@@ -109,8 +107,9 @@ def test_checksum_mismatch_is_discarded_and_reported(tmp_path: Path) -> None:
     s.drive.add("a", "takeout-x-001.zip", DATA)
     files = s.source.list_archives()
     wrong = type(files[0])(**{**files[0].__dict__, "sha256": hashlib.sha256(b"x").hexdigest()})
-    with pytest.raises(Exception, match="sha256 does not match"):
-        s.downloader().download(s.source, wrong)
+    s.source.list_archives = lambda: [wrong]  # type: ignore[method-assign]
+    result = s.downloader().fetch_new(s.source)
+    assert "sha256 does not match" in result.failed[0][1]
     assert not (s.staging / "takeout-x-001.zip").exists()
     assert not (s.staging / "takeout-x-001.zip.part").exists()
     assert s.state.downloads(s.source.name) == []

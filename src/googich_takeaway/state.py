@@ -199,7 +199,14 @@ class StateError(Exception):
 
 
 class State:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, remember: bool = False) -> None:
+        """``remember`` keeps settings and sources read once for the life of this State: for a
+        web request, which reads the same few settings many times. Long-lived States (a run)
+        leave it off, so they see changes made meanwhile from the web interface."""
+        self._remember = remember
+        self._settings: dict[str, str | None] = {}
+        self._sealed: dict[str, str | None] = {}
+        self._sources: list[SourceRecord] | None = None
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not path.exists():
             # Owner-only: the database lists every photo path and, later, holds credentials.
@@ -374,15 +381,6 @@ class State:
         rows = self._db.execute(query + " GROUP BY status", args)
         return {str(row[0]): int(row[1]) for row in rows}
 
-    def uploads(self, destination: str) -> list[UploadRecord]:
-        rows = self._db.execute(
-            "SELECT * FROM uploads WHERE destination = ? ORDER BY uploaded_at, sha1",
-            (destination,),
-        )
-        return [_record(row) for row in rows]
-
-    # --- download history ---------------------------------------------------------------------
-
     def record_download(self, record: DownloadRecord) -> None:
         self._db.execute(
             """
@@ -418,15 +416,6 @@ class State:
             (source, file_id, fingerprint),
         ).fetchone()
         return row is not None
-
-    def forget_download(self, source: str, file_id: str, at: datetime) -> int:
-        """Make the next fetch download ``file_id`` again. Returns rows changed."""
-        cursor = self._db.execute(
-            "UPDATE downloads SET forgotten_at = ? "
-            "WHERE source = ? AND file_id = ? AND forgotten_at IS NULL",
-            (_to_text(at), source, file_id),
-        )
-        return cursor.rowcount
 
     def mark_removed_from_source(
         self, source: str, present_ids: Iterable[str], at: datetime
@@ -525,10 +514,16 @@ class State:
     # --- settings, secrets and sources ----------------------------------------------------------
 
     def get_setting(self, name: str) -> str | None:
+        if name in self._settings:
+            return self._settings[name]
         row = self._db.execute("SELECT value FROM settings WHERE name = ?", (name,)).fetchone()
-        return str(row[0]) if row else None
+        value = str(row[0]) if row else None
+        if self._remember:
+            self._settings[name] = value
+        return value
 
     def set_setting(self, name: str, value: str | None, at: datetime) -> None:
+        self._settings.pop(name, None)
         if value is None:
             self._db.execute("DELETE FROM settings WHERE name = ?", (name,))
             return
@@ -552,10 +547,16 @@ class State:
         self.set_setting(name, None if value is None else json.dumps(value), at)
 
     def get_sealed(self, name: str) -> str | None:
+        if name in self._sealed:
+            return self._sealed[name]
         row = self._db.execute("SELECT sealed FROM secrets WHERE name = ?", (name,)).fetchone()
-        return str(row[0]) if row else None
+        value = str(row[0]) if row else None
+        if self._remember:
+            self._sealed[name] = value
+        return value
 
     def set_sealed(self, name: str, sealed: str | None, at: datetime) -> None:
+        self._sealed.pop(name, None)
         if sealed is None:
             self._db.execute("DELETE FROM secrets WHERE name = ?", (name,))
             return
@@ -567,6 +568,7 @@ class State:
         )
 
     def add_source(self, kind: str, name: str, location: str, at: datetime) -> int:
+        self._sources = None
         try:
             cursor = self._db.execute(
                 "INSERT INTO sources (kind, name, location, created_at) VALUES (?, ?, ?, ?)",
@@ -577,10 +579,16 @@ class State:
         return int(cursor.lastrowid or 0)
 
     def sources(self) -> list[SourceRecord]:
+        if self._sources is not None:
+            return list(self._sources)
         rows = self._db.execute("SELECT * FROM sources ORDER BY name").fetchall()
-        return [_source(row) for row in rows]
+        found = [_source(row) for row in rows]
+        if self._remember:
+            self._sources = found
+        return list(found)
 
     def delete_source(self, source_id: int) -> None:
+        self._sources = None
         self._db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 
     # --- runs and completed exports ------------------------------------------------------------
