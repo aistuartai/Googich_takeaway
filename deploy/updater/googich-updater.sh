@@ -42,11 +42,15 @@ mkdir -p "$RUNTIME"
   || fail_setup "$RUNTIME is not a private directory"
 chmod 700 "$RUNTIME"
 
-# Work from inside the updater directory, so swapping a path component later changes nothing.
+# Work from inside the updater directory, so swapping a path component later changes nothing,
+# and check it is the real one: the container owns <data>, and could swap in a link elsewhere.
+expected="$(cd "$DATA_DIR" 2>/dev/null && pwd -P)/updater" \
+  || fail_setup "no $DATA_DIR; see the install steps"
 cd "$UPDATER_DIR" 2>/dev/null || fail_setup "no $UPDATER_DIR; see the install steps"
+[ "$(pwd -P)" = "$expected" ] || fail_setup "$UPDATER_DIR is a link; run the installer again"
 read -r dir_uid dir_mode < <(stat -c '%u %a' .)
-if [ "$dir_uid" != "$OWNER_UID" ] || [ "${#dir_mode}" -lt 4 ] || (( (8#$dir_mode & 01000) == 0 )); then
-  fail_setup "$UPDATER_DIR must be owned by root with the sticky bit (mode 1770); see the install steps"
+if [ "$dir_uid" != "$OWNER_UID" ] || [ "$dir_mode" != "1770" ]; then
+  fail_setup "$UPDATER_DIR must be owned by root with mode 1770; run the installer again"
 fi
 REQUEST="request.json"
 STATUS="status.json"
@@ -75,7 +79,7 @@ if [ ! -f "$REQUEST" ]; then
   exit 0
 fi
 # The request belongs to the container: read at most 256 bytes, and never through a link.
-version=$(dd if="$REQUEST" iflag=nofollow bs=256 count=1 status=none 2>/dev/null \
+version=$(dd if="$REQUEST" iflag=nofollow,nonblock bs=256 count=1 status=none 2>/dev/null \
   | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
   | head -1 | sed -E 's/.*"([^"]*)"$/\1/' || true)
 rm -f "$REQUEST"

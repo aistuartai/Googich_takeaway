@@ -26,10 +26,12 @@ compose="$dir/compose.yaml"
 [ -d "$dir/data" ] && [ ! -L "$dir/data" ] || die "no data folder in $dir"
 case "$dir" in *[!A-Za-z0-9/._-]*) die "the folder path may only hold letters, digits and / . _ -" ;; esac
 
-version=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$compose" | head -1 \
-  | sed -E "s|.*$IMAGE:||" | tr -cd '0-9.')
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-  || die "compose.yaml should name a fixed version, such as $IMAGE:0.3.4"
+line=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$compose" | head -1 || true)
+if [[ "$line" =~ $IMAGE:([0-9]+\.[0-9]+\.[0-9]+)([\"[:space:]]|$) ]]; then
+  version="${BASH_REMATCH[1]}"
+else
+  die "compose.yaml should name a fixed version, such as $IMAGE:0.3.4"
+fi
 
 say "Installing the update helper from release $version for $dir"
 base="https://raw.githubusercontent.com/$REPOSITORY/v$version/deploy/updater"
@@ -49,14 +51,17 @@ install -m 644 "$work/googich-updater.path" "$UNITS/googich-updater.path"
 install -m 644 "$work/googich-updater.service" "$UNITS/googich-updater.service"
 
 # The app may add its request here, but only root may replace or remove root's files.
+# The container owns data/, so it could swap data/updater for a link at any moment: change
+# the folder only from inside it, after checking it really is <folder>/data/updater.
 group=$(stat -c %g "$dir/data")
-if [ -L "$dir/data/updater" ]; then
-  die "$dir/data/updater is a link; remove it and run this again"
-fi
-install -d -m 1770 -o root -g "$group" "$dir/data/updater"
-chown root:"$group" "$dir/data/updater"
-chmod 1770 "$dir/data/updater"
-rm -f "$dir/data/updater/.lock" "$dir/data/updater/.release.json"  # from helper version 1
+mkdir -p "$dir/data/updater"
+cd "$dir/data/updater"
+[ "$(pwd -P)" = "$dir/data/updater" ] \
+  || die "$dir/data/updater is a link; remove it and run this again"
+chown root:"$group" .
+chmod 1770 .
+rm -f ./.lock ./.release.json  # left by helper version 1
+cd /
 
 systemctl daemon-reload
 systemctl enable --now googich-updater.path >/dev/null

@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The update helper and its installer change `data/updater` only from inside it, after checking
+  it really is that folder and not a link the container swapped in, and the helper requires
+  mode exactly `1770`. The installer reads the version from `compose.yaml` strictly (a comment
+  after it could change the version read).
 - The update commands in the README and the Updates guide find the newest release themselves,
   instead of naming versions that went out of date with each release.
 - Code tidy-up, with no change in behaviour: the web application is split into one module per

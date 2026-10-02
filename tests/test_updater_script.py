@@ -184,7 +184,7 @@ def test_refuses_an_updater_folder_the_container_could_tamper_with(tmp_path: Pat
         text=True,
     )
     assert result.returncode == 1
-    assert "must be owned by root with the sticky bit" in result.stderr
+    assert "must be owned by root with mode 1770" in result.stderr
     assert (updater / "request.json").exists()  # untouched
 
 
@@ -220,7 +220,10 @@ exec /usr/bin/install "${args[@]}"
     site = tmp_path / "srv" / "googich"
     (site / "data" / "updater").mkdir(parents=True)
     (site / "data" / "updater" / ".lock").write_text("")  # left by helper version 1
-    (site / "compose.yaml").write_text("    image: ghcr.io/aistuartai/googich_takeaway:0.3.4\n")
+    # A trailing comment must not change the version read (it once became 0.3.46).
+    (site / "compose.yaml").write_text(
+        "    image: ghcr.io/aistuartai/googich_takeaway:0.3.4  # pinned 6 Oct\n"
+    )
     env = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",
         "GOOGICH_LIB_DIR": str(tmp_path / "lib"),
@@ -268,3 +271,32 @@ def test_installer_needs_a_fixed_version(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "should name a fixed version" in result.stderr
+
+
+def test_an_updater_folder_swapped_for_a_link_is_refused(tmp_path: Path) -> None:
+    """A link to another root-owned sticky folder (such as /dev/shm) must not pass."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    elsewhere.chmod(0o1770)
+    (elsewhere / "request.json").write_text('{"version": "0.1.2"}')
+    data = tmp_path / "opt" / "data"
+    data.mkdir(parents=True)
+    (data / "updater").symlink_to(elsewhere)
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "GOOGICH_COMPOSE_DIR": str(tmp_path / "opt"),
+        "GOOGICH_UPDATER_OWNER": str(os.getuid()),
+        "GOOGICH_RUNTIME_DIR": str(tmp_path / "run"),
+    }
+    result = subprocess.run(  # noqa: S603
+        ["bash", str(SCRIPT)],  # noqa: S607
+        env=env,
+        check=False,
+        timeout=60,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "is a link" in result.stderr
+    assert (elsewhere / "request.json").exists()  # untouched
+    assert not (elsewhere / "status.json").exists()
