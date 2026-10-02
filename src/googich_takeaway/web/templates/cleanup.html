@@ -25,11 +25,7 @@
         </td>
         <td>
           {% if copy.ready %}
-          <form method="post" action="/cleanup/staged/{{ copy.export_id }}">
-            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-            {% if copy.needs_confirmation %}<label class="check"><input type="checkbox" name="confirm" value="1" required> Delete anyway</label>{% endif %}
-            <button type="submit" class="danger" {{ 'disabled' if running }}>Delete {{ copy.size|size }}</button>
-          </form>
+          <a class="button danger" href="/cleanup/staged/{{ copy.export_id }}/confirm">Delete {{ copy.size|size }}…</a>
           {% endif %}
         </td>
       </tr>
@@ -48,10 +44,7 @@
         <td>{{ part.name }}</td><td class="num">{{ part.size|size }}</td>
         <td class="muted">last written {{ part.modified.astimezone(zone).strftime('%d %b %H:%M') }}</td>
         <td>
-          <form method="post" action="/cleanup/partial/{{ part.name }}">
-            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-            <button type="submit" class="danger" {{ 'disabled' if running }}>Delete</button>
-          </form>
+          <a class="button danger" href="/cleanup/partial/{{ part.name }}/confirm">Delete…</a>
         </td>
       </tr>
     {% endfor %}

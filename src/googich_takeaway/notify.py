@@ -23,6 +23,8 @@ class Outcome(StrEnum):
     PAUSED = "paused"
     REMINDER = "reminder"
     """Not a run: a reminder about the Takeout schedule."""
+    STOPPED = "stopped"
+    """The user paused or cancelled the run. Never notified."""
 
 
 DEFAULT_OUTCOMES = frozenset({Outcome.SUCCESS, Outcome.FAILED, Outcome.PAUSED, Outcome.REMINDER})
@@ -33,6 +35,7 @@ _TYPES = {
     Outcome.FAILED: apprise.NotifyType.FAILURE,
     Outcome.PAUSED: apprise.NotifyType.WARNING,
     Outcome.REMINDER: apprise.NotifyType.WARNING,
+    Outcome.STOPPED: apprise.NotifyType.INFO,
 }
 
 

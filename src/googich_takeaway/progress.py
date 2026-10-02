@@ -119,6 +119,19 @@ class _StageState:
     started_at: float | None = None
 
 
+class RunStopped(BaseException):
+    """Raised at the next safe point after the user pressed Pause or Cancel.
+
+    A BaseException, so the handlers that turn errors into failed files do not catch it. Every
+    safe point is between or inside file transfers, where stopping loses nothing: a download
+    resumes from its partial file, and an interrupted upload is sent again next time."""
+
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind)
+        self.kind = kind
+        """``pause`` or ``cancel``."""
+
+
 class Tracker:
     """Shared between the worker thread (updates) and web requests (snapshots).
 
@@ -136,6 +149,7 @@ class Tracker:
         self._stages: dict[Stage, _StageState] = {s: _StageState() for s in Stage}
         self._current: Stage | None = None
         self._running = False
+        self._stop_kind: str | None = None
 
     # --- updates from the run --------------------------------------------------------------------
 
@@ -143,6 +157,25 @@ class Tracker:
         with self._lock:
             self._stages = {s: _StageState() for s in Stage}
             self._current, self._running = None, True
+            self._stop_kind = None
+
+    def request_stop(self, kind: str) -> bool:
+        """Ask the run to stop at its next safe point. False if no run is going."""
+        with self._lock:
+            if not self._running:
+                return False
+            self._stop_kind = kind
+            return True
+
+    @property
+    def stopping(self) -> str | None:
+        with self._lock:
+            return self._stop_kind
+
+    def _checkpoint(self) -> None:
+        kind = self._stop_kind
+        if kind is not None:
+            raise RunStopped(kind)
 
     def finish_run(self) -> dict[Stage, float]:
         """End the run; returns the rates measured, to remember for the next run's estimates."""
@@ -165,6 +198,7 @@ class Tracker:
                 state.total += size
 
     def begin(self, stage: Stage, name: str, size: int | None = None) -> None:
+        self._checkpoint()
         with self._lock:
             state = self._stages[stage]
             item = state.items.get(name)
@@ -184,6 +218,7 @@ class Tracker:
             self._current = stage
 
     def advance(self, amount: int) -> None:
+        self._checkpoint()
         with self._lock:
             if self._current is None:
                 return
@@ -205,6 +240,30 @@ class Tracker:
                     else (1 - SMOOTHING) * state.rate + SMOOTHING * sample
                 )
                 state.window_bytes, state.window_start = 0, now
+
+    def already_have(self, amount: int) -> None:
+        """The active file is resuming with ``amount`` bytes already there. Counted as done, but
+        not towards the speed, so the estimate is not thrown by bytes that were never sent."""
+        with self._lock:
+            if self._current is None or amount <= 0:
+                return
+            state = self._stages[self._current]
+            if state.active is None:
+                return
+            item = state.items[state.active]
+            counted = min(amount, max(0, item.size - item.done))
+            state.items[state.active] = replace(item, done=item.done + counted)
+            state.done += counted
+
+    def active(self) -> tuple[Stage, Item] | None:
+        """The stage and file being worked on now, if any."""
+        with self._lock:
+            if self._current is None:
+                return None
+            state = self._stages[self._current]
+            if state.active is None:
+                return None
+            return self._current, state.items[state.active]
 
     def end(
         self, stage: Stage, name: str, state: ItemState = ItemState.DONE, detail: str = ""

@@ -111,3 +111,15 @@ def test_local_source(config: Config, tmp_path: Path) -> None:
     assert [s.kind for s in config.sources()] == ["local"]
     with pytest.raises(ConfigError, match="does not exist"):
         config.add_local_source("Other", str(tmp_path / "missing"))
+
+
+def test_new_dashboard_items_show_for_choices_made_before_them(tmp_path: Path) -> None:
+    from googich_takeaway.state import State
+
+    state = State(tmp_path / "state.db")
+    config = Config(state, SecretBox(b"k" * 32), lambda: NOW)
+    assert config.dashboard_items() == ["journey", "schedule", "runs"]
+    state.set_setting("dashboard.items", "journey,cleanup", NOW)  # as saved by 0.3.0
+    assert config.dashboard_items() == ["journey", "schedule", "cleanup"]
+    config.save_dashboard_items(["cleanup"])  # a choice made now is kept exactly
+    assert config.dashboard_items() == ["cleanup"]

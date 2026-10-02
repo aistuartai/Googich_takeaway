@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Delete from the download folder | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  {% if copy %}
+  <h1>Delete export {{ copy.export_id }}?</h1>
+  <p class="warn-text"><strong>These files are deleted permanently from the download folder</strong> (<code>{{ folder }}</code>), freeing {{ copy.size|size }}:</p>
+  <ul class="parts">
+    {% for part in copy.parts %}<li><code>{{ part.name }}</code> <span class="muted">{{ part.size|size }}</span></li>{% endfor %}
+  </ul>
+  <p>Nothing changes in Immich or Google Drive. The app remembers these archives, so they are not downloaded again unless you choose <strong>Download archives again</strong>.</p>
+  {% if copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, or rejected by Immich). After deleting, they exist only in Google Photos{% if copy.sources %} and Google Drive{% endif %}.</p>{% endif %}
+  <form method="post" action="/cleanup/staged/{{ copy.export_id }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    {% if copy.needs_confirmation %}<label class="check"><input type="checkbox" name="confirm" value="1" required> Delete anyway</label>{% endif %}
+    <div class="actions">
+      <button type="submit" class="danger" {{ 'disabled' if running }}>Delete {{ copy.size|size }}</button>
+      <a class="button secondary" href="/cleanup">Keep them</a>
+    </div>
+  </form>
+  {% else %}
+  <h1>Delete this partial download?</h1>
+  <p class="warn-text"><strong><code>{{ partial.name }}.part</code> ({{ partial.size|size }}) is deleted permanently from the download folder</strong> (<code>{{ folder }}</code>).</p>
+  <p>It is an interrupted download. Kept, the next run continues it from {{ partial.size|size }}; deleted, that run downloads it again from the start.</p>
+  <form method="post" action="/cleanup/partial/{{ partial.name }}">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <div class="actions">
+      <button type="submit" class="danger" {{ 'disabled' if running }}>Delete {{ partial.size|size }}</button>
+      <a class="button secondary" href="/cleanup">Keep it</a>
+    </div>
+  </form>
+  {% endif %}
+  {% if running %}<p class="muted">A run is going; deleting is possible once it finishes.</p>{% endif %}
+</section>
+{% endblock %}

@@ -36,6 +36,11 @@ Under *Coming up*, the page says what the schedule is doing now (for example, wa
 export expected on 15 December) and lists the next runs. When the Takeout year is over, only the
 weekly runs continue (if switched on), and the app reminds you to set up a new Takeout schedule.
 
+### Pausing the schedule
+
+The dashboard's **Schedule** box shows what the schedule is set to and when it runs next. **Pause
+schedule** stops scheduled runs until you press **Resume schedule**; Run now still works.
+
 ### When runs fail
 
 A failed run never retries in a loop. It ends, records why, and notifies you. The next scheduled
@@ -50,8 +55,8 @@ Under **Run now**, *Run with options* offers two things for unusual cases:
 - **Re-import files missing from Immich:** rescans exports that were already imported and uploads
   anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are
   left alone: restore those in Immich instead.
-- **Download archives again:** fetches Drive archives even if they were downloaded before, for
-  example after the local copies were deleted.
+- **Download archives again:** fetches Drive archives downloaded before whose copy is no longer
+  in the download folder, for example after a cleanup. Copies still there are not fetched again.
 
 ## Notifications
 

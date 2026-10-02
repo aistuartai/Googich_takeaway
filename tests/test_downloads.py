@@ -51,6 +51,10 @@ def test_ignore_history_and_forget_download_again(tmp_path: Path) -> None:
     s = Setup(tmp_path)
     s.drive.add("a", "takeout-x-001.zip", DATA)
     s.downloader().fetch_new(s.source)
+    # The copy is still in the download folder: not fetched again (a resumed run relies on it).
+    assert s.downloader().fetch_new(s.source, ignore_history=True).downloaded == []
+    for copy in (tmp_path / "staging").glob("*.zip"):
+        copy.unlink()  # cleaned up
     assert len(s.downloader().fetch_new(s.source, ignore_history=True).downloaded) == 1
     assert s.state.forget_download(s.source.name, "a", NOW) == 1
     assert len(s.downloader().fetch_new(s.source).downloaded) == 1
@@ -147,3 +151,26 @@ def test_staged_files_are_owner_only(tmp_path: Path) -> None:
     s.downloader().fetch_new(s.source)
     assert (s.staging / "takeout-x-001.zip").stat().st_mode & 0o077 == 0
     assert s.staging.stat().st_mode & 0o077 == 0
+
+
+def test_resumed_download_shows_the_bytes_already_there(tmp_path: Path) -> None:
+    import json
+
+    from googich_takeaway.progress import Stage, Tracker
+
+    s = Setup(tmp_path)
+    s.drive.add("a", "takeout-x-001.zip", DATA)
+    remote = s.source.list_archives()[0]
+    s.staging.mkdir()
+    (s.staging / "takeout-x-001.zip.part").write_bytes(DATA[:300_000])  # left by a paused run
+    marker = {"file_id": "a", "fingerprint": remote.fingerprint}
+    (s.staging / "takeout-x-001.zip.part.json").write_text(json.dumps(marker))
+    tracker = Tracker()
+    tracker.start_run()
+    downloader = Downloader(
+        s.staging, s.state, lambda: NOW, s.sleeps.append, free_margin=0, tracker=tracker
+    )
+    downloader.fetch_new(s.source)
+    assert s.drive.ranges == ["bytes=300000-"]  # only the rest was fetched
+    view = next(v for v in tracker.snapshot().stages if v.stage is Stage.DOWNLOAD)
+    assert view.done == view.total == len(DATA)  # and the bar counts the part already there

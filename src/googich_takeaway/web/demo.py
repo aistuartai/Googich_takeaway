@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from googich_takeaway.progress import Stage, Tracker
+from googich_takeaway.progress import RunStopped, Stage, Tracker
 from googich_takeaway.worker import Worker
 
 TICK = 0.25
@@ -50,6 +50,8 @@ def _run(worker: Worker, sleep: Callable[[float], None], speed: float) -> None:
         tracker.plan(Stage.UPLOAD, photos)
         for name, size in photos:
             _transfer(tracker, Stage.UPLOAD, name, size, 14e6 * speed, rng, sleep)
+    except RunStopped:
+        pass  # Pause or Cancel pressed during the demo
     finally:
         worker.release_from_demo()
 

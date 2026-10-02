@@ -7,6 +7,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-02
+
+### Added
+
+- **Pause** and **Cancel** while a run is going. Both stop at the next safe point, between or
+  inside file transfers, so nothing done is lost. A paused run shows **Resume**, which carries on
+  with the same options, or **Discard**. Neither sends a notification or counts as a failure.
+- **Pause schedule** and **Resume schedule**, in a new **Schedule** box on the dashboard that
+  shows what the schedule is set to and the next run. Run now still works while paused.
+- Run now says whether the run started, or that one is already going.
+- A paused run shows how far it got: size and number of files for each stage.
+- Pause and Cancel first show what happens to the file being worked on: a download continues
+  from where it stopped, reading the archives starts that export again, an upload is sent again.
+- Deleting from the download folder first lists the files to be deleted and what stays.
+
+### Changed
+
+- The dashboard's Configure button is now **Configure dashboard**.
+- **Download archives again** now fetches only archives whose copy is no longer in the download
+  folder (for example after a cleanup). Copies still there are not fetched again, so resuming a
+  paused run no longer downloads everything a second time.
+
+### Fixed
+
+- A resumed download's progress started from zero, so it looked like a fresh download. It now
+  starts from the amount already downloaded; only the rest is fetched, as before.
+- The background worker no longer stops for good if working out the next scheduled run fails;
+  it logs the error and tries again shortly.
+
 ## [0.3.0] - 2026-10-02
 
 ### Added
@@ -231,7 +260,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.1.1...v0.2.0

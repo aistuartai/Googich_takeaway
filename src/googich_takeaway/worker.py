@@ -12,7 +12,7 @@ import json
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -24,7 +24,7 @@ from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import DriveFactory, ImmichFactory, Pipeline, RunOptions
-from googich_takeaway.progress import Snapshot, Stage, Tracker
+from googich_takeaway.progress import RunStopped, Snapshot, Stage, Tracker
 from googich_takeaway.schedule import next_run
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
@@ -32,6 +32,8 @@ from googich_takeaway.state import State
 log = logging.getLogger("googich.worker")
 
 IDLE_CHECK_SECONDS = 30.0
+PAUSED_RUN = "run.paused"
+"""The options of a run the user paused, so Resume continues it."""
 """How often the worker re-reads the schedule while idle, so setting changes take effect."""
 
 
@@ -46,6 +48,15 @@ class WorkerStatus:
     run_started: datetime | None
     next_run: datetime | None
     paused: bool
+    """The schedule is paused."""
+    stopping: str | None = None
+    """``pause`` or ``cancel`` once pressed, until the run reaches a safe point."""
+    run_paused: bool = False
+    """A run was paused and can be resumed."""
+    paused_by_user: bool = False
+    """The schedule was paused with Pause schedule, not after failed runs."""
+    paused_progress: list[dict[str, object]] = field(default_factory=list)
+    """How far a paused run got, stage by stage, for the dashboard."""
 
 
 class Worker:
@@ -125,19 +136,58 @@ class Worker:
         self._wake.set()
         return True
 
+    def request_stop(self, kind: str) -> bool:
+        """Pause or cancel the run going now, at its next safe point. False if none is going."""
+        if kind not in ("pause", "cancel"):
+            raise ValueError(kind)
+        return self.tracker.request_stop(kind)
+
+    def resume_paused(self) -> bool:
+        """Continue a paused run, with the options it had. False if none is paused."""
+        with State(self._state_path) as state:
+            stored = state.get_setting(PAUSED_RUN)
+        if stored is None:
+            return False
+        options = RunOptions(**json.loads(stored).get("options", {}))
+        return self.request_run(options)
+
+    def discard_paused(self) -> None:
+        with State(self._state_path) as state:
+            state.set_setting(PAUSED_RUN, None, self._clock())
+
     def status(self) -> WorkerStatus:
         with State(self._state_path) as state:
             config = self._config(state)
-            due = self._next_due(state, config)
+            try:
+                due = self._next_due(state, config)
+            except Exception:
+                log.exception("Could not work out the next scheduled run")
+                due = None
             paused = config.schedule_paused()
+            by_user = config.schedule_paused_by_user()
+            paused_run = json.loads(state.get_setting(PAUSED_RUN) or "null")
         with self._lock:
-            return WorkerStatus(self._run_started is not None, self._run_started, due, paused)
+            running = self._run_started is not None
+            return WorkerStatus(
+                running,
+                self._run_started,
+                due,
+                paused,
+                stopping=self.tracker.stopping if running else None,
+                run_paused=paused_run is not None and not running,
+                paused_by_user=by_user,
+                paused_progress=paused_run.get("progress", []) if paused_run else [],
+            )
 
     # --- loop ----------------------------------------------------------------------------------
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            due = self._due_trigger()
+            try:
+                due = self._due_trigger()
+            except Exception:  # never let a bad setting stop the worker for good
+                log.exception("Could not work out whether a run is due; trying again shortly")
+                due = None
             if due is not None:
                 try:
                     self.run_once(*due)
@@ -206,6 +256,8 @@ class Worker:
                 )
                 try:
                     message = pipeline.run().message()
+                except RunStopped as stop:
+                    return self._stopped(state, run_id, stop.kind, options or RunOptions())
                 except Exception as error:  # last resort: still record and notify the run
                     log.exception("Run %d crashed", run_id)
                     message = Message(
@@ -220,6 +272,7 @@ class Worker:
                     run_id, message.outcome.value, message.title, message.body, self._clock()
                 )
                 log.info("Run %d finished: %s", run_id, message.title)
+                state.set_setting(PAUSED_RUN, None, self._clock())  # nothing left to resume
                 notifier = config.notifier()
                 notifier.send(message)
                 self._count_failures(config, trigger, message, notifier.send)
@@ -233,6 +286,37 @@ class Worker:
                     state.set_setting("progress.rates", json.dumps(stored), self._clock())
             with self._lock:
                 self._run_started = None
+
+    def _stopped(self, state: State, run_id: int, kind: str, options: RunOptions) -> Message:
+        """Record a run the user paused or cancelled. No notification; not a failure."""
+        if kind == "pause":
+            title = "Paused by you"
+            body = (
+                "Press Resume on the dashboard to continue. Downloads carry on from where they "
+                "stopped, and files already in Immich are not sent again."
+            )
+            progress = [
+                {
+                    "label": view.label,
+                    "done": view.done,
+                    "total": view.total,
+                    "files_done": view.files_done,
+                    "files_total": view.files_total,
+                    "files_failed": view.files_failed,
+                }
+                for view in self.tracker.snapshot().stages
+            ]
+            paused = {"options": options.__dict__, "progress": progress}
+            state.set_setting(PAUSED_RUN, json.dumps(paused), self._clock())
+        else:
+            title = "Cancelled by you"
+            body = "The next scheduled or manual run carries on from where this one stopped."
+            state.set_setting(PAUSED_RUN, None, self._clock())
+        state.finish_run(
+            run_id, "paused" if kind == "pause" else "cancelled", title, body, self._clock()
+        )
+        log.warning("Run %d %s", run_id, "paused" if kind == "pause" else "cancelled")
+        return Message(Outcome.STOPPED, title, [body])
 
     def _count_failures(
         self,

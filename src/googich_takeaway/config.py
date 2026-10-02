@@ -106,12 +106,13 @@ COLOUR_SCHEMES = {
 BAR_STYLES = {"striped": "Striped bars", "segmented": "Segmented capsules"}
 DASHBOARD_ITEMS = {
     "journey": "Where your photos are: Google Drive, download folder and Immich",
+    "schedule": "Schedule: what it is set to, and the next run",
     "sources": "Sources",
     "destinations": "Destinations",
     "cleanup": "Cleanup: how much space can be freed",
     "runs": "Recent runs",
 }
-DEFAULT_DASHBOARD_ITEMS = ("journey", "runs")
+DEFAULT_DASHBOARD_ITEMS = ("journey", "schedule", "runs")
 MOTION = {"auto": "Animate unless this device asks for reduced motion", "off": "No animation"}
 
 
@@ -395,9 +396,13 @@ class Config:
     def schedule_paused(self) -> bool:
         return self._state.get_setting("schedule.paused") is not None
 
-    def set_schedule_paused(self, paused: bool) -> None:
+    def schedule_paused_by_user(self) -> bool:
+        return (self._state.get_setting("schedule.paused") or "").startswith("user:")
+
+    def set_schedule_paused(self, paused: bool, by_user: bool = False) -> None:
         now = self._clock()
-        self._state.set_setting("schedule.paused", now.isoformat() if paused else None, now)
+        value = ("user:" if by_user else "") + now.isoformat() if paused else None
+        self._state.set_setting("schedule.paused", value, now)
         if not paused:
             self._state.set_setting("schedule.failures", None, now)
 
@@ -613,7 +618,12 @@ class Config:
         if stored is None:
             return list(DEFAULT_DASHBOARD_ITEMS)
         chosen = set(stored.split(","))
-        return [item for item in DASHBOARD_ITEMS if item in chosen]
+        # Items added in a later release are shown by default, until the user chooses again.
+        offered = set((self._state.get_setting("dashboard.offered") or "").split(","))
+        if offered == {""}:  # chosen in 0.3.0, which offered these
+            offered = {"journey", "sources", "destinations", "cleanup", "runs"}
+        new = {item for item in DEFAULT_DASHBOARD_ITEMS if item not in offered}
+        return [item for item in DASHBOARD_ITEMS if item in chosen | new]
 
     def save_dashboard_items(self, items: list[str]) -> None:
         unknown = set(items) - set(DASHBOARD_ITEMS)
@@ -621,6 +631,7 @@ class Config:
             raise ConfigError("Unknown dashboard item.")
         chosen = ",".join(item for item in DASHBOARD_ITEMS if item in items)
         self._state.set_setting("dashboard.items", chosen, self._clock())
+        self._state.set_setting("dashboard.offered", ",".join(DASHBOARD_ITEMS), self._clock())
 
 
 def parse_service_account(data: bytes) -> dict[str, Any]:

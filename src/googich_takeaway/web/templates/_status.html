@@ -4,18 +4,42 @@
   <section class="card">
     <div class="status-head">
       <div>
-        <h2>{% if status.running %}Working{% elif status.paused %}Schedule paused{% else %}Ready{% endif %}</h2>
-        {% if status.running %}
+        <h2>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% else %}Ready{% endif %}</h2>
+        {% if status.stopping %}
+        <p class="status-line">Stopping at the next safe point, between or inside file transfers. Nothing done so far is lost.</p>
+        {% elif status.running %}
         <p class="status-line">Started at {{ status.run_started.astimezone(zone).strftime('%H:%M:%S') }}. This page updates by itself.</p>
-        {% else %}
+        {% elif status.run_paused %}
+        <p class="status-line">Press <strong>Resume</strong> to carry on from where it stopped, or <strong>Discard</strong> to leave it; the next run then skips what is already done.</p>
+        {% elif 'schedule' not in items %}
         <p class="status-line">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
         {% endif %}
       </div>
       <div class="run-controls">
+        {% if status.running %}
+        <div class="stop-controls">
+          {% if not status.stopping %}
+          <a class="button secondary" href="/runs/stop?kind=pause">Pause</a>
+          <a class="button danger" href="/runs/stop?kind=cancel">Cancel</a>
+          {% endif %}
+        </div>
+        {% elif status.run_paused %}
+        <div class="stop-controls">
+          <form method="post" action="/runs/resume" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <button type="submit" class="run">Resume</button>
+          </form>
+          <form method="post" action="/runs/discard" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+            <button type="submit" class="secondary">Discard</button>
+          </form>
+        </div>
+        {% else %}
         <form method="post" action="/runs">
           <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-          <button type="submit" class="run" {{ 'disabled' if status.running }}>Run now</button>
+          <button type="submit" class="run">Run now</button>
         </form>
+        {% endif %}
         {% if not status.running %}
         <details>
           <summary>Run with options</summary>
@@ -24,7 +48,7 @@
             <label class="check"><input type="checkbox" name="reimport" value="1"> Re-import files missing from Immich</label>
             <small>Rescans finished exports and uploads anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are left alone: restore those in Immich.</small>
             <label class="check"><input type="checkbox" name="download_again" value="1"> Download archives again</label>
-            <small>Fetches Drive archives even if they were downloaded before, for example after the local copies were cleaned up.</small>
+            <small>Fetches Drive archives downloaded before whose copy is no longer in the download folder, for example after a cleanup. Copies still there are not fetched again.</small>
             <button type="submit">Run</button>
           </form>
         </details>
@@ -38,6 +62,20 @@
       </div>
     </div>
 
+    {% if status.run_paused and status.paused_progress %}
+    <div class="paused-progress">
+      <h3>How far it got</h3>
+      {% for view in status.paused_progress if view.total or view.files_total %}
+      <div class="stage">
+        <div class="stage-head">
+          <strong>{{ view.label }}</strong>
+          <span>{{ view.done|size }} of {{ view.total|size }}, {{ '{:,}'.format(view.files_done) }} of {{ '{:,}'.format(view.files_total) }} {{ 'file' if view.files_total == 1 else 'files' }}{% if view.files_failed %}, {{ view.files_failed }} failed{% endif %}</span>
+        </div>
+        {{ meter(view.done, view.total, view.label) }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if status.running and progress.stages %}
     <p class="eta">{{ progress.eta_seconds|duration }} left{% if progress.eta_is_estimate %} <span class="muted">estimated from earlier runs</span>{% endif %}</p>
     {% for view in progress.stages %}

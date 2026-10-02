@@ -1,4 +1,5 @@
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -208,3 +209,88 @@ def test_unexpected_error_still_records_and_notifies(
     assert run.finished_at is not None
     assert run.status == "failed"
     assert [m.outcome for m in world.sent] == [Outcome.FAILED]
+
+
+def _stop_at_first_upload(world: World, kind: str, at: str = "upload") -> Callable[..., None]:
+    """Press Pause or Cancel as the first upload (or ``at`` stage) starts. Returns the original
+    ``begin``."""
+    from googich_takeaway.progress import Stage
+
+    tracker = world.worker.tracker
+    begin = tracker.begin
+
+    def stopping(stage: Stage, name: str, size: int | None = None) -> None:
+        if stage is Stage(at):
+            tracker.request_stop(kind)
+        begin(stage, name, size)
+
+    tracker.begin = stopping  # type: ignore[method-assign]
+    return begin
+
+
+def test_pause_then_resume(world: World) -> None:
+    world.configure()
+    original = _stop_at_first_upload(world, "pause")
+    message = world.worker.run_once(Trigger.MANUAL)
+    assert message.outcome is Outcome.STOPPED
+    runs = State(world.path).recent_runs()
+    assert (runs[0].status, runs[0].title) == ("paused", "Paused by you")
+    assert world.sent == []  # no notification, and not a failure
+    assert world.worker.status().run_paused
+    assert world.worker.resume_paused()
+    world.worker.tracker.begin = original  # type: ignore[method-assign]
+    trigger, options = world.worker._due_trigger() or (None, None)
+    assert trigger is Trigger.MANUAL
+    assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
+    assert not world.worker.status().run_paused
+    assert len(world.immich.assets) == 13
+
+
+def test_cancel(world: World) -> None:
+    world.configure()
+    _stop_at_first_upload(world, "cancel")
+    assert world.worker.run_once(Trigger.SCHEDULE).outcome is Outcome.STOPPED
+    runs = State(world.path).recent_runs()
+    assert runs[0].status == "cancelled"
+    assert not world.worker.status().run_paused
+    assert world.config().scheduled_failures() == 0
+
+
+def test_a_broken_schedule_does_not_stop_the_worker(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[int] = []
+
+    def broken() -> None:
+        calls.append(1)
+        if len(calls) >= 2:
+            world.worker._stop.set()
+        raise RuntimeError("bad setting")
+
+    monkeypatch.setattr(world.worker, "_due_trigger", broken)
+    monkeypatch.setattr("googich_takeaway.worker.IDLE_CHECK_SECONDS", 0.01)
+    world.worker._loop()  # returns once stopped, instead of dying on the first error
+    assert len(calls) == 2
+
+
+def test_resuming_a_download_again_run_does_not_fetch_finished_archives(world: World) -> None:
+    from googich_takeaway.pipeline import RunOptions
+
+    world.configure()
+    world.worker.run_once(Trigger.MANUAL)
+    for copy in (world.tmp / "staging").glob("*.zip"):
+        copy.unlink()  # cleaned up after the first import
+    original = _stop_at_first_upload(world, "pause", at="scan")  # while reading the archives
+    world.worker.run_once(Trigger.MANUAL, RunOptions(reimport=True, download_again=True))
+    fetched = sum(1 for r in world.drive.requests if "/files/takeout-" in r)
+    status = world.worker.status()
+    assert status.run_paused
+    stages = {view["label"]: view for view in status.paused_progress}
+    assert stages["Downloading"]["files_done"] == 2
+    assert stages["Downloading"]["done"] == stages["Downloading"]["total"]
+    world.worker.tracker.begin = original  # type: ignore[method-assign]
+    assert world.worker.resume_paused()
+    _, options = world.worker._due_trigger() or (None, RunOptions())
+    world.worker.run_once(Trigger.MANUAL, options)
+    media = [r for r in world.drive.requests if "/files/takeout-" in r]
+    assert len(media) == fetched  # nothing downloaded again on resume

@@ -256,6 +256,8 @@ def test_redownloaded_export_already_imported_is_explained(world: World) -> None
 
     world.configure()
     world.pipeline().run()
+    for path in (world.tmp / "staging").glob("*.zip"):
+        path.unlink()  # cleaned up after import
     pipeline = world.pipeline()
     again = Pipeline(**{**pipeline.__dict__, "options": RunOptions(download_again=True)})
     report = again.run()

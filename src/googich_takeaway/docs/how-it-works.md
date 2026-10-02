@@ -38,6 +38,11 @@ A run starts on the schedule you choose, or when you press **Run now**.
 
 At the end the run is recorded under **Recent runs**, and a notification is sent if you set one up.
 
+While a run is going, **Pause** and **Cancel** stop it at the next safe point, between or inside
+file transfers, so nothing done is lost. After Pause, **Resume** carries on where it stopped:
+downloads continue from their partial files, and files already in Immich are not sent again.
+After Cancel, the next run carries on in the same way.
+
 ## Words used in the app
 
 - **Export:** one Takeout export, made of one or more archives that share an ID such as

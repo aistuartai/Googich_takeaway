@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Pause' if kind == 'pause' else 'Cancel' }} the run | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  <h1>{{ 'Pause' if kind == 'pause' else 'Cancel' }} the run?</h1>
+  <p>The run stops at the next safe point, in a moment.{% if kind == 'pause' %} <strong>Resume</strong> on the dashboard carries on with the same options.{% else %} The next scheduled or manual run carries on from where it stopped.{% endif %}</p>
+  {% if item %}
+  <div class="stop-now">
+    {% if stage == 'download' %}
+    <p><strong>Downloading {{ item.name }}: {{ item.done|size }} of {{ item.size|size }}.</strong></p>
+    <p>The part downloaded so far is kept, and the download continues from {{ item.done|size }} next time. The progress bar then starts there too.</p>
+    {% elif stage == 'scan' %}
+    <p><strong>Reading the archives of export {{ item.name }}: {{ item.done|size }} of {{ item.size|size }}.</strong></p>
+    <p class="warn-text">Reading starts again from the beginning of this export next time{% if item.done > 10 * 1000**3 %}, which for {{ item.size|size }} takes a while{% endif %}. It reads files already in the download folder: nothing is downloaded again.</p>
+    {% else %}
+    <p><strong>Uploading {{ item.name.rsplit('/', 1)[-1] }}: {{ item.done|size }} of {{ item.size|size }}.</strong></p>
+    <p>Files already uploaded are not sent again. This one is sent again in full{% if item.size %} ({{ item.size|size }}){% endif %}.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="muted">Nothing is being transferred at this moment, for example while Drive is listed or dates are checked; the run stops when the next file starts.</p>
+  {% endif %}
+  <div class="actions">
+    <form method="post" action="/runs/{{ kind }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" class="{{ 'danger' if kind == 'cancel' else '' }}">{{ 'Pause the run' if kind == 'pause' else 'Cancel the run' }}</button>
+    </form>
+    <a class="button secondary" href="/">Keep it running</a>
+  </div>
+</section>
+{% endblock %}

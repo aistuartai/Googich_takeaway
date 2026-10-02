@@ -65,6 +65,17 @@ COOKIE = "googich_session"
 SESSION_LIFETIME = timedelta(days=7)
 OPEN_PATHS = ("/login", "/setup", "/healthz", "/static/")
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+NOTICES = {
+    "started": "Run started. Progress shows below.",
+    "busy": "A run is already going; it was left to finish.",
+    "pausing": "Pausing at the next safe point. Press Resume to continue later.",
+    "cancelling": "Cancelling at the next safe point.",
+    "idle": "No run is going.",
+    "resumed": "Resuming the paused run.",
+    "discarded": "The paused run was set aside. The next run starts afresh, skipping what is done.",
+    "schedule-paused": "Scheduled runs are paused. Run now still works.",
+    "schedule-resumed": "Scheduled runs are on again.",
+}
 TIMEZONES = [
     *sorted(
         z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/"))
@@ -449,6 +460,7 @@ def create_app(
             progress=worker.progress(),
             failures=config.scheduled_failures(),
             runs=state.recent_runs(15) if "runs" in items else [],
+            notice=NOTICES.get(request.query_params.get("notice", "")),
             reminders=reminders.takeout_reminders(config, state, clock()),
             zone=_zone(config.general().timezone),
         )
@@ -497,6 +509,7 @@ def create_app(
             {
                 "progress": worker.progress(),
                 "items": config.dashboard_items(),
+                "notice": None,
                 "immich_link": config.immich().link,
                 "journey": journey(config, state),
                 "look": config.look(),
@@ -627,6 +640,46 @@ def create_app(
             zone=_zone(config.general().timezone),
         )
 
+    @app.get("/cleanup/staged/{export_id}/confirm", response_class=HTMLResponse)
+    def confirm_delete_staged(
+        request: Request, config: ConfigDep, state: StateDep, export_id: str
+    ) -> Response:
+        """Before deleting: list exactly which files go, and what stays."""
+        try:
+            staged = cleanup.staged_exports(config.staging_location(), state)
+        except LocationError as problem:
+            return RedirectResponse(f"/cleanup?error={quote(str(problem))}", status_code=303)
+        copy = next((c for c in staged if c.export_id == export_id and c.ready), None)
+        if copy is None:
+            note = "That export is not ready to delete."
+            return RedirectResponse(f"/cleanup?error={quote(note)}", status_code=303)
+        return page(
+            request,
+            config,
+            "cleanup_confirm.html",
+            copy=copy,
+            folder=config.general().describe(),
+            running=worker.status().running,
+        )
+
+    @app.get("/cleanup/partial/{name}/confirm", response_class=HTMLResponse)
+    def confirm_delete_partial(request: Request, config: ConfigDep, name: str) -> Response:
+        try:
+            partials = cleanup.partial_downloads(config.staging_location())
+        except LocationError as problem:
+            return RedirectResponse(f"/cleanup?error={quote(str(problem))}", status_code=303)
+        found = next((p for p in partials if p.name == name), None)
+        if found is None:
+            return RedirectResponse("/cleanup?error=No+such+partial+download.", status_code=303)
+        return page(
+            request,
+            config,
+            "cleanup_confirm.html",
+            partial=found,
+            folder=config.general().describe(),
+            running=worker.status().running,
+        )
+
     @app.post("/cleanup/staged/{export_id}")
     def delete_staged(
         config: ConfigDep,
@@ -702,13 +755,58 @@ def create_app(
         reimport: Annotated[str, Form()] = "",
         download_again: Annotated[str, Form()] = "",
     ) -> Response:
-        worker.request_run(RunOptions(reimport=bool(reimport), download_again=bool(download_again)))
-        return RedirectResponse("/", status_code=303)
+        options = RunOptions(reimport=bool(reimport), download_again=bool(download_again))
+        if not worker.request_run(options):
+            return RedirectResponse("/?notice=busy", status_code=303)
+        worker.discard_paused()  # a new run replaces a paused one
+        return RedirectResponse("/?notice=started", status_code=303)
+
+    @app.get("/runs/stop", response_class=HTMLResponse)
+    def confirm_stop(request: Request, config: ConfigDep, kind: str = "pause") -> Response:
+        """Before Pause or Cancel: say exactly what happens to the file being worked on."""
+        if kind not in ("pause", "cancel"):
+            kind = "pause"
+        if not worker.status().running:
+            return RedirectResponse("/?notice=idle", status_code=303)
+        active = worker.tracker.active()
+        return page(
+            request,
+            config,
+            "stop_confirm.html",
+            kind=kind,
+            stage=active[0].value if active else None,
+            item=active[1] if active else None,
+        )
+
+    @app.post("/runs/pause")
+    def pause_run() -> Response:
+        stopping = worker.request_stop("pause")
+        return RedirectResponse(f"/?notice={'pausing' if stopping else 'idle'}", status_code=303)
+
+    @app.post("/runs/cancel")
+    def cancel_run() -> Response:
+        stopping = worker.request_stop("cancel")
+        return RedirectResponse(f"/?notice={'cancelling' if stopping else 'idle'}", status_code=303)
+
+    @app.post("/runs/resume")
+    def resume_run() -> Response:
+        resumed = worker.resume_paused()
+        return RedirectResponse(f"/?notice={'resumed' if resumed else 'busy'}", status_code=303)
+
+    @app.post("/runs/discard")
+    def discard_run() -> Response:
+        worker.discard_paused()
+        return RedirectResponse("/?notice=discarded", status_code=303)
+
+    @app.post("/schedule/pause")
+    def pause_schedule(config: ConfigDep) -> Response:
+        config.set_schedule_paused(True, by_user=True)
+        return RedirectResponse("/?notice=schedule-paused", status_code=303)
 
     @app.post("/schedule/resume")
     def resume(config: ConfigDep) -> Response:
         config.set_schedule_paused(False)
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/?notice=schedule-resumed", status_code=303)
 
     # --- settings, schedule, notifications, updates ------------------------------------------
     #

@@ -248,9 +248,9 @@ def test_run_now_and_resume(world: World) -> None:
     box = SecretBox(load_master_key(world.tmp / "master.key"))
     config = Config(State(world.tmp / "state.db"), box, lambda: datetime.now(UTC))
     config.set_schedule_paused(True)
-    assert "Schedule paused" in world.client.get("/").text
+    assert "Scheduled runs are paused" in world.client.get("/").text
     assert world.post("/schedule/resume").status_code == 303
-    assert "Schedule paused" not in world.client.get("/").text
+    assert "Scheduled runs are paused" not in world.client.get("/").text
 
 
 def test_time_zone_is_a_dropdown(world: World) -> None:
@@ -319,6 +319,7 @@ def test_cleanup_page(world: World) -> None:
     page = world.client.get("/cleanup").text
     assert "Not imported completely yet." in page
     assert "This app never deletes anything in Google Drive." in page
+    assert "/confirm" not in page  # not ready, so no delete link
     refused = world.post("/cleanup/staged/20261001T010203Z")
     assert refused.status_code == 303
     assert "not+been+imported" in refused.headers["location"].replace("%20", "+")
@@ -575,7 +576,7 @@ def test_dashboard_defaults(world: World) -> None:
     assert "<h2>Recent runs</h2>" in page
     for summary in ("sum-sources", "sum-destinations", "sum-cleanup"):
         assert f'id="{summary}"' not in page
-    assert page.index("<h2>Recent runs</h2>") < page.index("<summary>Configure</summary>")
+    assert page.index("<h2>Recent runs</h2>") < page.index("<summary>Configure dashboard</summary>")
 
 
 def test_dashboard_items_can_be_chosen(world: World) -> None:
@@ -620,3 +621,98 @@ def test_dashboard_counts_what_can_be_cleaned_up(world: World) -> None:
     page = world.client.get("/").text
     assert '<p class="summary-big">2.5 MB</p>' in page
     assert "2.5 MB in the download folder (1 export)" in page
+
+
+def test_run_buttons_and_schedule_box(world: World) -> None:
+    _ready(world)
+    world.post("/schedule", data={"mode": "daily", "at": "03:00"})
+    response = world.post("/runs")
+    assert response.headers["location"] == "/?notice=started"
+    assert "Run started." in world.client.get("/?notice=started").text
+    worker = world.client.app.state.worker  # type: ignore[attr-defined]
+    worker._run_started = datetime.now(UTC)  # pretend a run is going
+    assert world.post("/runs").headers["location"] == "/?notice=busy"
+    page = world.client.get("/").text
+    assert 'href="/runs/stop?kind=pause"' in page
+    assert 'href="/runs/stop?kind=cancel"' in page
+    from googich_takeaway.progress import Stage
+
+    worker.tracker.start_run()
+    worker.tracker.begin(Stage.DOWNLOAD, "takeout-002.tgz", 80 * 1000**3)
+    worker.tracker.already_have(40 * 1000**3)
+    confirm = world.client.get("/runs/stop?kind=pause").text
+    assert "Downloading takeout-002.tgz: 40.0 GB of 80.0 GB." in confirm
+    assert "continues from 40.0 GB next time" in confirm
+    assert 'action="/runs/pause"' in confirm
+    worker.tracker.end(Stage.DOWNLOAD, "takeout-002.tgz")
+    worker.tracker.begin(Stage.SCAN, "20261001T010203Z", 50 * 1000**3)
+    worker.tracker.already_have(20 * 1000**3)
+    confirm = world.client.get("/runs/stop?kind=cancel").text
+    assert "Reading starts again from the beginning of this export" in confirm
+    assert 'action="/runs/cancel"' in confirm
+    worker.tracker.finish_run()
+    worker._run_started = None
+    assert world.client.get("/runs/stop?kind=pause").headers["location"] == "/?notice=idle"
+    page = world.client.get("/").text
+    assert 'id="sum-schedule"' in page
+    assert "Daily at 03:00." in page
+    assert "Next run <strong>" in page
+    assert world.post("/schedule/pause").headers["location"] == "/?notice=schedule-paused"
+    page = world.client.get("/").text
+    assert "Paused by you." in page
+    assert "Scheduled runs are paused</h2>" not in page  # that card is for failed runs
+    assert ">Resume schedule</button>" in page
+    world.post("/schedule/resume")
+    assert ">Pause schedule</button>" in world.client.get("/").text
+    assert world.post("/runs/pause").headers["location"] == "/?notice=idle"
+
+
+def test_paused_run_shows_how_far_it_got(world: World) -> None:
+    import json
+
+    _ready(world)
+    progress = [
+        {"label": "Downloading", "done": 345_576_080, "total": 345_576_080, "files_done": 2,
+         "files_total": 2, "files_failed": 0},
+        {"label": "Uploading", "done": 120_000_000, "total": 400_000_000, "files_done": 31,
+         "files_total": 120, "files_failed": 1},
+    ]  # fmt: skip
+    with State(world.tmp / "state.db") as state:
+        state.set_setting(
+            "run.paused",
+            json.dumps(
+                {"options": {"reimport": False, "download_again": False}, "progress": progress}
+            ),
+            datetime.now(UTC),
+        )
+    page = world.client.get("/").text
+    assert "<h2>Run paused</h2>" in page
+    assert "How far it got" in page
+    assert "31 of 120 files, 1 failed" in page
+    assert 'action="/runs/resume"' in page
+    world.post("/runs/discard")
+    assert "Run paused" not in world.client.get("/").text
+
+
+def test_cleanup_asks_before_deleting(world: World) -> None:
+    from googich_takeaway import cleanup
+
+    _ready(world)
+    name = "takeout-20261001T010203Z-001.zip"
+    (world.tmp / "s" / name).write_bytes(b"z" * 2_500_000)
+    (world.tmp / "s" / "takeout-20261001T010203Z-002.zip.part").write_bytes(b"p" * 1000)
+    with State(world.tmp / "state.db") as state:
+        key = cleanup.export_key("20261001T010203Z", [(name, 2_500_000)])
+        state.mark_export_complete(key, "20261001T010203Z", "{}", datetime.now(UTC))
+    page = world.client.get("/cleanup").text
+    assert 'href="/cleanup/staged/20261001T010203Z/confirm"' in page
+    confirm = world.client.get("/cleanup/staged/20261001T010203Z/confirm").text
+    assert "deleted permanently from the download folder" in confirm
+    assert f"<code>{name}</code>" in confirm
+    assert (world.tmp / "s" / name).exists()  # asking deletes nothing
+    partial = world.client.get("/cleanup/partial/takeout-20261001T010203Z-002.zip/confirm").text
+    assert "the next run continues it from" in partial
+    assert world.post("/cleanup/staged/20261001T010203Z").status_code == 303
+    assert not (world.tmp / "s" / name).exists()
+    missing = world.client.get("/cleanup/staged/nope/confirm")
+    assert missing.headers["location"].startswith("/cleanup?error=")

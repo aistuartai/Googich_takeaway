@@ -73,7 +73,11 @@ class Downloader:
         return self.staging
 
     def fetch_new(self, source: Source, ignore_history: bool = False) -> FetchResult:
-        """Download every archive at the source not downloaded before."""
+        """Download every archive at the source not downloaded before.
+
+        ``ignore_history`` also fetches archives downloaded before whose copy is no longer in
+        the download folder (or has the wrong size), for example after a cleanup. A copy that is
+        still there is not fetched again, so a resumed run does not repeat finished downloads."""
         result = FetchResult()
         files = source.list_archives()
         result.listed = files
@@ -83,8 +87,8 @@ class Downloader:
         wanted = [
             f
             for f in files
-            if ignore_history
-            or not self.state.was_downloaded(source.name, f.file_id, f.fingerprint)
+            if not self.state.was_downloaded(source.name, f.file_id, f.fingerprint)
+            or (ignore_history and not self._have_copy(f))
         ]
         result.skipped = [f for f in files if f not in wanted]
         if not wanted:
@@ -114,6 +118,12 @@ class Downloader:
             if self.tracker:
                 self.tracker.end(Stage.DOWNLOAD, file.name)
         return result
+
+    def _have_copy(self, file: RemoteFile) -> bool:
+        try:
+            return self.location.size(_safe_name(file.name)) == file.size
+        except LocationError:
+            return False
 
     def download(self, source: Source, file: RemoteFile) -> StoredFile:
         location = self.location
@@ -146,6 +156,8 @@ class Downloader:
             location.delete(part)
             have = None
         have = have or 0
+        if have and self.tracker:
+            self.tracker.already_have(have)  # resuming: show the bytes already downloaded
         self._check_space(location, file.size - have, file.name)
 
         delay = BACKOFF_START

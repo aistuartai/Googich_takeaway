@@ -34,7 +34,7 @@ Requirements: Docker with Compose, an Immich server, and space for one full Take
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.0/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.3.1/docker/compose.yaml
 less compose.yaml   # read what you are about to run
 
 # A data folder, and a master key that encrypts the credentials you enter later. Both belong to
@@ -92,11 +92,11 @@ The app checks GitHub once a day and shows a banner on every page when a new rel
 away. The app never updates itself on its own.
 
 To update by hand, pull the new image and restart. If `compose.yaml` names a fixed version, such
-as `ghcr.io/aistuartai/googich_takeaway:0.3.0` (recommended, so updates happen only when you
+as `ghcr.io/aistuartai/googich_takeaway:0.3.1` (recommended, so updates happen only when you
 choose), change that version first:
 
 ```bash
-sed -i 's/googich_takeaway:0.2.1/googich_takeaway:0.3.0/' compose.yaml
+sed -i 's/googich_takeaway:0.3.0/googich_takeaway:0.3.1/' compose.yaml
 docker compose pull && docker compose up -d
 ```
 
@@ -120,7 +120,7 @@ To install it, as root on the Docker host, in the folder holding `compose.yaml` 
 
 ```bash
 cd /opt/googich
-V=0.3.0
+V=0.3.1
 base=https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v$V/deploy/updater
 install -d -m 755 /usr/local/lib/googich-updater
 curl -fsSL "$base/googich-updater.sh" -o /usr/local/lib/googich-updater/googich-updater.sh
