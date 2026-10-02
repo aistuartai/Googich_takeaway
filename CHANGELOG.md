@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- SMB download folders no longer exhaust the server's connection limit. Every operation opened a
+  new SMB connection and never closed it, which a Windows desktop (20 connections at most) soon
+  refuses with STATUS_REQUEST_NOT_ACCEPTED. The app now keeps one shared connection per share,
+  closes it when the settings change or the app stops, and disconnects straight after testing a
+  share. Common SMB errors are explained in plain words.
+- Settings forms keep what was typed when saving fails, so nothing has to be entered again
+  except passwords and keys, which are never put back into the page.
 - Large imports no longer leave exports half-finished. Immich reads metadata in the background,
   and after thousands of uploads that can take hours; files it had not processed within a few
   seconds were treated as unfinished, so every later run rescanned the whole export. An export
