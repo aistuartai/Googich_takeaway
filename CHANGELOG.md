@@ -12,10 +12,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Behind an HTTPS reverse proxy, every form was refused as "Cross-site request refused": the app
-  saw plain http from the proxy while the browser said https. Set `GOOGICH_TRUSTED_PROXIES` to
-  the proxy's address and the app believes its forwarded scheme and client address, which also
-  marks the session cookie secure and throttles logins by the real client. Headers from any other
-  address are ignored.
+  saw plain http from the proxy while the browser said https. The same-site check now compares
+  host and port only, which keeps its protection (another site cannot name this host) and works
+  behind any proxy with no configuration.
+
+### Added
+
+- `GOOGICH_TRUSTED_PROXIES`, recommended behind a reverse proxy: the app then believes that
+  proxy's forwarded scheme and client address, so the session cookie is marked secure and logins
+  are throttled per visitor. Forwarded headers from any other address are ignored, and the app
+  logs a reminder when it sees a proxy it has not been told about.
 - The update helper no longer reports a real release as "not a published release" when GitHub
   is rate limiting anonymous requests (60 an hour per address) or cannot be reached. It retries,
   and if GitHub still cannot be asked it says so and changes nothing.

@@ -26,8 +26,8 @@ services:
     environment:
       TZ: Australia/Melbourne
       GOOGICH_MASTER_KEY_FILE: /run/secrets/master_key
-      # Behind an HTTPS reverse proxy (Nginx Proxy Manager, Caddy, Traefik): its IP address, so
-      # the app knows browsers use https. Without it, saving forms fails as "Cross-site".
+      # Behind an HTTPS reverse proxy (Nginx Proxy Manager, Caddy, Traefik), optionally its IP
+      # address, so the session cookie is marked secure and logins are throttled per visitor.
       # GOOGICH_TRUSTED_PROXIES: 192.168.1.10
     secrets:
       - master_key

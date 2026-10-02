@@ -190,10 +190,23 @@ def create_app(
         context.setdefault("helper", updates.helper_status(data_dir))
         return templates.TemplateResponse(request, name, context, status_code=status_code)
 
+    proxy_hint_logged: list[bool] = []
+
     @app.middleware("http")
     async def guard(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        if not proxy_hint_logged and "x-forwarded-proto" in request.headers:
+            client = request.client.host if request.client else ""
+            if client not in settings.trusted_proxies:
+                proxy_hint_logged.append(True)
+                log.info(
+                    "Requests arrive through a reverse proxy at %s. It works as it is; set "
+                    "GOOGICH_TRUSTED_PROXIES=%s so session cookies are marked secure and logins "
+                    "are throttled per visitor rather than per proxy.",
+                    client,
+                    client,
+                )
         if request.method in UNSAFE_METHODS and not _same_origin(request):
             return _with_headers(Response("Cross-site request refused.", status_code=403))
         path = request.url.path
@@ -904,12 +917,42 @@ async def _csrf_ok(request: Request, expected: str) -> bool:
 
 
 def _same_origin(request: Request) -> bool:
-    """Browsers send Origin on every cross-site POST; require it to be this site."""
+    """Browsers send Origin on every cross-site POST; require it to name this site's host.
+
+    Only the host and port are compared, not the scheme. A forged request from another site
+    always carries that site's host, which pages cannot change, so the scheme adds no protection
+    here. Ignoring it lets the app work behind an HTTPS reverse proxy that forwards plain http,
+    without any configuration.
+    """
     origin = request.headers.get("origin") or request.headers.get("referer")
-    if not origin:
+    if not origin or origin == "null":
         return False
     sent = urlsplit(origin)
-    return f"{sent.scheme}://{sent.netloc}" == f"{request.url.scheme}://{request.url.netloc}"
+    if sent.scheme not in ("http", "https") or not sent.hostname:
+        return False
+    return _same_host(sent.netloc, request.url.netloc)
+
+
+def _same_host(sent: str, served: str) -> bool:
+    """Same host name, and the same port. A missing port matches only the standard ports
+    (80 and 443), because a proxy may forward ``Host`` without the port the browser used."""
+    sent_host, sent_port = _split_netloc(sent)
+    served_host, served_port = _split_netloc(served)
+    if sent_host != served_host:
+        return False
+    if sent_port and served_port:
+        return sent_port == served_port
+    return (sent_port or served_port) in (None, "80", "443")
+
+
+def _split_netloc(netloc: str) -> tuple[str, str | None]:
+    host = netloc.rsplit("@", 1)[-1].lower()
+    if host.startswith("["):  # IPv6 literal, e.g. [::1]:8080
+        end = host.find("]")
+        name, rest = host[: end + 1], host[end + 1 :]
+        return name, rest[1:] if rest.startswith(":") else None
+    name, _, port = host.partition(":")
+    return name, port or None
 
 
 def _client(request: Request) -> str:

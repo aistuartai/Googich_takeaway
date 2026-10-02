@@ -261,12 +261,54 @@ def test_behind_a_trusted_https_proxy_forms_work_and_cookies_are_secure(
     assert "secure" in response.headers["set-cookie"].lower()
 
 
-def test_forwarded_headers_from_untrusted_clients_are_ignored(tmp_path: Path, clock: Clock) -> None:
-    client = proxied(tmp_path, clock, ("192.0.2.1",))  # some other proxy, not this client
+def test_behind_an_untrusted_https_proxy_forms_still_work(tmp_path: Path, clock: Clock) -> None:
+    client = proxied(tmp_path, clock, ())  # no GOOGICH_TRUSTED_PROXIES
     token = client.app.state.setup_token  # type: ignore[attr-defined]
     response = client.post(
         "/setup",
         data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
         headers=HTTPS_PROXY,
     )
-    assert response.status_code == 403  # still refused: the https claim is not believed
+    assert response.status_code == 303
+    # The https claim is not believed, so the cookie is not marked secure.
+    assert "secure" not in response.headers["set-cookie"].lower()
+
+
+def test_untrusted_proxy_gets_a_hint_in_the_log(
+    tmp_path: Path, clock: Clock, caplog: pytest.LogCaptureFixture
+) -> None:
+    client = proxied(tmp_path, clock, ())
+    token = client.app.state.setup_token  # type: ignore[attr-defined]
+    with caplog.at_level(logging.INFO, logger="googich.web"):
+        client.post(
+            "/setup",
+            data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
+            headers=HTTPS_PROXY,
+        )
+    assert "GOOGICH_TRUSTED_PROXIES=192.0.2.10" in caplog.text  # the hint names the proxy
+
+
+@pytest.mark.parametrize(
+    ("origin", "host", "allowed"),
+    [
+        ("https://googich.example", "googich.example", True),  # proxy forwards plain http
+        ("http://googich.example", "googich.example", True),
+        ("http://192.168.8.217:8080", "192.168.8.217:8080", True),  # direct on the LAN
+        ("https://googich.example:443", "googich.example", True),
+        ("https://googich.example:8443", "googich.example:8443", True),
+        ("https://evil.example", "googich.example", False),
+        ("https://googich.example.evil.example", "googich.example", False),
+        ("http://googich.example:8000", "googich.example", False),  # another service, same host
+        ("http://192.168.8.217:9000", "192.168.8.217:8080", False),
+        ("null", "googich.example", False),
+        ("file://googich.example", "googich.example", False),
+    ],
+)
+def test_origin_check(tmp_path: Path, clock: Clock, origin: str, host: str, allowed: bool) -> None:
+    client = TestClient(
+        create_app(WebSettings(tmp_path / "state.db"), clock=clock, start_worker=False),
+        base_url=f"http://{host}",
+        follow_redirects=False,
+    )
+    response = client.post("/login", data={"password": "x"}, headers={"Origin": origin})
+    assert (response.status_code != 403) is allowed

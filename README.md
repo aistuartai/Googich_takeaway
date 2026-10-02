@@ -57,17 +57,19 @@ proxy) if you reach it from anywhere else.
 
 ### Behind a reverse proxy (HTTPS)
 
-Behind Nginx Proxy Manager, Caddy, Traefik or similar, tell the app the proxy's IP address, so it
-knows browsers reach it over https. Without this, saving any form fails with "Cross-site request
-refused", and the session cookie is not marked secure. In `compose.yaml`:
+The app works behind Nginx Proxy Manager, Caddy, Traefik or similar without any changes. The
+proxy must pass the original `Host` header, which Nginx Proxy Manager does by default.
+
+Telling the app the proxy's IP address is recommended: the session cookie is then marked secure,
+and failed logins are throttled per visitor rather than for everyone coming through the proxy.
+The app logs a reminder when it sees a proxy it has not been told about. In `compose.yaml`:
 
 ```yaml
     environment:
       GOOGICH_TRUSTED_PROXIES: 192.168.1.10   # the proxy's address; separate several with commas
 ```
 
-Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are believed. The proxy
-must pass the original `Host` header, which Nginx Proxy Manager does by default.
+Only that address's `X-Forwarded-Proto` and `X-Forwarded-For` headers are believed.
 
 ## First-time setup in the web interface
 
