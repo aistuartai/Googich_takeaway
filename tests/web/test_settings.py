@@ -1107,3 +1107,26 @@ def test_a_failed_check_says_why(world: World) -> None:
     assert response.headers["location"].endswith("check-failed")
     page = world.client.get("/updates?saved=check-failed").text
     assert "GitHub refused (HTTP 403)" in page
+
+
+def test_photos_waiting_and_in_immich_count_up_while_uploading(world: World) -> None:
+    from googich_takeaway.progress import Stage
+
+    _ready(world)
+    latest = {"export_id": "20261001T010203Z", "items": 20, "in_immich": 5, "to_upload": 10,
+              "uploading": True, "sent_before": 0, "at": datetime.now(UTC).isoformat()}  # fmt: skip
+    with State(world.tmp / "state.db") as state:
+        state.set_setting("photos.latest_export", json.dumps(latest), datetime.now(UTC))
+    worker = world.app.state.worker
+    assert worker.claim_for_demo()
+    try:
+        tracker = worker.tracker
+        tracker.plan(Stage.UPLOAD, [("a.jpg", 10), ("b.jpg", 10), ("c.jpg", 10)])
+        for name in ("a.jpg", "b.jpg"):
+            tracker.begin(Stage.UPLOAD, name, 10)
+            tracker.end(Stage.UPLOAD, name)
+        page = world.client.get("/status").text
+        assert "<strong>8</strong> photos and videos not in Immich yet" in page
+        assert "7 of the latest export's 20" in page
+    finally:
+        worker.release_from_demo()

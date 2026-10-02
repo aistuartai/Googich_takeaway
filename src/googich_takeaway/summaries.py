@@ -85,6 +85,14 @@ class Summaries:
         drive_names = {f"gdrive:{s.location}" for s in config.sources() if s.kind == "gdrive"}
         listed = [v for k, v in downloads.listings(state).items() if k in drive_names]
         photos = latest_export(state)
+        if photos and photos.get("uploading") and self._worker.status_running():
+            # Saved when uploading began: add what has gone up since, from the live progress.
+            snapshot = self._worker.progress()
+            done = sum(v.files_done for v in snapshot.stages if v.stage is Stage.UPLOAD)
+            sent = max(0, done - int(str(photos.get("sent_before", 0))))
+            photos = dict(photos)
+            photos["in_immich"] = int(str(photos.get("in_immich", 0))) + sent
+            photos["to_upload"] = max(0, int(str(photos.get("to_upload", 0))) - sent)
         return {
             "uses_drive": bool(drive_names),
             "has_sources": bool(config.sources()),

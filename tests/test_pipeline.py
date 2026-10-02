@@ -475,3 +475,27 @@ def test_a_finished_export_forgets_what_reading_it_found(world: World) -> None:
     assert report.uploaded == 13
     rows = world.config.state._db.execute("SELECT count(*) FROM scan_parts").fetchone()[0]
     assert rows == 0
+
+
+def test_dashboard_figures_are_saved_before_uploading_starts(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.importer import run_import as original
+
+    world.configure()
+    seen_then: list[tuple[int, dict[str, object]]] = []
+
+    def watching(*args: object, **kwargs: object) -> object:
+        state = world.config.state
+        seen_then.append((state.seen_item_count(), state.get_json("photos.latest_export")))
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("googich_takeaway.pipeline.run_import", watching)
+    world.pipeline().run()
+    count, latest = seen_then[0]
+    assert count == 14  # Google Photos: counted once reading is done (one has no date)
+    assert latest["items"] == 14
+    assert latest["to_upload"] == 13
+    assert latest["uploading"] is True
+    final = world.config.state.get_json("photos.latest_export")
+    assert (final["uploading"], final["to_upload"], final["in_immich"]) == (False, 0, 13)

@@ -356,6 +356,8 @@ class Pipeline:
         plan = plan_import(
             export_id, scan, checks, self.state, self.destination, self.options.reimport
         )
+        # The dashboard's figures update now, while uploading, not only when it is all done.
+        self._remember_export(export_id, scan, plan, ImportResult(), pending=True)
         result = run_import(
             plan,
             client,
@@ -399,7 +401,12 @@ class Pipeline:
             self.state.forget_scan_parts(archive_key(p.name, p.size) for p in parts)
 
     def _remember_export(
-        self, export_id: str, scan: ExportScan, plan: ImportPlan, result: ImportResult
+        self,
+        export_id: str,
+        scan: ExportScan,
+        plan: ImportPlan,
+        result: ImportResult,
+        pending: bool = False,
     ) -> None:
         """What the newest export held, for the Google Photos figure on the dashboard.
 
@@ -423,9 +430,21 @@ class Pipeline:
             "not_imported": len(plan.with_decision(Decision.NO_DATE))
             + len(plan.with_decision(Decision.UNSUPPORTED)),
             "failed": len(result.failed),
+            # Not in Immich yet: being uploaded now, or failed and tried again next run.
+            "to_upload": len(plan.with_decision(Decision.UPLOAD))
+            - (0 if pending else len(result.uploaded) + len(result.adopted)),
+            "uploading": pending,
+            # Files the run had already sent for earlier exports: the dashboard counts on from here.
+            "sent_before": self._uploads_done() if pending else 0,
             "at": self.clock().isoformat(),
         }
         self.state.set_json(LATEST_EXPORT_SETTING, counts, self.clock())
+
+    def _uploads_done(self) -> int:
+        if not self.tracker:
+            return 0
+        snapshot = self.tracker.snapshot()
+        return sum(v.files_done for v in snapshot.stages if v.stage is Stage.UPLOAD)
 
     def _scan_resumed(self, amount: int) -> None:
         """Bytes an earlier run already read: counted as done, but not towards the speed."""

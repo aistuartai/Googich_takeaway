@@ -50,6 +50,7 @@
     <p class="station-name">Download folder</p>
     <p class="station-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }}</p>
     <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% if journey.folder_arriving %}, one more arriving{% endif %}{% endif %}</p>
+    {% if photos and photos.get('to_upload') %}<p class="station-note station-pending"><strong>{{ '{:,}'.format(photos['to_upload']) }}</strong> {{ 'photo or video' if photos['to_upload'] == 1 else 'photos and videos' }} not in Immich yet</p>{% endif %}
     <p class="station-link"><a href="/cleanup#folder">Cleanup</a></p>
   </div>
   <div class="leg leg-2{{ ' flowing' if moving_up }}" aria-hidden="true">

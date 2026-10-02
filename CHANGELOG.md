@@ -14,6 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The dashboard keeps up during a run: the Google Photos figure updates as soon as an export
+  has been read, Immich's "of the latest export" line counts up while uploading, and the
+  download folder shows how many photos and videos are not in Immich yet.
 - A failed update check says what went wrong (refused by GitHub's limit, no answer, could not
   connect, an HTTP error) instead of always pointing at the rate limit.
 
