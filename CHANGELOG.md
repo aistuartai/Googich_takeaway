@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The update check could fail with "rate limited" when other things on the same network had
+  used up GitHub's 60 anonymous API requests an hour. It now reads the releases page instead,
+  which that limit does not cover, and asks the API only if the page gives no answer.
+
 ## [0.3.5] - 2026-10-02
 
 ### Added

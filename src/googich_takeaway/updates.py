@@ -23,6 +23,11 @@ from googich_takeaway.state import State
 
 REPOSITORY = "aistuartai/Googich_takeaway"
 LATEST_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+LATEST_PAGE = f"https://github.com/{REPOSITORY}/releases/latest"
+"""Redirects to the newest published release (never a draft or pre-release). Not part of
+GitHub's API, so not subject to its 60 anonymous requests an hour per network address, which
+everything on the network shares."""
+_TAG_PAGE = re.compile(rf"^https://github\.com/{re.escape(REPOSITORY)}/releases/tag/(v[^/?#]+)$")
 CHECK_EVERY = timedelta(hours=24)
 MANUAL_GAP = timedelta(minutes=1)
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
@@ -155,9 +160,17 @@ def _fetch(
     transport: httpx.BaseTransport | None,
     timeout: float = 10.0,
 ) -> UpdateInfo | None:
-    """The latest release, saved for the banner; None if GitHub could not say."""
+    """The latest release, saved for the banner; None if GitHub could not say.
+
+    Asks the releases page first, and the API only if that gives no answer."""
     try:
         with httpx.Client(timeout=timeout, transport=transport) as client:
+            page = client.get(
+                LATEST_PAGE, headers={"User-Agent": f"googich-takeaway/{__version__}"}
+            )
+            found = _TAG_PAGE.match(page.headers.get("location", "")) if page.is_redirect else None
+            if found and parse_version(found[1]):
+                return _save(state, now, found[1].lstrip("v"), found[0])
             response = client.get(
                 LATEST_URL,
                 headers={
@@ -178,9 +191,13 @@ def _fetch(
     ):
         return None
     url = str(data.get("html_url") or f"https://github.com/{REPOSITORY}/releases")
+    return _save(state, now, str(data["tag_name"]).lstrip("v"), url)
+
+
+def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
     if not url.startswith(f"https://github.com/{REPOSITORY}/"):
         url = f"https://github.com/{REPOSITORY}/releases"  # only ever link to this project
-    info = UpdateInfo(str(data["tag_name"]).lstrip("v"), url, now)
+    info = UpdateInfo(latest, url, now)
     state.set_setting(
         "updates.latest",
         json.dumps({"latest": info.latest, "url": info.url, "checked_at": now.isoformat()}),
