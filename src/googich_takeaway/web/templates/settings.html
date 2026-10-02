@@ -58,7 +58,7 @@
   <header><h2>Logs</h2><p>How long detailed log files are kept, so they do not grow without end. History on the dashboard is always kept. Also set on the <a href="/logs#retention">Logs</a> page.</p></header>
   <div class="card">
   {% if saved == 'logs' %}<p class="result ok" role="status">Saved.</p>{% endif %}
-  {% with back="" %}{% include "_retention_form.html" %}{% endwith %}
+  {% include "_retention_form.html" %}
   </div>
 </section>
 {% endblock %}

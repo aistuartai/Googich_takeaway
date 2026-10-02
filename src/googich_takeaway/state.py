@@ -9,11 +9,12 @@ import contextlib
 import json
 import os
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 SCHEMA_VERSION = 8
 SESSION_SEEN_EVERY = timedelta(minutes=1)
@@ -538,6 +539,18 @@ class State:
             (name, value, _to_text(at)),
         )
 
+    def get_json(self, name: str) -> dict[str, Any]:
+        """A setting stored as a JSON object; empty if unset or not an object."""
+        stored = self.get_setting(name)
+        try:
+            value = json.loads(stored) if stored else {}
+        except ValueError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_json(self, name: str, value: Mapping[str, object] | None, at: datetime) -> None:
+        self.set_setting(name, None if value is None else json.dumps(value), at)
+
     def get_sealed(self, name: str) -> str | None:
         row = self._db.execute("SELECT sealed FROM secrets WHERE name = ?", (name,)).fetchone()
         return str(row[0]) if row else None
@@ -566,13 +579,6 @@ class State:
     def sources(self) -> list[SourceRecord]:
         rows = self._db.execute("SELECT * FROM sources ORDER BY name").fetchall()
         return [_source(row) for row in rows]
-
-    def get_source(self, source_id: int) -> SourceRecord | None:
-        row = self._db.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
-        return _source(row) if row else None
-
-    def set_source_enabled(self, source_id: int, enabled: bool) -> None:
-        self._db.execute("UPDATE sources SET enabled = ? WHERE id = ?", (int(enabled), source_id))
 
     def delete_source(self, source_id: int) -> None:
         self._db.execute("DELETE FROM sources WHERE id = ?", (source_id,))

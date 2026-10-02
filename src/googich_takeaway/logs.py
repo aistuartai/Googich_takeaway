@@ -79,6 +79,9 @@ class LogEntry:
 
 class _RedactingFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "googich_redacted", False):
+            return True  # the same filter sits on every handler: redact each record once
+        record.googich_redacted = True
         message = record.getMessage()
         if record.exc_info:
             message += "\n" + logging.Formatter().formatException(record.exc_info)
@@ -167,18 +170,26 @@ class LogBuffer(logging.Handler):
         if not isinstance(minimum, int):
             minimum = logging.INFO
         needle = text.casefold()
+        found: list[LogEntry] = []
         with self._guard:
-            entries = list(self._entries)
-        found = [
-            e
-            for e in entries
-            if e.seq > after
-            and (since is None or e.time >= since)
-            and (until is None or e.time <= until)
-            and logging.getLevelName(e.level) >= minimum
-            and (not needle or needle in e.message.casefold() or needle in e.logger.casefold())
-        ]
-        return found[-limit:]
+            # Newest first, stopping at ``after``: the live tail asks every few seconds and
+            # usually needs only the last few lines, not a copy of all of them.
+            for e in reversed(self._entries):
+                if e.seq <= after or len(found) >= limit:
+                    break
+                if (
+                    (since is None or e.time >= since)
+                    and (until is None or e.time <= until)
+                    and logging.getLevelName(e.level) >= minimum
+                    and (
+                        not needle
+                        or needle in e.message.casefold()
+                        or needle in e.logger.casefold()
+                    )
+                ):
+                    found.append(e)
+        found.reverse()
+        return found
 
 
 @dataclass(frozen=True)

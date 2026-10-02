@@ -362,12 +362,7 @@ details summary { cursor: pointer; }
 .checklist { padding-left: 1.4rem; }
 .checklist li { margin: .55rem 0; }
 .checklist li.done { color: var(--muted); text-decoration: line-through; }
-.run-controls { display: flex; flex-direction: column; align-items: flex-end; gap: .6rem; max-width: 24rem; }
-.run-controls details[open] { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: .9rem 1rem; }
-.run-form { display: flex; flex-direction: column; align-items: flex-end; gap: .6rem; }
-.run-form details { align-self: stretch; text-align: left; }
-.run-form details:not([open]) { align-self: flex-end; }
-.run-controls summary { color: var(--muted); font-weight: 600; }
+.run-controls { display: flex; flex-direction: column; align-items: flex-end; gap: .6rem; }
 .options small { margin: -.7rem 0 .9rem 1.75rem; }
 .drive-export { border-top: 1px solid var(--line); padding: 1.1rem 0; }
 .drive-export:first-of-type { border-top: 0; }
@@ -461,7 +456,7 @@ a.button.secondary:hover { background: transparent; border-color: var(--ink); }
 
 /* ---- help -------------------------------------------------------------------------------- */
 
-.page-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.page-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
 .help-link { font-weight: 600; font-size: .9375rem; }
 .help-intro p { color: var(--muted); font-size: 1.0625rem; }
 .topic-list { list-style: none; padding: 0; margin: 1.5rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 1rem; counter-reset: topic; }
@@ -499,7 +494,6 @@ a.button.secondary:hover { background: transparent; border-color: var(--ink); }
   .help-side { position: static; }
   .on-this-page { float: none; width: auto; margin: 0 0 1rem; }
 }
-.page-head { flex-wrap: wrap; }
 .page-links { display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; margin: 0; font-weight: 600; font-size: .9375rem; }
 .settings-group > header p + p { margin-top: -.4rem; }
 .target-actions { display: flex; gap: .5rem; justify-content: flex-end; flex-wrap: wrap; }
@@ -559,10 +553,7 @@ a.button.danger:hover { background: transparent; border-color: var(--error); }
 .last-run .run-failed { color: var(--error); }
 .run-card.is-ready .status-head { align-items: center; }
 /* Run now and Options side by side; the options open as a panel under them. */
-.run-controls { max-width: none; }
-.run-form { flex-direction: row; align-items: center; gap: .6rem; position: relative; }
-.run-form details.options, .run-form details.options:not([open]) { align-self: center; }
-.run-controls details.options[open] { background: none; border: 0; padding: 0; }
+.run-form { display: flex; align-items: center; gap: .6rem; position: relative; }
 .options > summary.button {
   list-style: none; display: inline-flex; align-items: center; gap: .45rem; padding: .95rem 1.2rem;
   font-size: 1.0625rem; color: var(--ink); background: transparent; border-color: var(--line);

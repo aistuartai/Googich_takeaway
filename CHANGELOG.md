@@ -11,6 +11,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The update commands in the README and the Updates guide find the newest release themselves,
   instead of naming versions that went out of date with each release.
+- Code tidy-up, with no change in behaviour: the web application is split into one module per
+  area (sign-in, dashboard, logs, guide, cleanup, settings, updates, destinations, sources)
+  instead of one 1,700-line file; unused code and CSS rules defined twice are gone; settings
+  stored as JSON share one helper.
+- Loading a page never changes saved state any more: the worker settles a finished update
+  request in the background.
+- The live log asks only for the lines it has not seen, and each log line is cleaned of secrets
+  once instead of once per log handler.
 
 ### Fixed
 

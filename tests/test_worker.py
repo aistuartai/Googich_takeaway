@@ -363,3 +363,21 @@ def test_a_second_run_now_is_refused_while_the_first_is_starting(world: World) -
     assert world.worker._due_trigger() is not None  # the loop has taken the request...
     assert not world.worker.request_run()  # ...so a double click does not queue another run
     assert world.worker.run_pending_or_going()
+
+
+def test_a_finished_update_request_is_settled_by_the_worker(world: World) -> None:
+    from googich_takeaway.worker import RESUME_AFTER_UPDATE
+
+    state = State(world.path)
+    state.set_setting("updates.requested", "9.9.9", NOW)
+    state.set_setting(RESUME_AFTER_UPDATE, "1", NOW)
+    folder = world.tmp / "updater"
+    folder.mkdir()
+    status = folder / "status.json"
+    status.write_text('{"helper": "2", "state": "updating", "version": "9.9.9", "message": ""}')
+    world.worker.settle_update_request()
+    assert state.get_setting("updates.requested") == "9.9.9"  # still going
+    status.write_text('{"helper": "2", "state": "failed", "version": "9.9.9", "message": "x"}')
+    world.worker.settle_update_request()
+    assert state.get_setting("updates.requested") is None
+    assert state.get_setting(RESUME_AFTER_UPDATE) is None  # the paused run was resumed

@@ -336,12 +336,12 @@ class Config:
             if value not in allowed:
                 raise ConfigError(f"Choose a {label} from the list.")
         chosen = {"theme": theme, "colours": colours, "bars": bars, "motion": motion}
-        self._state.set_setting("ui.look", json.dumps(chosen), self._clock())
+        self._state.set_json("ui.look", chosen, self._clock())
 
     # --- schedule --------------------------------------------------------------------------------
 
     def schedule(self) -> Schedule:
-        data = json.loads(self._state.get_setting("schedule") or "{}")
+        data = self._state.get_json("schedule")
         _, latest = self._state.download_dates()
         zone = ZoneInfo(_zone_name(self.general().timezone))
         defaults = Schedule()
@@ -416,9 +416,9 @@ class Config:
         )
 
     def _update_schedule(self, **values: object) -> None:
-        data = json.loads(self._state.get_setting("schedule") or "{}")
+        data = self._state.get_json("schedule")
         data.update(values)
-        self._state.set_setting("schedule", json.dumps(data), self._clock())
+        self._state.set_json("schedule", data, self._clock())
 
     def schedule_paused(self) -> bool:
         return self._state.get_setting("schedule.paused") is not None

@@ -282,16 +282,15 @@ LISTING_SETTING = "sources.listing"
 
 
 def record_listing(state: State, source: str, files: list[RemoteFile], at: datetime) -> None:
-    stored = json.loads(state.get_setting(LISTING_SETTING) or "{}")
+    stored = state.get_json(LISTING_SETTING)
     stored[source] = {
         "count": len(files),
         "bytes": sum(f.size for f in files),
         "at": at.isoformat(),
     }
-    state.set_setting(LISTING_SETTING, json.dumps(stored), at)
+    state.set_json(LISTING_SETTING, stored, at)
 
 
 def listings(state: State) -> dict[str, dict[str, object]]:
     """What each source held when last listed, by source name."""
-    stored = json.loads(state.get_setting(LISTING_SETTING) or "{}")
-    return stored if isinstance(stored, dict) else {}
+    return state.get_json(LISTING_SETTING)

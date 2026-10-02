@@ -86,9 +86,9 @@ class RunReport:
     already_imported: list[tuple[str, datetime]] = field(default_factory=list)
     """Exports skipped because they were imported completely before."""
     waiting: list[str] = field(default_factory=list)
+    """Exports not imported yet because Takeout may still be adding parts."""
     incomplete: list[tuple[str, str]] = field(default_factory=list)
     """Exports saved by hand that look unfinished, and why: imported once complete."""
-    """Exports not imported yet because Takeout may still be adding parts."""
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -398,7 +398,7 @@ class Pipeline:
         self.state.record_seen_items(
             export_id, (item.sha1 for item in scan.unique_items()), self.clock()
         )
-        stored = json.loads(self.state.get_setting(LATEST_EXPORT_SETTING) or "{}")
+        stored = self.state.get_json(LATEST_EXPORT_SETTING)
         if str(stored.get("export_id", "")) > export_id:
             return  # an older export, imported again
         counts = {
@@ -414,7 +414,7 @@ class Pipeline:
             "failed": len(result.failed),
             "at": self.clock().isoformat(),
         }
-        self.state.set_setting(LATEST_EXPORT_SETTING, json.dumps(counts), self.clock())
+        self.state.set_json(LATEST_EXPORT_SETTING, counts, self.clock())
 
     def _scan_progress(self, amount: int) -> None:
         if self.progress:

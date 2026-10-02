@@ -32,11 +32,11 @@ from googich_takeaway.state import State
 log = logging.getLogger("googich.worker")
 
 IDLE_CHECK_SECONDS = 30.0
+"""How often the worker re-reads the schedule while idle, so setting changes take effect."""
 PAUSED_RUN = "run.paused"
 """The options of a run the user paused, so Resume continues it."""
 RESUME_AFTER_UPDATE = "run.resume_after_update"
 """Set when a run was paused for an update: it resumes by itself once the app starts again."""
-"""How often the worker re-reads the schedule while idle, so setting changes take effect."""
 
 
 class Trigger(StrEnum):
@@ -250,6 +250,7 @@ class Worker:
                     log.exception("Run crashed")
                 continue
             self._check_updates()
+            self.settle_update_request()
             self._check_reminders()
             if self._pruned_at is None or self._clock() - self._pruned_at > timedelta(hours=6):
                 self.prune_logs()
@@ -278,6 +279,25 @@ class Worker:
                 updates.check_if_due(state, self._clock)
         except Exception:  # an update check must never stop the worker
             log.exception("Update check failed")
+
+    def settle_update_request(self) -> None:
+        """Once the update helper has finished a requested update, forget the request; if the
+        update failed, the app never restarted, so resume a run paused for it here."""
+        try:
+            with State(self._state_path) as state:
+                requested = state.get_setting("updates.requested")
+                if not requested:
+                    return
+                helper = updates.helper_status(self._state_path.parent)
+                if helper is None or helper.version != requested:
+                    return
+                if helper.state not in ("done", "failed"):
+                    return
+                state.set_setting("updates.requested", None, self._clock())
+            if helper.state == "failed":
+                self.resume_after_update()
+        except Exception:  # never let this stop the worker
+            log.exception("Could not settle the update request")
 
     def _check_reminders(self) -> None:
         try:
@@ -355,9 +375,9 @@ class Worker:
             measured = self.tracker.finish_run()
             if measured:
                 with State(self._state_path) as state:
-                    stored = json.loads(state.get_setting("progress.rates") or "{}")
+                    stored = state.get_json("progress.rates")
                     stored.update({stage.value: rate for stage, rate in measured.items()})
-                    state.set_setting("progress.rates", json.dumps(stored), self._clock())
+                    state.set_json("progress.rates", stored, self._clock())
             with self._lock:
                 self._run_started = None
             self._run_after_hook()
@@ -382,7 +402,7 @@ class Worker:
                 for view in self.tracker.snapshot().stages
             ]
             paused = {"options": options.__dict__, "progress": progress}
-            state.set_setting(PAUSED_RUN, json.dumps(paused), self._clock())
+            state.set_json(PAUSED_RUN, paused, self._clock())
         else:
             title = "Cancelled by you"
             body = "The next scheduled or manual run carries on from where this one stopped."
