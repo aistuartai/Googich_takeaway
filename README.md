@@ -42,7 +42,7 @@ or an SMB share).
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.4.0/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.4.1/docker/compose.yaml
 less compose.yaml                  # read what you are about to run
 
 mkdir -p data secrets && chmod 700 data secrets
