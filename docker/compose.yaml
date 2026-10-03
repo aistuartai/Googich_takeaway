@@ -33,7 +33,7 @@ services:
       - master_key
     volumes:
       - ./data:/data
-      # A large local disk for downloads, if not using an SMB share. Choose /data/staging in Settings.
+      # A large local disk for downloads, if not using an SMB share. Choose /data/staging under Configuration → Destinations.
       # - /mnt/big-disk/googich:/data/staging
     read_only: true
     tmpfs:

@@ -439,7 +439,7 @@ class Worker:
                     f"Schedule paused after {failures} failed runs",
                     [
                         f"Last error: {message.title.removeprefix('Run failed: ')}",
-                        "Fix the problem, then press Resume on the dashboard.",
+                        "Fix the problem, then press Resume the schedule on the dashboard.",
                     ],
                 )
             )

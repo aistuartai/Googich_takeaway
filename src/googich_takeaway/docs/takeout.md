@@ -20,22 +20,22 @@ browser, signed in to the Google account that holds your photos.
    via email** (see [Downloading exports yourself](manual-downloads.md)).
 4. **Frequency:** choose a scheduled export, every month or every 2 months. Either runs for one
    year: twelve or six exports. Every 2 months is usually enough, and uses less Google storage.
-5. **File type:** choose **`.zip`**. `.tgz` works too, but if a run is paused or stopped while
-   reading a `.zip`, it carries on almost at once; a `.tgz` has to be unpacked again from the
-   start (without checking each file again).
-6. **File size:** choose **2 GB** (anything up to 10 GB is fine). A large library comes as many
-   parts, which the app handles the same as one. Small parts mean less to repeat when something
-   is interrupted: a download that fails in a browser, or a `.tgz` that must be unpacked again
-   after a pause. With `.zip` from Drive the size matters little, as downloads resume where they
-   stopped either way.
+5. **File type:** choose **`.zip`**.
+6. **File size:** choose **2 GB** (anything up to 10 GB is fine).
 7. Press **Create export**.
+
+> [!TIP]
+> **Why `.zip` in small parts?** If a run is paused or stopped while reading a `.zip`, it carries
+> on almost at once; a `.tgz` has to be unpacked again from the start. Small parts mean less to
+> repeat when something is interrupted, such as a download that fails in a browser. A large
+> library then comes as many parts, which the app handles the same as one.
 
 Google emails you when each export is ready. The first one can take hours or days for a big
 library.
 
 Then note today's date, and how often it exports, under **Configuration → Schedule**, in *Google
-Takeout schedule*. The page then lists the days the exports are expected; the app reminds you three weeks before the schedule
-ends, and can run on the same rhythm (see
+Takeout schedule*. The page then lists the days the exports are expected; the app reminds you
+three weeks before the schedule ends, and can run on the same rhythm (see
 [Schedule and notifications](schedule.md#following-the-takeout-schedule)).
 
 ## Making the export smaller
@@ -75,6 +75,7 @@ Drive, after `/folders/`.
 
 ## Things to know
 
+> [!WARNING]
 > Every export counts against your Google storage until you delete it. A library of 200 GB needs
 > 200 GB free in your Google account for each export. Delete exports from Drive once the app says
 > they are safe to remove (see [Cleanup](cleanup.md)), and empty Drive's trash afterwards.
@@ -93,5 +94,5 @@ Drive, after `/folders/`.
 ## Checking it worked
 
 After Google's email arrives, open **Configuration → Sources** and press **Test** on the Drive
-source: it lists the archives it can see. Then press **Run now** on the dashboard, or wait for the
+source: it shows the folder's name, and how many archives it can see and their total size. Then press **Run now** on the dashboard, or wait for the
 schedule.

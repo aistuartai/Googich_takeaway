@@ -9,7 +9,7 @@
   <section class="card run-card{{ ' is-running' if status.running }}{{ ' is-ready' if not status.running and not status.run_paused }}">
     <div class="status-head">
       <div>
-        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else ('partial' if failed_exports else 'ready')) }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% elif failed_exports %}Completed with errors{% else %}Ready{% endif %}</h2>
+        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else ('partial' if failed_exports else 'ready')) }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% elif failed_exports %}{{ 'Run failed' if last_run and last_run.status == 'failed' else 'Completed with errors' }}{% else %}Ready{% endif %}</h2>
         {% if status.stopping %}
         <p class="status-line">Stopping at the next safe point, between or inside file transfers. Nothing done so far is lost.</p>
         {% elif status.running %}

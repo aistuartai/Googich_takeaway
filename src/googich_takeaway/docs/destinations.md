@@ -36,8 +36,9 @@ Archives wait here between download and import. Choose:
   itself, so nothing needs mounting and the container needs no extra privileges.
 
 For SMB, enter the server, share, folder within the share, user name and password (and the domain
-if the server needs one). Use an account that can reach only that folder. The folder is created if
-missing, and a test file is written and removed before the settings are saved.
+if the server needs one, or the port if it is not 445). Use an account that can reach only that
+folder. The folder is created if missing, and a test file is written and removed before the
+settings are saved. **Test download folder** checks it again at any time.
 
 ### How much space
 
@@ -47,5 +48,5 @@ deleted from **Cleanup** to free space.
 
 ### Archives already in the folder
 
-You can also copy Takeout archives into the download folder yourself. They are imported on the
-next run like downloaded ones.
+You can also save Takeout archives into the download folder yourself: see
+[Downloading exports yourself](manual-downloads.md), including when they are imported.

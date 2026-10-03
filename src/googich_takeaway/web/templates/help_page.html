@@ -5,11 +5,14 @@
   <aside class="help-side" aria-label="Guide topics">
     <a class="help-back" href="/help">Guide</a>
     {% include "_help_search.html" %}
+    {% for group in groups %}
+    <p class="help-group">{{ group }}</p>
     <ol>
-      {% for topic in topics %}
+      {% for topic in topics if topic.group == group %}
       <li><a href="/help/{{ topic.slug }}" {{ 'aria-current="page"'|safe if topic.slug == doc.topic.slug }}>{{ topic.title }}</a></li>
       {% endfor %}
     </ol>
+    {% endfor %}
   </aside>
   <article class="card prose">
     {% if doc.contents|length > 2 %}

@@ -13,14 +13,8 @@ uv run googich fetch --drive-folder FOLDER_ID --service-account key.json \
   --staging /path/to/downloads                                               # from Drive
 ```
 
-Key files must be readable only by you (`chmod 600`). Keys are never accepted on the command
+`--staging` is the download folder. Key files must be readable only by you (`chmod 600`). Keys are never accepted on the command
 line, so they stay out of your shell history.
 
 In the container, `googich reset-password` clears the web password, so the next start offers
-first-run setup again:
-
-```bash
-docker compose exec googich googich reset-password
-docker compose restart googich
-docker compose logs googich | grep "First-run setup"
-```
+first-run setup again: see [Forgot the password](troubleshooting.md#the-web-interface).

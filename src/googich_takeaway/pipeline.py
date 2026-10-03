@@ -239,10 +239,10 @@ class Pipeline:
         general = self.config.general()
         sources = [s for s in self.config.sources() if s.enabled]
         if not immich.url or not key:
-            raise ConfigError("Immich is not set up (Settings).")
+            raise ConfigError("Immich is not set up (Configuration → Destinations).")
         staging = self.config.staging_location()
         if staging is None:
-            raise ConfigError("No download folder is set (Settings).")
+            raise ConfigError("No download folder is set (Configuration → Destinations).")
         if not sources:
             raise ConfigError("No sources are set up (Sources).")
 

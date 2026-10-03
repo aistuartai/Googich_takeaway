@@ -44,9 +44,10 @@ believed. In `compose.yaml`:
 Back up the **`data` folder**: it holds the database (what was downloaded and uploaded, your
 settings and encrypted credentials) and the logs.
 
-Keep **`secrets/master.key`** somewhere separate and safe. Without it the stored credentials
-cannot be read, and you would enter them again. Stored next to the database in the same backup,
-it lets anyone with the backup read the credentials.
+> [!IMPORTANT]
+> Keep **`secrets/master.key`** somewhere separate and safe. Without it the stored credentials
+> cannot be read, and you would enter them again. Stored next to the database in the same
+> backup, it lets anyone with the backup read the credentials.
 
 If a backup containing both was exposed, replace the credentials: create a new Immich API key and
 a new service account key, and change the SMB password.

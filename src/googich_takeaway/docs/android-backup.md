@@ -54,8 +54,11 @@ Google Photos library was kept in Original quality, there should be few.
 ## 5. Freeing space on the phone
 
 The app offers **Free Up Space**, which removes photos from the phone once they are safely in
-Immich. It deletes from the phone, so use it only when you are sure the server, and its backups,
-are in good order. Photos still in Google Photos are not affected.
+Immich. Photos still in Google Photos are not affected.
+
+> [!WARNING]
+> Free Up Space deletes from the phone. Use it only when you are sure the server, and its
+> backups, are in good order.
 
 ## Checking it works
 

@@ -1,8 +1,9 @@
 # Cleanup
 
 Once an export is safely in Immich, its archives are just copies. **Configuration → Cleanup**
-shows which ones can go, in two places. The dashboard's Cleanup summary (switch it on with
-**Configure**) shows the total.
+shows which ones can go, in two sections: **Download folder** and **Google Drive**. The
+dashboard's Cleanup summary (switch it on with **Configure dashboard**, at the bottom of the
+dashboard) shows the total.
 
 ## When an export is safe to remove
 
@@ -12,9 +13,12 @@ All of these must be true:
 - Immich has **finished processing** the uploads, and their dates were **checked**. After a big
   import this can take a few runs.
 - No file shows a **different date** in Immich than the one sent.
+- No **failed files** are waiting: they were retried successfully, or you chose to ignore them
+  (see [When files fail](how-it-works.md#when-files-fail)).
 
-Files with **no date**, and types Immich does not accept, are never uploaded. They exist only in
-the archive and in Google Photos, so removing such an export asks you to confirm first.
+Files with **no date**, types Immich does not accept, and failed files you ignored are not in
+Immich. They exist only in the archive and in Google Photos, so removing such an export asks you
+to confirm first.
 
 ## The download folder
 
@@ -40,5 +44,6 @@ it downloaded, and links to each one once its export is safe to remove. To free 
 
 The next run notices the archives are gone, and Cleanup marks them as removed.
 
+> [!IMPORTANT]
 > Removing archives does not touch Google Photos. After removing them, your photos are in Google
 > Photos and in Immich's storage. Make sure Immich's storage is backed up.

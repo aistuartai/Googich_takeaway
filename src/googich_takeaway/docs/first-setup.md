@@ -35,10 +35,9 @@ the same choice.
 
 1. Set up a scheduled Google Takeout export to Google Drive:
    [Setting up Google Takeout](takeout.md).
-2. Create a service account and share the Takeout folder with it:
+2. Create a service account and its key, add the Drive folder under **Configuration → Sources**,
+   then share the folder with the address the Sources page shows. Press **Test**. Step by step:
    [Connecting Google Drive](google-drive.md).
-3. In **Configuration → Sources**, add the Drive folder and upload the service account's key.
-   Press **Test**.
 
 **Downloading the exports yourself.** No Google Cloud: Takeout emails you a link, and you save
 the archives into the download folder (or a folder of your own). See
@@ -49,8 +48,9 @@ the archives into the download folder (or a folder of your own). See
 All under the **Configuration** menu:
 
 - **Settings → Time zone:** used for photos that carry no time zone of their own.
-- **Schedule:** how often to run. Weekly suits most people; Takeout exports arrive every two
-  months.
+- **Schedule:** when to run. **Follow my Takeout schedule** checks on each day an export is
+  expected; **Weekly** is a simple alternative.
+- **Settings → Uploads:** how many files go to Immich at once (three unless you change it).
 - **Notifications:** where to send messages after runs (see
   [Schedule and notifications](schedule.md)).
 
@@ -59,5 +59,6 @@ All under the **Configuration** menu:
 Press **Run now** on the dashboard. The first export of a big library takes a while: the dashboard
 shows progress and an estimate of the time left. You can close the page; the run continues.
 
-Back up your Immich database before the first real import, and consider trying a test Immich user
-first.
+> [!IMPORTANT]
+> Back up your Immich database before the first real import, and consider trying a test Immich
+> user first.

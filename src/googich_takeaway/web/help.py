@@ -27,37 +27,51 @@ class Topic:
     slug: str
     title: str
     summary: str
+    group: str = ""
 
+
+START, RUNNING, REFERENCE = "Getting started", "Running it", "Reference"
+GROUPS = (START, RUNNING, REFERENCE)
 
 TOPICS = (
-    Topic("how-it-works", "How it works", "The journey from Google Photos to Immich."),
+    Topic("how-it-works", "How it works", "The journey from Google Photos to Immich.", START),
     Topic(
         "what-is-immich",
         "What is Immich?",
         "Your own photo library, and why it pairs with this app.",
+        START,
     ),
-    Topic("immich-setup", "Setting up Immich", "Installing Immich and connecting it to this app."),
-    Topic("first-setup", "First-time setup", "Everything to set up, in order."),
     Topic(
-        "android-backup",
-        "Backing up an Android phone",
-        "The Immich app: new photos straight from your phone.",
+        "immich-setup",
+        "Setting up Immich",
+        "Installing Immich and connecting it to this app.",
+        START,
     ),
-    Topic("takeout", "Setting up Google Takeout", "A scheduled export of Google Photos."),
-    Topic("google-drive", "Connecting Google Drive", "A read-only service account."),
+    Topic("first-setup", "First-time setup", "Everything to set up, in order.", START),
+    Topic("takeout", "Setting up Google Takeout", "A scheduled export of Google Photos.", START),
+    Topic("google-drive", "Connecting Google Drive", "A read-only service account.", START),
     Topic(
         "manual-downloads",
         "Downloading exports yourself",
         "No Google Cloud: save Takeout's archives into a folder.",
+        START,
     ),
-    Topic("destinations", "Immich and the download folder", "Where photos go, and wait."),
-    Topic("schedule", "Schedule and notifications", "When runs happen, and messages."),
-    Topic("dates", "Dates and time zones", "How each photo's date is worked out."),
-    Topic("cleanup", "Cleanup", "Freeing space safely, here and in Google Drive."),
-    Topic("updates", "Updates", "New releases, and one-click updates."),
-    Topic("security", "Security and backups", "What is protected, and what to back up."),
-    Topic("troubleshooting", "Troubleshooting", "Common problems and what to do."),
-    Topic("command-line", "Command-line tools", "Scanning and importing from a terminal."),
+    Topic("destinations", "Immich and the download folder", "Where photos go, and wait.", START),
+    Topic("schedule", "Schedule and notifications", "When runs happen, and messages.", RUNNING),
+    Topic("cleanup", "Cleanup", "Freeing space safely, here and in Google Drive.", RUNNING),
+    Topic("updates", "Updates", "New releases, and one-click updates.", RUNNING),
+    Topic(
+        "android-backup",
+        "Backing up an Android phone",
+        "The Immich app: new photos straight from your phone.",
+        RUNNING,
+    ),
+    Topic("dates", "Dates and time zones", "How each photo's date is worked out.", REFERENCE),
+    Topic("security", "Security and backups", "What is protected, and what to back up.", REFERENCE),
+    Topic("troubleshooting", "Troubleshooting", "Common problems and what to do.", REFERENCE),
+    Topic(
+        "command-line", "Command-line tools", "Scanning and importing from a terminal.", REFERENCE
+    ),
 )
 BY_SLUG = {topic.slug: topic for topic in TOPICS}
 
@@ -84,9 +98,37 @@ class _Links(Treeprocessor):
                 link.set("href", f"/help/{slug}" + (f"#{anchor}" if anchor else ""))
 
 
+_CALLOUTS = {"NOTE": "Note", "TIP": "Tip", "IMPORTANT": "Important", "WARNING": "Warning"}
+
+
+class _Callouts(Treeprocessor):
+    """GitHub's alerts, ``> [!TIP]`` and the like, as styled boxes, so a guide looks the same in
+    the app as on GitHub. Other quotes are left alone."""
+
+    def run(self, root: etree.Element) -> None:
+        for quote in root.iter("blockquote"):
+            first = quote.find("p")
+            if first is None or not first.text:
+                continue
+            text = first.text.lstrip()
+            for marker, title in _CALLOUTS.items():
+                tag = f"[!{marker}]"
+                if text.startswith(tag):
+                    first.text = text[len(tag) :].lstrip("\n ")
+                    quote.set("class", f"callout callout-{marker.lower()}")
+                    label = etree.Element("p")
+                    label.set("class", "callout-title")
+                    label.text = title
+                    quote.insert(0, label)
+                    if not first.text and not len(first):
+                        quote.remove(first)
+                    break
+
+
 class _GuideExtension(Extension):
     def extendMarkdown(self, md: markdown.Markdown) -> None:
         md.treeprocessors.register(_Links(md), "guide-links", 1)
+        md.treeprocessors.register(_Callouts(md), "guide-callouts", 2)
         # No raw HTML: show it as text.
         md.preprocessors.deregister("html_block")
         md.inlinePatterns.deregister("html")

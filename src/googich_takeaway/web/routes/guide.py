@@ -25,6 +25,7 @@ def register(app: FastAPI, web: Shared) -> None:
             config,
             "help.html",
             topics=help.TOPICS,
+            groups=help.GROUPS,
             q=query,
             hits=help.search(query) if query else [],
         )
@@ -33,8 +34,17 @@ def register(app: FastAPI, web: Shared) -> None:
     def help_page(request: Request, config: ConfigDep, slug: str) -> Response:
         found = help.page(slug)
         if found is None:
-            return page(request, config, "help.html", topics=help.TOPICS, status_code=404)
-        return page(request, config, "help_page.html", doc=found, topics=help.TOPICS)
+            return page(
+                request,
+                config,
+                "help.html",
+                topics=help.TOPICS,
+                groups=help.GROUPS,
+                status_code=404,
+            )
+        return page(
+            request, config, "help_page.html", doc=found, topics=help.TOPICS, groups=help.GROUPS
+        )
 
     @app.get("/about", response_class=HTMLResponse)
     def about(request: Request, config: ConfigDep) -> Response:

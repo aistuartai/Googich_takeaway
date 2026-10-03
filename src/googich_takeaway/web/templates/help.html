@@ -24,12 +24,17 @@
   <p><a href="/help">Clear the search</a></p>
 </section>
 {% endif %}
-<ol class="topic-list">
-  {% for topic in topics %}
-  <li>
-    <a href="/help/{{ topic.slug }}">{{ topic.title }}</a>
-    <span>{{ topic.summary }}</span>
-  </li>
-  {% endfor %}
-</ol>
+{% for group in groups %}
+<section class="topic-group">
+  <h2>{{ group }}</h2>
+  <ol class="topic-list">
+    {% for topic in topics if topic.group == group %}
+    <li>
+      <a href="/help/{{ topic.slug }}">{{ topic.title }}</a>
+      <span>{{ topic.summary }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endfor %}
 {% endblock %}

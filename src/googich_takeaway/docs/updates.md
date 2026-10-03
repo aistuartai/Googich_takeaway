@@ -5,9 +5,8 @@
 Once a day the app asks GitHub whether a new release is out, and shows a banner at the top of
 every page when there is one. Opening **Help → Updates** or **Help → About** also asks, if the
 last answer is more than 10 minutes old, so the latest release they show is current. Press
-**Check now** under Help → Updates to ask straight away. A check can be repeated once a
-minute: GitHub allows 60 anonymous checks an hour from each network address, shared by everything
-on your network.
+**Check now** under Help → Updates to ask straight away; it can be repeated once a minute. The
+check reads GitHub's public releases page. If a check fails, Help → Updates says why.
 
 The check is anonymous and sends nothing but the app's version. Switch the daily check off under
 Help → Updates if you prefer. The app never installs anything by itself.
@@ -17,8 +16,9 @@ Help → Updates if you prefer. The app never installs anything by itself.
 On the Docker host, in the folder holding `compose.yaml`:
 
 ```bash
-V=$(curl -fsS https://api.github.com/repos/aistuartai/Googich_takeaway/releases/latest \
-  | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')   # newest release
+# The newest release, from where GitHub's "latest release" page points:
+V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+  https://github.com/aistuartai/Googich_takeaway/releases/latest | grep -oE '[0-9.]+$')
 [ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
   && docker compose pull && docker compose up -d
 ```
@@ -27,14 +27,14 @@ The compose file names a fixed version, so the app changes only when you choose.
 
 ## One-click updates
 
-With the optional **update helper** installed on the Docker host, the banner and Help → Updates offer an
-**Update** button. The app itself never gets access to Docker: it only writes the version it found
-into `data/updater/request.json`. The helper, a shell script started by systemd outside the
+With the optional **update helper** installed on the Docker host, the banner offers **Update now**
+and Help → Updates offers **Update to X.Y.Z**. The app itself never gets access to Docker: it only
+writes the version it found into `data/updater/request.json`. The helper, a shell script started by systemd outside the
 container, then:
 
-1. accepts nothing but a plain version number such as `0.3.0`,
-2. checks it is a published release of this project, on GitHub's releases pages (not its API,
-   which limits how often anyone on your network may ask),
+1. accepts nothing but a plain version number such as `0.3.8`,
+2. checks it is a published release of this project, on GitHub's releases pages, that has its
+   helper files attached (so it installs 0.3.5 or later),
 3. sets that version in `compose.yaml`, keeping a copy of the old file,
 4. pulls the image, restarts the container, and waits for it to report the new version,
 5. restores the previous version automatically if anything fails.
@@ -47,7 +47,8 @@ Progress and the result appear in the banner and under Help → Updates.
 
 ## Installing the update helper
 
-On the Docker host, run:
+Copy the command from **Help → Updates**: it is made for the version you run, with a line that
+checks the installer first. For this release it is the same as:
 
 ```bash
 curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.3.8/install-updater.sh
@@ -55,15 +56,20 @@ sudo bash install-updater.sh /opt/googich
 ```
 
 Change `/opt/googich` if `compose.yaml` is somewhere else. In a Proxmox container, run it inside
-the container with `pct exec <id> -- bash -c '…'`, without `sudo`.
+the container, without `sudo`, for example:
 
-**Help → Updates shows the same command for the version you run, with one more line** that
-checks the installer's SHA-256 against the copy inside the app, so a changed download is caught
-before it runs. The installer then checks every helper file it downloads against the release's
-published checksums, and installs nothing if one does not match.
+```bash
+pct exec 123 -- bash -c 'cd /tmp && curl -fsSLO <installer URL> && bash install-updater.sh /opt/googich'
+```
 
-**The same command upgrades it.** When a release brings a newer helper, Help → Updates (and the
-*Update complete* banner) says so; run the command again.
+The extra line on Help → Updates checks the installer's SHA-256 against the copy inside the app,
+so a changed download is caught before it runs. The installer then checks every helper file it
+downloads against the release's published checksums, and installs nothing if one does not
+match.
+
+**The same command upgrades it.** Help → Updates and Help → About show the installed helper's
+version (3 at present). When a release brings a newer one, Help → Updates says *The update helper
+can be upgraded* (as does the *Update complete* banner); run the command again.
 
 What it does, as root:
 

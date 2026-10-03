@@ -13,7 +13,8 @@ Both have their own page in the **Configuration** menu: **Schedule** and **Notif
 | Follow my Takeout schedule | on each expected Takeout export day, trying again until it arrives |
 
 Times are in the time zone set under Configuration → Settings. Takeout exports arrive every month
-or two, so **weekly** is plenty; a run that finds nothing new takes seconds.
+or two, so **Follow my Takeout schedule** suits most people; **weekly** is a simple alternative,
+as a run that finds nothing new takes seconds.
 
 ### Following the Takeout schedule
 
@@ -46,11 +47,17 @@ schedule** stops scheduled runs until you press **Resume schedule**; Run now sti
 A failed run never retries in a loop. It ends, records why, and notifies you. The next scheduled
 run tries again. If several scheduled runs fail in a row (three, unless you change it), the
 schedule **pauses**: the dashboard says so, and you press **Resume the schedule** once the problem
-is fixed. Runs you start yourself do not count towards the pause.
+is fixed.
+
+- Runs you start yourself do not count towards the pause.
+- A run that **completed with errors** (a few files failed) does not count either; see
+  [When files fail](how-it-works.md#when-files-fail).
+- Any run that does not fail, including one you start, resets the count.
 
 ### Run options
 
-Under **Run now**, *Options* has two tick boxes for unusual cases. Tick one, then press **Run now**:
+**Options**, beside **Run now**, has two tick boxes for unusual cases. Tick one, then press
+**Run now**:
 
 - **Re-import files missing from Immich:** rescans exports that were already imported and uploads
   anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are
@@ -82,7 +89,20 @@ Apprise chooses the service by the start of the URL, so a URL starting with `htt
 `https://` is not accepted.
 
 When a test fails, the reason the service gave is shown, such as a wrong token or a server that
-cannot be reached.
+cannot be reached. **Test all** sends a test to every notification at once.
+
+### What to be told about
+
+Tick what each run should tell you about:
+
+- **A run imports new files** (on by default).
+- **A run completes, but some files could not be uploaded** (on by default): the files and
+  reasons, and that the run box offers Retry or Ignore.
+- **A run finds nothing new** (off by default; it happens most runs).
+- **A run fails** (on by default).
+- **The schedule pauses after failed runs** (on by default).
+- **The Takeout schedule needs attention** (on by default): no new export for 10 days longer than
+  expected, or the scheduled export ends within three weeks. Each reminder is sent once.
 
 ### Home Assistant
 
@@ -95,12 +115,3 @@ cannot be reached.
    the Home Assistant app instead, add the notify service after the token:
    `hassio://ADDRESS:8123/TOKEN/mobile_app_yourphone`. The service's name is under Developer tools
    → Actions; search for `notify.mobile_app`.
-
-Choose what to be told about:
-
-- **A run imports new files** (on by default).
-- **A run finds nothing new** (off by default; it happens most runs).
-- **A run fails** (on by default).
-- **The schedule pauses after failed runs** (on by default).
-- **The Takeout schedule needs attention** (on by default): no new export for 10 days longer than
-  expected, or the scheduled export ends within three weeks. Each reminder is sent once.

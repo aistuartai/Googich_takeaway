@@ -30,12 +30,12 @@ A large library then comes as many parts, all listed on the email's download pag
 
 Under **Configuration → Sources**, choose **I download the exports myself**, then one of:
 
-- **The download folder** (simplest). The app already reads it on every run. If it is an SMB
+- **Use the download folder** (simplest). The app already reads it on every run. If it is an SMB
   share, such as a folder on a NAS, save the archives straight into it from your browser, for
   example `\\nas\photos\takeout`.
-- **Another folder on this server.** Map the folder into the container in `compose.yaml`, for
-  example `- /srv/takeout-downloads:/data/manual:ro`, then add `/data/manual` as a local folder.
-  Archives there are read where they are, never copied or changed.
+- **Or use another folder on this server.** Map the folder into the container in `compose.yaml`,
+  for example `- /srv/takeout-downloads:/data/manual:ro`, then enter `/data/manual` and press
+  **Add folder**. Archives there are read where they are, never copied or changed.
 
 ## 3. Download each export
 
@@ -59,10 +59,11 @@ The next run, scheduled or **Run now**, imports the export once it looks complet
   copying is not imported half-done. Browsers save unfinished downloads under another name
   (`.crdownload`, `.part`), which the app ignores.
 
-The app cannot tell that the **last** part is missing, because Takeout's file names do not say
-how many parts there are. Check the email's list of files, and download them all before the next
-run. If a part turns up later, the export is read again with it, and only what Immich is still
-missing is uploaded.
+> [!NOTE]
+> The app cannot tell that the **last** part is missing, because Takeout's file names do not say
+> how many parts there are. Check the email's list of files, and download them all before the
+> next run. If a part turns up later, the export is read again with it, and only what Immich is
+> still missing is uploaded.
 
 A good schedule for this way of working is
 **Follow my Takeout schedule** (see [Schedule and notifications](schedule.md)), so the app

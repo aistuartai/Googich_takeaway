@@ -9,6 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The guide is reviewed against the app and easier to read: topics grouped (Getting started,
+  Running it, Reference), numbered steps, tables and GitHub-style notes and warnings shown as
+  boxes in the app. New: how a run ends (completed, with errors, failed), pausing and resuming,
+  what the dashboard figures mean, Settings → Uploads. Corrected: the upload speed, update check
+  and helper details, button names, and Cleanup's conditions.
+- The update command in the README and the Updates guide asks GitHub's releases page, not its
+  rate-limited API.
+- After a run that failed because too many files failed, the run box says "Run failed", not
+  "Completed with errors".
 - The Takeout guides recommend `.zip` exports in 2 GB parts (up to 10 GB) instead of 50 GB:
   less to repeat when a browser download fails or a `.tgz` is resumed; with `.zip` from Drive
   the size matters little.

@@ -30,7 +30,7 @@ under a personal Google account, or ask the organisation's administrator.
 1. In Google Drive, open the **Takeout** folder and copy its ID: the last part of its address,
    after `/folders/`.
 2. In **Configuration → Sources**, under *Add a Google Drive folder*, enter a name, the folder ID,
-   and the key file. Press **Add**.
+   and the key file. Press **Add Google Drive folder**.
 
 The key is encrypted before it is stored, and never shown again. The Sources page shows the
 service account's address (it ends in `iam.gserviceaccount.com`).

@@ -82,8 +82,9 @@ to install on the Docker host), **Update now** installs it in one click, pausing
 first. Or by hand, in the folder holding `compose.yaml`:
 
 ```bash
-V=$(curl -fsS https://api.github.com/repos/aistuartai/Googich_takeaway/releases/latest \
-  | grep -oE '"tag_name": *"v[0-9.]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')   # newest release
+# The newest release, from where GitHub's "latest release" page points:
+V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+  https://github.com/aistuartai/Googich_takeaway/releases/latest | grep -oE '[0-9.]+$')
 [ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
   && docker compose pull && docker compose up -d
 ```
@@ -94,7 +95,8 @@ V=$(curl -fsS https://api.github.com/repos/aistuartai/Googich_takeaway/releases/
   originals rather than stacked with them.
 - HEIC and RAW photos are dated from Takeout's metadata file, which has no time zone; the one set
   in Settings fills the gap.
-- Uploads go one at a time, so a very large first import takes a while.
+- Albums are not recreated in Immich, and a very large first import takes hours (three files go
+  at a time by default; up to eight under Settings).
 
 ## Development
 

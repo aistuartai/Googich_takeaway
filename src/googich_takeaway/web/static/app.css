@@ -690,3 +690,39 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 .failed-files .hint { color: var(--warn); font-weight: 600; font-size: .875rem; }
 .state-dot.partial { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent); }
 .run-partial { color: var(--warn); }
+/* ---- guide ---------------------------------------------------------------------------------- */
+.topic-group { margin-top: 2rem; }
+.topic-group h2 { font-size: 1.0625rem; color: var(--muted); margin-bottom: .75rem; }
+.topic-group .topic-list { margin-top: 0; }
+.help-group { margin: 1.1rem 0 .2rem; font: 650 .8125rem var(--display); color: var(--muted); }
+.help-side ol { margin-top: .2rem; }
+.prose { line-height: 1.65; }
+.prose h2 { padding-top: 1.25rem; border-top: 1px solid var(--line); }
+.prose h1 + p, .prose h1 + h2 { border-top: 0; }
+.prose > p:first-of-type { font-size: 1.0625rem; }
+.prose a { overflow-wrap: anywhere; }
+.prose :not(pre) > code { background: var(--track); padding: .05em .35em; border-radius: 5px; font-size: .875em; }
+/* Numbered steps: round markers, so a sequence reads as one. */
+.prose ol { list-style: none; counter-reset: step; padding-left: 2.4rem; }
+.prose ol > li { counter-increment: step; position: relative; }
+.prose ol > li::before {
+  content: counter(step); position: absolute; left: -2.4rem; top: .05rem; width: 1.6rem; height: 1.6rem;
+  border-radius: 50%; display: grid; place-items: center; font: 700 .8125rem var(--display);
+  color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, var(--raised));
+}
+.prose ol ol, .prose ul ol { counter-reset: step; }
+/* Tables: a header band and quiet rows. */
+.prose table { border: 1px solid var(--line); border-radius: var(--r-sm); border-collapse: separate; border-spacing: 0; overflow: hidden; display: block; overflow-x: auto; }
+.prose th { background: var(--surface); color: var(--ink); border-bottom: 1px solid var(--line); }
+.prose td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.prose tr:last-child td { border-bottom: 0; }
+/* Callouts (> [!TIP] and the like, as on GitHub). */
+.prose blockquote.callout { border-left-width: 4px; }
+.prose blockquote.callout .callout-title { font: 700 .875rem var(--display); margin-bottom: .25rem; }
+.callout-note, .callout-tip { border-left-color: var(--sky); background: color-mix(in srgb, var(--sky) 7%, var(--surface)); }
+.callout-note .callout-title, .callout-tip .callout-title { color: var(--sky); }
+.callout-important { border-left-color: var(--violet); background: color-mix(in srgb, var(--violet) 7%, var(--surface)); }
+.callout-important .callout-title { color: var(--violet); }
+.callout-warning { border-left-color: var(--warn); }
+.callout-warning .callout-title { color: var(--warn); }
+.prose blockquote.callout p + p { margin-top: .5rem; }

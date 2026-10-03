@@ -193,3 +193,23 @@ def test_immich_guides_are_listed() -> None:
     assert setup is not None
     assert "docker compose up -d" in setup.html
     assert "The first user to register becomes the administrator." in setup.html
+
+
+def test_callouts_render_as_boxes_like_on_github() -> None:
+    import markdown
+
+    md = markdown.Markdown(extensions=["toc", help._GuideExtension()])
+    html = md.convert("> [!TIP]\n> Use **zip** files.\n\nText.\n\n> An ordinary quote.")
+    assert '<blockquote class="callout callout-tip">' in html
+    assert '<p class="callout-title">Tip</p><p>Use <strong>zip</strong> files.</p>' in html
+    assert "<blockquote>\n<p>An ordinary quote.</p>" in html
+    assert "[!TIP]" not in html
+
+
+def test_guide_topics_are_grouped(world: World) -> None:
+    page = world.client.get("/help").text
+    assert page.index("<h2>Getting started</h2>") < page.index("<h2>Running it</h2>")
+    assert page.index("<h2>Running it</h2>") < page.index("<h2>Reference</h2>")
+    assert all(topic.group in help.GROUPS for topic in help.TOPICS)
+    side = world.client.get("/help/cleanup").text
+    assert '<p class="help-group">Reference</p>' in side

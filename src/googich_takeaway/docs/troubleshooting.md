@@ -1,8 +1,8 @@
 # Troubleshooting
 
 **Help → Logs** shows what the app did, newest first. Each run under History on the dashboard has
-a *log* link showing only that run, in full detail. **Download log files** saves every log file
-kept, in one zip.
+a *log* link showing only that run, in full detail. **Download logs** saves every log file kept,
+in one zip.
 
 Detailed log files are kept for 90 days, then deleted. Change this under **Configuration →
 Settings → Logs**, or at the bottom of the Logs page (7 to 3650 days). History on the dashboard
@@ -53,23 +53,31 @@ Give the account change (write) permission on the share and the folder.
 ## Runs
 
 **An export is "waiting: Takeout is still writing it"**
-Its newest archive is less than an hour old. The next run imports it.
+Its newest archive in Google Drive is less than an hour old. The next run imports it. For
+archives you save yourself, see
+[Downloading exports yourself](manual-downloads.md#4-let-the-app-import-it).
 
 **"files have no date and need review"**
 These had no date anywhere (see [Dates and time zones](dates.md)). They were not uploaded and stay
 in the archive and in Google Photos. Cleanup asks you to confirm before removing such an export.
 
 **"files show a different date in Immich than the one sent"**
-Immich read a different date from the file than the app sent. The log names the files. Check them
-in Immich before removing the export's archives.
+Immich read a different date from the file than the app sent. The log names the files. Check
+them in Immich: until they are sorted out, Cleanup keeps that export's archives (it will not
+offer to delete them).
 
 **The schedule paused**
-Several scheduled runs failed in a row. Read the latest run's summary on the dashboard, fix the
-problem, then press **Resume the schedule**.
+Several scheduled runs failed in a row (see
+[Schedule and notifications](schedule.md#when-runs-fail)). Read the latest run's summary on the
+dashboard, fix the problem, then press **Resume the schedule**.
 
 **Photos deleted in Immich come back**
-They do not: the app remembers what it uploaded. Only a **Re-import** (Options under Run now) uploads
-them again.
+They do not: the app remembers what it uploaded. Only **Re-import files missing from Immich**
+(under **Options**, beside Run now) uploads them again.
+
+**A run "Completed with errors"**
+A few files could not be uploaded. The run box on the dashboard lists them, with Retry and
+Ignore: see [How it works](how-it-works.md#when-files-fail).
 
 ## The web interface
 
@@ -90,32 +98,9 @@ Then open `/setup`, enter the setup token from the log, and choose a new passwor
 credentials are kept.
 
 **Updates: "Could not get the latest release from GitHub"**
-GitHub allows 60 checks an hour from each network address, shared by everything on your network.
-Try again later.
-
-## Reporting a problem
-
-Open an issue on [GitHub](https://github.com/aistuartai/Googich_takeaway/issues) with what you did,
-what happened, and the matching lines from the log. Logs never contain keys or passwords, but look
-for anything else you would rather not share, such as file names.
-
-## Some files failed
-
-A run that uploads most of an export but cannot send a few files ends **Completed with errors**,
-not failed: it does not count towards pausing the schedule, and the notification lists the
-files. If more than 5% of the files it tried failed, or it could not reach Immich or the
-download folder, the run has **failed**.
-
-The run box on the dashboard then lists the files that failed, with the reason, and offers:
-
-- **Retry these files:** a run that tries just those again. Everything else is done, so it goes
-  straight to them. Where Immich refused a file (for example "Unsupported file type"), the list
-  says retrying will not help.
-- **Ignore them:** after asking, counts the export as done, so Cleanup can offer its archives
-  (it asks again before deleting, as these files are not in Immich). The files stay listed in
-  the export's details.
-
-Until you choose, the export counts as unfinished, and each run tries those files again.
+The message ends with the reason: GitHub could not be reached (a network or DNS problem from the
+container), it did not answer in time, or, rarely, its limit of 60 checks an hour from each
+network address was used up. Try again later.
 
 ## Known limitations
 
@@ -123,5 +108,12 @@ Until you choose, the export counts as unfinished, and each run tries those file
   their originals** rather than stacked with them. Immich can stack items by hand.
 - **HEIC and RAW photos** take their date from Takeout's sidecar file, which carries no time
   zone; the time zone under Settings fills the gap.
-- **Uploads go one at a time.** A very large first import can take many hours; later runs only
-  send what is new.
+- **Albums are not recreated** in Immich.
+- **A very large first import takes hours**: files go three at a time by default (Settings →
+  Uploads, up to eight); later runs only send what is new.
+
+## Reporting a problem
+
+Open an issue on [GitHub](https://github.com/aistuartai/Googich_takeaway/issues) with what you did,
+what happened, and the matching lines from the log. Logs never contain keys or passwords, but look
+for anything else you would rather not share, such as file names.
