@@ -12,7 +12,9 @@ All of these must be true:
 - The export was **imported completely**: every file is in Immich, or was deliberately left out.
 - Immich has **finished processing** the uploads, and their dates were **checked**. After a big
   import this can take a few runs.
-- No file shows a **different date** in Immich than the one sent.
+- No file shows a **different date** in Immich than the one sent, or you chose to keep Immich's
+  dates: **Review dates** beside such an export lists the files and what differs, and
+  **Keep Immich's dates** lets the export go ahead (it changes nothing in Immich).
 - No **failed files** are waiting: they were retried successfully, or you chose to ignore them
   (see [When files fail](how-it-works.md#when-files-fail)).
 

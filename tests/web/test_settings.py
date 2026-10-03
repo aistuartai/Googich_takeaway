@@ -1176,3 +1176,20 @@ def test_failed_files_show_in_the_run_box_with_retry_and_ignore(world: World) ->
     page = world.client.get("/?notice=ignored").text
     assert "Failed files ignored" in page
     assert "could not be uploaded" not in page
+
+
+def test_dates_that_differ_can_be_reviewed_and_kept(world: World) -> None:
+    with State(world.tmp / "state.db") as state:
+        state._db.execute(
+            "INSERT INTO uploads (destination, sha1, asset_id, status, export_id, archive, path, "
+            "uploaded_at, detail) VALUES ('immich', ?, 'a1', 'date-mismatch', "
+            "'20261001T010203Z', 'x.zip', 'Takeout/Photos/IMG_1.jpg', ?, 'Immich shows 2020')",
+            ("b" * 40, datetime.now(UTC).isoformat()),
+        )
+    page = world.client.get("/cleanup/dates/20261001T010203Z").text
+    assert "1 file shows a different date in Immich" in page
+    assert "IMG_1.jpg" in page
+    assert "Immich shows 2020" in page
+    response = world.post("/cleanup/dates/20261001T010203Z")
+    assert response.headers["location"] == "/cleanup?saved=dates"
+    assert world.client.get("/cleanup/dates/20261001T010203Z").headers["location"] == "/cleanup"

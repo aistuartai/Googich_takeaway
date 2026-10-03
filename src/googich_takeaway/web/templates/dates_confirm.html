@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Dates that differ | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  <h1>{{ total }} {{ 'file shows' if total == 1 else 'files show' }} a different date in Immich</h1>
+  <p>Export {{ export_id[:8]|export_date }}. The app sent one date, and Immich read another, usually from the file itself. Check a few in Immich: if Immich's date is right, or right enough, keep it. Otherwise change the date in Immich first (select the photo, then edit its date).</p>
+  <table class="checks">
+    <thead><tr><th>File</th><th>What differs</th></tr></thead>
+    <tbody>
+    {% for path, detail in files %}<tr><td>{{ path.rsplit('/', 1)[-1] }}</td><td class="muted">{{ detail }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if total > files|length %}<p class="muted">…and {{ total - files|length }} more, in the logs.</p>{% endif %}
+  <p class="muted">Keeping Immich's dates changes nothing in Immich. It only stops these files holding up Cleanup for this export.</p>
+  <div class="actions">
+    <form method="post" action="/cleanup/dates/{{ export_id }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit">Keep Immich's dates</button>
+    </form>
+    <a class="button secondary" href="/cleanup">Not now</a>
+  </div>
+</section>
+{% endblock %}

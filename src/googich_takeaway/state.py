@@ -153,6 +153,8 @@ class UploadStatus(StrEnum):
     """Read back from the destination with the expected date."""
     DATE_MISMATCH = "date-mismatch"
     """Read back with a different date from the one sent."""
+    DATE_ACCEPTED = "date-accepted"
+    """A date mismatch the user chose to keep as Immich has it."""
     GONE = "gone"
     """Deleted in Immich before its date could be checked: nothing left to check."""
 
@@ -713,6 +715,30 @@ class State:
             return None
         data = json.loads(row[0])
         return data if isinstance(data, dict) else {}
+
+    def date_mismatches(self, destination: str, export_id: str) -> list[tuple[str, str]]:
+        """(path, what differs) for each upload of an export Immich dates differently."""
+        rows = self._db.execute(
+            "SELECT path, detail FROM uploads WHERE destination = ? AND export_id = ? "
+            "AND status = ? ORDER BY path",
+            (destination, export_id, UploadStatus.DATE_MISMATCH.value),
+        )
+        return [(row[0], row[1] or "") for row in rows]
+
+    def accept_dates(self, destination: str, export_id: str, at: datetime) -> int:
+        """Keep Immich's dates for an export's mismatched uploads; returns how many."""
+        cursor = self._db.execute(
+            "UPDATE uploads SET status = ?, verified_at = ? "
+            "WHERE destination = ? AND export_id = ? AND status = ?",
+            (
+                UploadStatus.DATE_ACCEPTED.value,
+                _to_text(at),
+                destination,
+                export_id,
+                UploadStatus.DATE_MISMATCH.value,
+            ),
+        )
+        return cursor.rowcount
 
     def uploaded_hashes_for_export(self, destination: str, export_id: str) -> list[str]:
         rows = self._db.execute(

@@ -20,6 +20,7 @@ from googich_takeaway.web.shared import ConfigDep, Shared, StateDep
 
 
 def register(app: FastAPI, web: Shared) -> None:
+    clock = web.clock
     listing_cache = web.listing_cache
     worker = web.worker
     immich_factory = web.immich_factory
@@ -78,6 +79,23 @@ def register(app: FastAPI, web: Shared) -> None:
             folder=config.general().describe(),
             running=worker.status_running(),
         )
+
+    @app.get("/cleanup/dates/{export_id}", response_class=HTMLResponse)
+    def review_dates(request: Request, config: ConfigDep, export_id: str) -> Response:
+        files = config.state.date_mismatches("immich", export_id)
+        if not files:
+            return RedirectResponse("/cleanup", status_code=303)
+        return page(
+            request, config, "dates_confirm.html", export_id=export_id, files=files[:200],
+            total=len(files),
+        )  # fmt: skip
+
+    @app.post("/cleanup/dates/{export_id}")
+    def accept_dates(config: ConfigDep, export_id: str) -> Response:
+        kept = config.state.accept_dates("immich", export_id, clock())
+        if kept:
+            log.warning("Kept Immich's dates for %d files of export %s", kept, export_id)
+        return RedirectResponse("/cleanup?saved=dates", status_code=303)
 
     @app.get("/cleanup/partial/{name}/confirm", response_class=HTMLResponse)
     def confirm_delete_partial(request: Request, config: ConfigDep, name: str) -> Response:

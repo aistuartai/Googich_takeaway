@@ -98,3 +98,20 @@ def test_drive_files_deleted_by_the_user_are_shown_as_removed(world: World) -> N
     copy = cleanup.drive_exports(world.state, labels)[0]
     assert all(p.removed_at is not None for p in copy.parts)
     assert isinstance(world.state, State)
+
+
+def test_date_mismatches_can_be_kept_so_cleanup_can_go_ahead(world: World) -> None:
+    from googich_takeaway.state import UploadStatus
+
+    world.pipeline().run()
+    state = world.state
+    sha1 = state._db.execute("SELECT sha1 FROM uploads LIMIT 1").fetchone()[0]
+    state.mark_verified("immich", sha1, UploadStatus.DATE_MISMATCH, NOW, "sent 2019, Immich 2020")
+    copy = cleanup.staged_exports(staging(world), state)[0]
+    assert not copy.ready
+    assert copy.mismatched == 1
+    assert state.date_mismatches("immich", copy.export_id)[0][1] == "sent 2019, Immich 2020"
+    assert state.accept_dates("immich", copy.export_id, NOW) == 1
+    copy = cleanup.staged_exports(staging(world), state)[0]
+    assert copy.ready
+    assert state.date_mismatches("immich", copy.export_id) == []

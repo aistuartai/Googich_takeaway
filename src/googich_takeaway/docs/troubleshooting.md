@@ -62,9 +62,10 @@ These had no date anywhere (see [Dates and time zones](dates.md)). They were not
 in the archive and in Google Photos. Cleanup asks you to confirm before removing such an export.
 
 **"files show a different date in Immich than the one sent"**
-Immich read a different date from the file than the app sent. The log names the files. Check
-them in Immich: until they are sorted out, Cleanup keeps that export's archives (it will not
-offer to delete them).
+Immich read a different date from the file than the app sent. On the Cleanup page, **Review
+dates** beside that export lists the files and what differs. Check a few in Immich, fix any that
+are wrong there, then press **Keep Immich's dates**; until then Cleanup keeps that export's
+archives.
 
 **The schedule paused**
 Several scheduled runs failed in a row (see

@@ -93,7 +93,7 @@ def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> Ex
     if copy.mismatched:
         copy.reason = (
             f"{copy.mismatched} files show a different date in Immich than the one sent. "
-            "Check them in the logs before removing anything."
+            "Review them, and keep Immich's dates or fix them in Immich first."
         )
     elif copy.awaiting_check:
         copy.reason = (

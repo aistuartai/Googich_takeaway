@@ -4,6 +4,7 @@
 <div class="page-head"><h1>Cleanup</h1><a class="help-link" href="/help/cleanup">Guide: Cleanup</a></div>
 {% if message %}<p class="result ok" role="status">{{ message }}</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if request.query_params.get('saved') == 'dates' %}<p class="result ok" role="status">Immich's dates kept. That export no longer waits on them.</p>{% endif %}
 {% if running %}<p class="muted">A run is going; deleting is paused until it finishes.</p>{% endif %}
 
 <section class="card" id="folder">
@@ -21,7 +22,7 @@
         <td>
           {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
             {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% endif %}
-          {% else %}<span class="muted">{{ copy.reason }}</span>{% endif %}
+          {% else %}<span class="muted">{{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% endif %}{% endif %}
         </td>
         <td>
           {% if copy.ready %}
@@ -64,10 +65,10 @@
       <strong><code>{{ copy.export_id }}</code>, {{ copy.size|size }}{% if copy.sources %}, from {{ copy.sources|join(', ') }}{% endif %}</strong>
       <span>
         {% if copy.ready %}<span class="ok-text">Ready to remove</span>, imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
-        {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% endif %}
+        {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% endif %}{% endif %}
       </span>
     </div>
-    {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, or rejected by Immich). Removing the archive leaves them only in Google Photos.</p>{% endif %}
+    {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, rejected by Immich, or failed and ignored). Removing the archive leaves them only in Google Photos.</p>{% endif %}
     <ul class="parts">
       {% for part in copy.parts %}
       <li>{% if part.removed_at %}<s>{{ part.name }}</s> <span class="muted">removed from Drive {{ part.removed_at.astimezone(zone).strftime('%d %b') }}</span>

@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Review dates** on the Cleanup page: an export with files Immich dates differently from what
+  was sent could never be cleaned up. It now lists those files and what differs, and
+  **Keep Immich's dates** lets the export go ahead (nothing in Immich changes).
+- A test keeps every link between guide pages, and from the README into the guide, working.
+- `scripts/release.sh X.Y.Z` for maintainers: bumps the version everywhere, dates the
+  changelog, runs every check on Python 3.13 and 3.14, then commits and tags.
+
 ### Changed
 
 - The guide is reviewed against the app and easier to read: topics grouped (Getting started,
