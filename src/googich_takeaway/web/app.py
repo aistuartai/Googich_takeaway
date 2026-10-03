@@ -313,7 +313,7 @@ def create_app(
         latest_release=latest_release,
         journey=journey,
         refresh_figures=lambda config, state: summaries.refresh(
-            config, state, drive_factory, clock()
+            config, state, drive_factory, clock
         ),
         source_summaries=source_summaries,
         destination_summary=destination_summary,

@@ -159,17 +159,35 @@ def test_refresh_reads_drive_the_folder_and_immich_again(world: World) -> None:
                     f"gdrive:{FOLDER_ID}", part, "f", name, 10, None, name, NOW, None, None
                 )
             )
+        state._db.execute(  # an upload Immich had not finished with, deleted there since
+            "INSERT INTO uploads (destination, sha1, asset_id, status, export_id, archive, path, "
+            "capture_date, uploaded_at) VALUES ('immich', ?, 'gone-asset', 'uploaded', "
+            "'20261001T010203Z', 'x.zip', 'a.jpg', ?, ?)",
+            ("d" * 40, NOW.isoformat(), NOW.isoformat()),
+        )
+        state.save_scan_part(  # part 001 has been read
+            "takeout-20261001T010203Z-001.zip:10",
+            [(f"Photos/{n}.jpg", json.dumps({"kind": "media", "size": 1, "sha1": f"{n}"}))
+             for n in range(3)],
+            True,
+            NOW,
+        )  # fmt: skip
     world.client.get("/")  # Immich counted: empty
     world.immich.preload(b"added in Immich since")
     page = world.client.get("/").text
     assert 'formaction="/dashboard/refresh"' in page
     assert "not listed yet: press Refresh; 1 archive in the download folder" in page
+    assert "20 B; 3 photos and videos in the 1 of 2 archives read" in page
     response = world.post("/dashboard/refresh")
     assert response.headers["location"] == "/?notice=refreshed"
     page = world.client.get("/?notice=refreshed").text
     assert "Figures read again just now." in page
     assert "archive in Drive, 1.0 kB" in page
     assert "; 1 in the download folder" in page
+    with State(world.tmp / "state.db") as state:
+        # Neither recorded archive is in Drive any more; Cleanup shows them as removed.
+        assert all(r.removed_at for r in state.downloads(f"gdrive:{FOLDER_ID}"))
+        assert "uploaded" not in state.verification_counts("immich")
     assert '<p class="station-figure">1</p>' in page
     assert "photo or video in Immich" in page
 

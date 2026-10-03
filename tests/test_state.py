@@ -180,3 +180,22 @@ def test_a_failed_batch_leaves_no_transaction_open(tmp_path: Path) -> None:
         with state.transaction():  # a later batch still commits
             state.start_run("manual", AT)
         assert len(state.recent_runs()) == 1
+
+
+def test_media_read_counts_distinct_photos_in_parts_read_to_the_end(tmp_path: Path) -> None:
+    import json as js
+
+    def media(sha1: str) -> str:
+        return js.dumps({"kind": "media", "size": 1, "sha1": sha1})
+
+    with State(tmp_path / "state.db") as state:
+        at = datetime(2026, 10, 1, tzinfo=UTC)
+        state.save_scan_part(
+            "a.zip:1", [("x.jpg", media("1")), ("album/x.jpg", media("1"))], True, at
+        )
+        state.save_scan_part(
+            "b.zip:1", [("y.jpg", media("2")), ("y.json", '{"kind":"sidecar"}')], True, at
+        )
+        state.save_scan_part("c.zip:1", [("z.jpg", media("3"))], False, at)  # still being read
+        assert state.media_read(["a.zip:1", "b.zip:1", "c.zip:1", "d.zip:1"]) == (2, 2)
+        assert state.media_read([]) == (0, 0)

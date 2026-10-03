@@ -1,4 +1,6 @@
 {%- from "_icons.html" import cloud, folder, gallery, prints -%}
+{#- How many photos and videos some archives hold, once read. -#}
+{%- macro photos_line(p) -%}{{ '{:,}'.format(p.media) }} {{ 'photo or video' if p.media == 1 else 'photos and videos' }}{% if p.read < p.archives %} in the {{ p.read }} of {{ p.archives }} archives read{% endif %}{%- endmacro -%}
 {#- The journey: Google Photos to Google Drive (Takeout), to the download folder, to Immich.
     The legs animate while files move. -#}
 {%- set moving_down = status.running and progress.stage and progress.stage.value == 'download' -%}
@@ -28,10 +30,10 @@
     {%- set copied = journey.drive_in_folder -%}
     {% if journey.drive_listed is not none %}
     <p class="station-figure">{{ journey.drive_listed }}</p>
-    <p class="station-note">{{ 'archive' if journey.drive_listed == 1 else 'archives' }} in Drive{% if journey.drive_listed_bytes %}, {{ journey.drive_listed_bytes|size }}{% endif %}, seen {{ journey.drive_listed_at.astimezone(zone).strftime('%d %b %H:%M') }}{% if copied is not none %}; {{ copied }} in the download folder{% endif %}</p>
+    <p class="station-note">{{ 'archive' if journey.drive_listed == 1 else 'archives' }} in Drive{% if journey.drive_listed_bytes %}, {{ journey.drive_listed_bytes|size }}{% endif %}, seen {{ journey.drive_listed_at.astimezone(zone).strftime('%d %b %H:%M') }}{% if copied is not none %}; {{ copied }} in the download folder{% endif %}{% if journey.drive_photos %}; {{ photos_line(journey.drive_photos) }}{% endif %}</p>
     {% else %}
     <p class="station-figure">?</p>
-    <p class="station-note">not listed yet: press Refresh{% if copied %}; {{ copied }} {{ 'archive' if copied == 1 else 'archives' }} in the download folder{% endif %}</p>
+    <p class="station-note">not listed yet: press Refresh{% if copied %}; {{ copied }} {{ 'archive' if copied == 1 else 'archives' }} in the download folder{% endif %}{% if journey.drive_photos %}; {{ photos_line(journey.drive_photos) }}{% endif %}</p>
     {% endif %}
     <p class="station-link"><a href="/cleanup#drive">Cleanup</a></p>
     {% else %}
@@ -50,7 +52,7 @@
     <a class="station-icon" href="/destinations#downloads" title="Download folder settings">{{ folder() }}<span class="visually-hidden">Download folder settings</span></a>
     <p class="station-name">Download folder</p>
     <p class="station-figure">{{ journey.folder_count if journey.folder_count is not none else '?' }}</p>
-    <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% if journey.folder_arriving %}, one more arriving{% endif %}{% endif %}</p>
+    <p class="station-note">{% if journey.folder_count is none %}cannot read the folder right now{% else %}{{ 'archive' if journey.folder_count == 1 else 'archives' }} waiting or kept{% if journey.folder_bytes %}, {{ journey.folder_bytes|size }}{% endif %}{% if journey.folder_arriving %}, one more arriving{% endif %}{% if journey.folder_photos %}; {{ photos_line(journey.folder_photos) }}{% endif %}{% endif %}</p>
     {% if photos and photos.get('to_upload') %}<p class="station-note station-pending"><strong>{{ '{:,}'.format(photos['to_upload']) }}</strong> {{ 'photo or video' if photos['to_upload'] == 1 else 'photos and videos' }} not in Immich yet</p>{% endif %}
     <p class="station-link"><a href="/cleanup#folder">Cleanup</a></p>
   </div>

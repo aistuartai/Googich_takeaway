@@ -21,7 +21,9 @@ The dashboard shows four places, from left to right:
    and leads to setting one up.
 3. **Download folder.** Archives are copied here, on this server or a network share, then read.
    While an archive downloads, its size so far is counted too. During and after an import it
-   also shows how many photos and videos are not in Immich yet.
+   also shows how many photos and videos are not in Immich yet. Once archives have been read,
+   this figure and the Google Drive one also say how many photos and videos they hold (album
+   copies count once), as does each export on the Cleanup page.
 4. **Immich.** Photos and videos Immich does not have yet are uploaded with their correct date.
    The big number is everything in your Immich library, from Takeout or not, if the API key has
    the `asset.statistics` permission; otherwise it counts what this app has put there. The line
@@ -31,7 +33,9 @@ The dashboard shows four places, from left to right:
 
 The arrows animate while files are being downloaded or uploaded. **Refresh**, beside **Run now**
 and **Options**, reads Google Drive, the download folder and Immich again straight away, instead of
-waiting for the next run; it lists files only, and downloads nothing. **Configure dashboard**, at the
+waiting for the next run, so every figure on the dashboard is current: the journey, Sources,
+Destinations and Cleanup. It notices archives removed from Drive and checks uploads Immich had
+not finished with. It lists and checks only; nothing is downloaded or uploaded. **Configure dashboard**, at the
 bottom of the dashboard (or Configuration → Dashboard), chooses what else it shows: the
 schedule, summaries of sources, destinations and cleanup, and History.
 

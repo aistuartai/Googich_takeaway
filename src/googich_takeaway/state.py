@@ -649,6 +649,24 @@ class State:
         ).fetchall()
         return bool(row[0]), [(r[0], r[1]) for r in rows]
 
+    def media_read(self, archives: Iterable[str]) -> tuple[int, int]:
+        """Of these archive parts (scan cache keys): how many were read to the end, and how
+        many distinct photos and videos they hold, by content (album copies count once)."""
+        names = json.dumps(sorted(set(archives)))
+        row = self._db.execute(
+            "SELECT count(*) FROM scan_parts WHERE complete = 1 "
+            "AND archive IN (SELECT value FROM json_each(?))",
+            (names,),
+        ).fetchone()
+        media = self._db.execute(
+            "SELECT count(DISTINCT json_extract(e.entry, '$.sha1')) FROM scan_entries e "
+            "JOIN scan_parts p ON p.archive = e.archive "
+            "WHERE p.complete = 1 AND e.archive IN (SELECT value FROM json_each(?)) "
+            "AND json_extract(e.entry, '$.kind') = 'media'",
+            (names,),
+        ).fetchone()
+        return int(row[0]), int(media[0])
+
     def touch_scan_part(self, archive: str, at: datetime) -> None:
         """Note that a saved scan was used, so it is kept for longer."""
         self._db.execute(

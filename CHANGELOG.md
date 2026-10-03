@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Once archives have been read, the dashboard's Google Drive and download folder figures say
+  how many photos and videos they hold, and the Cleanup page shows it for each export.
+
+### Changed
+
+- **Refresh** brings the whole dashboard up to date, not only the journey: it notices archives
+  removed from Drive and checks uploads Immich had not finished with, so Sources, Destinations
+  and Cleanup are current too. It shows whichever dashboard boxes are switched on.
+
 ## [0.5.0] - 2026-10-03
 
 ### Added

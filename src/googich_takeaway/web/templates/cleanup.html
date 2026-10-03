@@ -16,13 +16,14 @@
   <p class="muted">Archives here are copies. Once an export is imported completely they can be deleted to free space; the app remembers them and will not download them again.</p>
   {% if staged %}
   <table>
-    <thead><tr><th>Export</th><th>Archives</th><th class="num">Size</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Export</th><th>Archives</th><th class="num">Size</th><th class="num">Photos and videos</th><th>Status</th><th></th></tr></thead>
     <tbody>
     {% for copy in staged %}
       <tr>
         <td><code>{{ copy.export_id }}</code></td>
         <td>{{ copy.parts|length }}</td>
         <td class="num">{{ copy.size|size }}</td>
+        <td class="num">{% if copy.parts_read %}{{ '{:,}'.format(copy.media) }}{% if copy.parts_read < copy.parts|length %} <span class="muted">({{ copy.parts_read }} of {{ copy.parts|length }} read)</span>{% endif %}{% else %}<span class="muted">not read yet</span>{% endif %}</td>
         <td>
           {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
             {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% endif %}
@@ -68,7 +69,7 @@
   {% for copy in in_drive %}
   <div class="drive-export">
     <div class="stage-head">
-      <strong><code>{{ copy.export_id }}</code>, {{ copy.size|size }}{% if copy.sources %}, from {{ copy.sources|join(', ') }}{% endif %}</strong>
+      <strong><code>{{ copy.export_id }}</code>, {{ copy.size|size }}{% if copy.parts_read %}, {{ '{:,}'.format(copy.media) }} photos and videos{% if copy.parts_read < copy.parts|length %} in {{ copy.parts_read }} of {{ copy.parts|length }} archives read{% endif %}{% endif %}{% if copy.sources %}, from {{ copy.sources|join(', ') }}{% endif %}</strong>
       <span>
         {% if copy.ready %}<span class="ok-text">Ready to remove</span>, imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
         {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% elif copy.awaiting_check %} <a href="/cleanup/pending/{{ copy.export_id }}">Check now</a>{% endif %}{% endif %}

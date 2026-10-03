@@ -12,18 +12,20 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import PurePath
 
 from googich_takeaway import cleanup, downloads
 from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichError
+from googich_takeaway.importer import verify_pending
 from googich_takeaway.locations import Location, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, DriveFactory, ImmichFactory
 from googich_takeaway.progress import Stage
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.state import State
+from googich_takeaway.takeout.scan_cache import archive_key
 from googich_takeaway.worker import Worker
 
 log = logging.getLogger(__name__)
@@ -101,18 +103,26 @@ class Summaries:
         return hit[1] if hit else None
 
     def refresh(
-        self, config: Config, state: State, drive_factory: DriveFactory, at: datetime
+        self,
+        config: Config,
+        state: State,
+        drive_factory: DriveFactory,
+        clock: Callable[[], datetime],
     ) -> list[str]:
-        """Read every figure on the journey again now: each Drive folder, the download folder
-        and Immich. Returns what could not be read."""
+        """Read every dashboard figure again now: each Drive folder (and which archives were
+        removed from it), the download folder and its free space, and Immich (its count, and
+        the dates of uploads it had not finished with). Returns what could not be read."""
         problems: list[str] = []
+        at = clock()
         for source in config.sources():
             if source.kind != "gdrive":
                 continue
+            name = f"gdrive:{source.location}"
             try:
                 with drive_factory(source.location, config.drive_key(source.id)) as drive:
                     files = drive.list_archives()
-                downloads.record_listing(state, f"gdrive:{source.location}", files, at)
+                downloads.record_listing(state, name, files, at)
+                state.mark_removed_from_source(name, (f.file_id for f in files), at)
             except (SourceError, ConfigError) as error:
                 log.warning("Could not list %s: %s", source.name, error)
                 problems.append(source.name)
@@ -132,6 +142,16 @@ class Summaries:
         ):
             log.warning("Could not reach Immich to count its photos and videos")
             problems.append("Immich")
+        elif immich.url and key and not self._worker.status_running():
+            # Uploads Immich had not finished with: Cleanup waits on their dates.
+            try:
+                with self._immich_factory(immich.url, key) as client:
+                    verify_pending(
+                        state, client, "immich", clock, limit=500, budget=timedelta(seconds=20)
+                    )
+            except ImmichError as error:
+                log.warning("Could not check uploads in Immich: %s", error)
+                problems.append("Immich")
         return problems
 
     def _read_library(self, cache_key: str, url: str, key: str) -> bool:
@@ -177,6 +197,12 @@ class Summaries:
                     folder_bytes += min(active[1].done, active[1].size)  # arriving now
                     arriving = True
         drive_names = {f"gdrive:{s.location}" for s in config.sources() if s.kind == "gdrive"}
+        in_drive = {
+            r.name: r.size
+            for source in drive_names
+            for r in state.downloads(source)
+            if r.removed_at is None
+        }
         # Drive archives with a copy in the download folder now (not cleaned up yet).
         drive_in_folder: int | None = None
         if folder_count is not None:
@@ -204,6 +230,8 @@ class Summaries:
             "has_sources": bool(config.sources()),
             "drive_count": drive_count,
             "drive_in_folder": drive_in_folder,
+            "drive_photos": self.photos_in(state, list(in_drive.items())),
+            "folder_photos": self.photos_in(state, [(a.name, a.size) for a in found or []]),
             "drive_bytes": drive_bytes,
             "drive_listed": sum(int(str(v["count"])) for v in listed) if listed else None,
             "drive_listed_bytes": sum(int(str(v["bytes"])) for v in listed),
@@ -218,6 +246,23 @@ class Summaries:
             "photos": photos,
             "photos_seen": state.seen_item_count(),
         }
+
+    def photos_in(self, state: State, parts: list[tuple[str, int]]) -> dict[str, int] | None:
+        """How many photos and videos these archives hold, from what reading them found: None
+        until at least one has been read. Remembered for 30 seconds."""
+        if not parts:
+            return None
+        keys = sorted(archive_key(name, size) for name, size in parts)
+        digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+
+        def read() -> tuple[int, int]:
+            return state.media_read(keys)
+
+        found = self.cached_call(f"photos:{digest}", 30, read)
+        read_parts, media = found if isinstance(found, tuple) else (0, 0)
+        if not read_parts:
+            return None
+        return {"read": read_parts, "archives": len(keys), "media": media}
 
     def cached_call(self, key: str, seconds: float, read: Callable[[], object]) -> object:
         """Remember a slow reading (an SMB listing, free space) for a few seconds."""
