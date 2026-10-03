@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The Takeout guides recommend `.zip` exports in 2 GB parts (up to 10 GB) instead of 50 GB:
+  less to repeat when a browser download fails or a `.tgz` is resumed; with `.zip` from Drive
+  the size matters little.
+
 ## [0.3.8] - 2026-10-03
 
 ### Added

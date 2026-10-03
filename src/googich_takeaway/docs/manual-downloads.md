@@ -22,8 +22,9 @@ Cloud project. You can switch later, or use both.
 Follow [Setting up Google Takeout](takeout.md) (including
 [Making the export smaller](takeout.md#making-the-export-smaller), which matters more when you
 download it yourself), but at **Destination** choose
-**Send download link via email** instead of Add to Drive. For **File size**, a smaller size such
-as **10 GB** is easier to download in a browser: if one part fails, there is less to repeat.
+**Send download link via email** instead of Add to Drive. Keep **File size** small, such as
+**2 GB**: browsers cope better with small files, and if one part fails, there is less to repeat.
+A large library then comes as many parts, all listed on the email's download page.
 
 ## 2. Choose where to save the archives
 

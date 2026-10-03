@@ -23,8 +23,11 @@ browser, signed in to the Google account that holds your photos.
 5. **File type:** choose **`.zip`**. `.tgz` works too, but if a run is paused or stopped while
    reading a `.zip`, it carries on almost at once; a `.tgz` has to be unpacked again from the
    start (without checking each file again).
-6. **File size:** choose **50 GB**. Bigger parts mean fewer files; a library larger than that is
-   split into several parts, which is fine.
+6. **File size:** choose **2 GB** (anything up to 10 GB is fine). A large library comes as many
+   parts, which the app handles the same as one. Small parts mean less to repeat when something
+   is interrupted: a download that fails in a browser, or a `.tgz` that must be unpacked again
+   after a pause. With `.zip` from Drive the size matters little, as downloads resume where they
+   stopped either way.
 7. Press **Create export**.
 
 Google emails you when each export is ready. The first one can take hours or days for a big
