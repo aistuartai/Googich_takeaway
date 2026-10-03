@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-03
+
 ### Added
 
 - Once archives have been read, the dashboard's Google Drive and download folder figures say
@@ -584,7 +586,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/aistuartai/Googich_takeaway/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.4.0...v0.4.1
