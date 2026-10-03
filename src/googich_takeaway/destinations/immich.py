@@ -113,6 +113,12 @@ class ImmichClient:
         permissions = data.get("permissions")
         return [str(p) for p in permissions] if isinstance(permissions, list) else []
 
+    def library_size(self) -> int:
+        """How many photos and videos the key's user has in Immich, not counting the trash.
+        Needs the ``asset.statistics`` permission."""
+        data = self._request("GET", "/assets/statistics", params={"isTrashed": "false"})
+        return int(data["total"])
+
     def check_existing(self, checksums: Iterable[tuple[str, str]]) -> dict[str, CheckResult]:
         """Ask Immich which files it already has.
 
@@ -212,10 +218,11 @@ class ImmichClient:
         json: object = None,
         content: Iterator[bytes] | None = None,
         headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         try:
             response = self._client.request(
-                method, path, json=json, content=content, headers=headers
+                method, path, json=json, content=content, headers=headers, params=params
             )
         except UploadIntegrityError:
             raise

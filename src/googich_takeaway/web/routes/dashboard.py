@@ -122,6 +122,13 @@ def register(app: FastAPI, web: Shared) -> None:
             },
         )
 
+    @app.post("/dashboard/refresh")
+    def refresh_figures(config: ConfigDep, state: StateDep) -> Response:
+        """Read Drive, the download folder and Immich again, rather than wait for a run."""
+        missed = web.refresh_figures(config, state)
+        notice = "refresh-partly" if missed else "refreshed"
+        return RedirectResponse(f"/?notice={notice}", status_code=303)
+
     @app.post("/runs")
     def run_now(
         reimport: Annotated[str, Form()] = "",

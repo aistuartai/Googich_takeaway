@@ -6,25 +6,39 @@ in parallel threads: single dict reads and writes are atomic, and the worst a ra
 read a folder once more than needed. A lock covers the one check-then-change.
 """
 
+import hashlib
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
 
 from googich_takeaway import cleanup, downloads
-from googich_takeaway.config import Config
+from googich_takeaway.config import Config, ConfigError
+from googich_takeaway.destinations.immich import ImmichError
 from googich_takeaway.locations import Location, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
-from googich_takeaway.pipeline import LATEST_EXPORT_SETTING
+from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, DriveFactory, ImmichFactory
 from googich_takeaway.progress import Stage
+from googich_takeaway.sources.base import SourceError
 from googich_takeaway.state import State
 from googich_takeaway.worker import Worker
+
+log = logging.getLogger(__name__)
+
+LIBRARY_READ_EVERY = 60.0
+"""Seconds between readings of how much Immich holds."""
 
 
 def drive_labels(config: Config) -> dict[str, str]:
     """Drive source names, by the source name downloads are recorded under."""
     return {f"gdrive:{s.location}": s.name for s in config.sources() if s.kind == "gdrive"}
+
+
+def _library_key(url: str, key: str) -> str:
+    """A new address or key is another library, read afresh."""
+    return url + hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 def latest_export(state: State) -> dict[str, object] | None:
@@ -37,8 +51,11 @@ def latest_export(state: State) -> dict[str, object] | None:
 
 
 class Summaries:
-    def __init__(self, worker: Worker) -> None:
+    def __init__(self, worker: Worker, immich_factory: ImmichFactory) -> None:
         self._worker = worker
+        self._immich_factory = immich_factory
+        self._library: dict[str, tuple[float, int | None]] = {}
+        self._library_reading: set[str] = set()
         self.listing_cache: dict[str, tuple[float, list[StoredFile] | None]] = {}
         """Download folder listings; cleared after a delete."""
         self._slow_cache: dict[str, tuple[float, object]] = {}
@@ -59,6 +76,81 @@ class Summaries:
             found = None
         self.listing_cache[key] = (time.monotonic(), found)
         return found
+
+    def immich_library(self, url: str | None, key: str | None) -> int | None:
+        """How many photos and videos the Immich user has, all told: read at most once a
+        minute, in the background so a slow Immich never holds the dashboard up. None until
+        known, or if the API key may not read it (it needs ``asset.statistics``)."""
+        if not url or not key:
+            return None
+        cache_key = _library_key(url, key)
+        reader = None
+        with self._lock:
+            hit = self._library.get(cache_key)
+            stale = hit is None or time.monotonic() - hit[0] >= LIBRARY_READ_EVERY
+            if stale and cache_key not in self._library_reading:
+                self._library_reading.add(cache_key)
+                reader = threading.Thread(
+                    target=self._read_library, args=(cache_key, url, key), daemon=True
+                )
+                reader.start()
+        if reader is not None and hit is None:
+            reader.join(2)  # usually quick: show it on this page already
+        hit = self._library.get(cache_key)
+        return hit[1] if hit else None
+
+    def refresh(
+        self, config: Config, state: State, drive_factory: DriveFactory, at: datetime
+    ) -> list[str]:
+        """Read every figure on the journey again now: each Drive folder, the download folder
+        and Immich. Returns what could not be read."""
+        problems: list[str] = []
+        for source in config.sources():
+            if source.kind != "gdrive":
+                continue
+            try:
+                with drive_factory(source.location, config.drive_key(source.id)) as drive:
+                    files = drive.list_archives()
+                downloads.record_listing(state, f"gdrive:{source.location}", files, at)
+            except (SourceError, ConfigError) as error:
+                log.warning("Could not list %s: %s", source.name, error)
+                problems.append(source.name)
+        location = config.staging_location()
+        if location is not None:
+            self.listing_cache.pop(location.describe(), None)
+            self._slow_cache.pop(f"free:{location.describe()}", None)
+            if self.folder_listing(location) is None:
+                log.warning("Could not read the download folder %s", location.describe())
+                problems.append("the download folder")
+        immich = config.immich()
+        key = config.immich_key()
+        if (
+            immich.url
+            and key
+            and not self._read_library(_library_key(immich.url, key), immich.url, key)
+        ):
+            log.warning("Could not reach Immich to count its photos and videos")
+            problems.append("Immich")
+        return problems
+
+    def _read_library(self, cache_key: str, url: str, key: str) -> bool:
+        """Count the library now. False if Immich could not be asked."""
+        previous = self._library.get(cache_key)
+        answered = True
+        try:
+            with self._immich_factory(url, key) as client:
+                found: int | None = client.library_size()
+        except ImmichError as error:
+            log.debug("Could not count the photos in Immich: %s", error)
+            # Not allowed: show none. Unreachable for now: keep the last count.
+            answered = "permission" in str(error)
+            found = None if answered else (previous[1] if previous else None)
+        except Exception:
+            log.exception("Could not count the photos in Immich")
+            answered, found = False, None
+        self._library[cache_key] = (time.monotonic(), found)
+        self._library_reading.discard(cache_key)
+        return answered
 
     def journey(self, config: Config, state: State) -> dict[str, object]:
         drive_count, drive_bytes = state.download_totals()
@@ -107,6 +199,7 @@ class Summaries:
             "folder_bytes": folder_bytes,
             "folder_arriving": arriving,
             "immich_count": state.upload_count("immich"),
+            "immich_library": self.immich_library(config.immich().url, config.immich_key()),
             "photos": photos,
             "photos_seen": state.seen_item_count(),
         }

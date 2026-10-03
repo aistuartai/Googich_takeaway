@@ -117,6 +117,53 @@ def test_google_photos_station(world: World) -> None:
     assert '<p class="station-figure">48,300</p>' in page
 
 
+def test_immich_station_counts_the_whole_library_when_allowed(world: World) -> None:
+    _ready(world)
+    for n in range(3):
+        world.immich.preload(f"photo {n}".encode())
+    world.immich.preload(b"in the trash", trashed=True)
+    page = world.client.get("/").text
+    assert "photos and videos from Takeout in Immich" in page  # the key may not count them
+    world.immich.permissions.append("asset.statistics")
+    world.app.state.summaries._library.clear()  # read again now, not in a minute
+    page = world.client.get("/").text
+    assert '<p class="station-figure">3</p>' in page
+    assert "photos and videos in Immich; 0 from Takeout" in page
+
+
+def test_refresh_reads_drive_the_folder_and_immich_again(world: World) -> None:
+    from tests.fake_drive import service_account_info
+    from tests.web.test_settings import FOLDER_ID
+
+    _ready(world)
+    world.post(
+        "/sources/drive",
+        data={"name": "Takeout", "folder_id": FOLDER_ID},
+        files={
+            "key_file": (
+                "key.json",
+                json.dumps(service_account_info()).encode(),
+                "application/json",
+            )
+        },
+    )
+    world.immich.permissions.append("asset.statistics")
+    world.client.get("/")  # Immich counted: empty
+    world.immich.preload(b"added in Immich since")
+    (world.tmp / "s").mkdir(exist_ok=True)
+    (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").write_bytes(b"x" * 10)
+    page = world.client.get("/").text
+    assert "Refresh figures" in page
+    assert "archive in Drive" not in page  # not listed by a run yet
+    response = world.post("/dashboard/refresh")
+    assert response.headers["location"] == "/?notice=refreshed"
+    page = world.client.get("/?notice=refreshed").text
+    assert "Figures read again just now." in page
+    assert "archive in Drive, 1.0 kB" in page
+    assert '<p class="station-figure">1</p>' in page
+    assert "photo or video in Immich" in page
+
+
 def test_takeout_schedule_on_sources_page_and_reminder(world: World) -> None:
     from datetime import timedelta
 

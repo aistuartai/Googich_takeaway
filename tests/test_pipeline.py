@@ -95,6 +95,18 @@ def test_latest_export_is_counted_for_the_dashboard(world: World) -> None:
     assert counts["export_id"]
 
 
+def test_the_export_imported_last_is_the_latest(world: World) -> None:
+    """A large export can arrive after a smaller one Takeout made later: the dashboard shows
+    the one just imported."""
+    world.configure()
+    later = {"export_id": "20991231T000000Z", "items": 51, "in_immich": 51}
+    world.state.set_json("photos.latest_export", later, NOW)
+    world.pipeline().run()
+    counts = world.state.get_json("photos.latest_export")
+    assert counts["export_id"] < "20991231T000000Z"
+    assert counts["in_immich"] == 13
+
+
 def test_local_folder_source(world: World) -> None:
     world.configure(drive=False)
     folder = world.tmp / "manual"

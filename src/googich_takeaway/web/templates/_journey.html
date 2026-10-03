@@ -60,8 +60,20 @@
   <div class="station station-immich">
     {% if immich_link %}<a class="station-icon" href="{{ immich_link }}" target="_blank" rel="noopener noreferrer" title="Open Immich">{{ gallery() }}<span class="visually-hidden">Open Immich (new tab)</span></a>{% else %}<div class="station-icon">{{ gallery() }}</div>{% endif %}
     <p class="station-name">Immich</p>
+    {%- set library = journey.immich_library -%}
+    {% if library is not none %}
+    <p class="station-figure">{{ '{:,}'.format(library) }}</p>
+    <p class="station-note">{{ 'photo or video' if library == 1 else 'photos and videos' }} in Immich; {{ '{:,}'.format(journey.immich_count) }} from Takeout{% if photos %}, {{ '{:,}'.format(photos.in_immich) }} of the latest export's {{ '{:,}'.format(photos['items']) }}{% endif %}</p>
+    {% else %}
     <p class="station-figure">{{ '{:,}'.format(journey.immich_count) }}</p>
     <p class="station-note">{{ 'photo or video' if journey.immich_count == 1 else 'photos and videos' }} from Takeout in Immich{% if photos %}; {{ '{:,}'.format(photos.in_immich) }} of the latest export's {{ '{:,}'.format(photos['items']) }}{% endif %}</p>
+    {% endif %}
     {% if immich_link %}<p class="station-link"><a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Open Immich ↗</a></p>{% endif %}
   </div>
 </section>
+{% if not status.running %}
+<form class="journey-refresh" method="post" action="/dashboard/refresh">
+  <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+  <button type="submit" class="secondary" title="List Google Drive, the download folder and Immich again now">Refresh figures</button>
+</form>
+{% endif %}

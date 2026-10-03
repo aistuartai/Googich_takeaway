@@ -18,6 +18,7 @@ whose library should receive the photos. Give it these permissions:
 |---|---|
 | `asset.upload` | uploading photos and videos |
 | `asset.read` | checking what Immich already has, and reading dates back |
+| `asset.statistics` | optional: the dashboard's count of everything in Immich |
 | `stack.create` | optional: kept for stacking edited copies in a later release |
 
 **Test connection** shows the Immich version and any missing permission. The key is encrypted

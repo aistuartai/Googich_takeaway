@@ -44,6 +44,8 @@ NOTICES = {
     "ignored": "Failed files ignored: that export now counts as done, and Cleanup can offer it.",
     "schedule-paused": "Scheduled runs are paused. Run now still works.",
     "schedule-resumed": "Scheduled runs are on again.",
+    "refreshed": "Figures read again just now.",
+    "refresh-partly": "Some figures could not be read again; Logs says which and why.",
 }
 RUN_NOTICES = {"started", "pausing", "cancelling", "resumed"}
 """Notices about the run going now: not shown once it has ended (a reload, or the page coming
@@ -56,7 +58,10 @@ TIMEZONES = [
 ]
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 REQUIRED_PERMISSIONS = ("asset.upload", "asset.read")
-OPTIONAL_PERMISSIONS = ("stack.create",)
+OPTIONAL_PERMISSIONS = {
+    "asset.statistics": "the dashboard's count of everything in Immich",
+    "stack.create": "stacking edited copies, in a later release",
+}
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (

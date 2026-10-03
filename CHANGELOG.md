@@ -7,6 +7,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard's Immich figure counts everything in your Immich library, from Takeout or not,
+  so it is right after switching to another Immich. It needs the optional `asset.statistics`
+  permission on the API key; without it the figure counts what this app uploaded, as before.
+- **Refresh figures** under the dashboard's journey reads Google Drive, the download folder and
+  Immich again now, rather than waiting for a run. It only lists; nothing is downloaded.
+
+### Fixed
+
+- The dashboard's "latest export" figures did not update after importing an export Takeout
+  made before the one shown, which happens when a large export finishes after a small one.
+  They now show the export imported last.
+
 ## [0.4.0] - 2026-10-03
 
 ### Added

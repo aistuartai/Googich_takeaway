@@ -22,10 +22,15 @@ The dashboard shows four places, from left to right:
    While an archive downloads, its size so far is counted too. During and after an import it
    also shows how many photos and videos are not in Immich yet.
 4. **Immich.** Photos and videos Immich does not have yet are uploaded with their correct date.
-   The big number counts everything this app has put there; the line under it, how much of the
-   latest export is in Immich.
+   The big number is everything in your Immich library, from Takeout or not, if the API key has
+   the `asset.statistics` permission; otherwise it counts what this app has put there. The line
+   under it says how much came from Takeout, and how much of the latest export is in Immich.
+   The latest export is the one imported last, which is not always the newest: a large export
+   takes Takeout longer to write.
 
-The arrows animate while files are being downloaded or uploaded. **Configure dashboard**, at the
+The arrows animate while files are being downloaded or uploaded. **Refresh figures**, under
+the strip, reads Google Drive, the download folder and Immich again straight away, instead of
+waiting for the next run; it lists files only, and downloads nothing. **Configure dashboard**, at the
 bottom of the dashboard (or Configuration → Dashboard), chooses what else it shows: the
 schedule, summaries of sources, destinations and cleanup, and History.
 

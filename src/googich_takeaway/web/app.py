@@ -259,7 +259,8 @@ def create_app(
             request.state.csrf = csrf
         return _with_headers(await call_next(request))
 
-    summaries = Summaries(worker)
+    summaries = Summaries(worker, immich_factory)
+    app.state.summaries = summaries
     listing_cache = summaries.listing_cache
     journey = summaries.journey
     source_summaries = summaries.source_summaries
@@ -311,6 +312,9 @@ def create_app(
         update_banner=update_banner,
         latest_release=latest_release,
         journey=journey,
+        refresh_figures=lambda config, state: summaries.refresh(
+            config, state, drive_factory, clock()
+        ),
         source_summaries=source_summaries,
         destination_summary=destination_summary,
         cleanup_summary=cleanup_summary,

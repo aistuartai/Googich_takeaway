@@ -487,17 +487,17 @@ class Pipeline:
         result: ImportResult,
         pending: bool = False,
     ) -> None:
-        """What the newest export held, for the Google Photos figure on the dashboard.
+        """What the export imported last held, for the Google Photos figure on the dashboard.
 
         Google offers no way to count a Google Photos library, so the exports are the best
         measure there is. Every distinct item from every export is also remembered, since an
-        export may hold only part of the library (a date range, some albums)."""
+        export may hold only part of the library (a date range, some albums).
+
+        The export imported last, not the one Takeout made last: a large export takes Takeout
+        longer to write, so it can arrive after a smaller one requested later."""
         self.state.record_seen_items(
             export_id, (item.sha1 for item in scan.unique_items()), self.clock()
         )
-        stored = self.state.get_json(LATEST_EXPORT_SETTING)
-        if str(stored.get("export_id", "")) > export_id:
-            return  # an older export, imported again
         counts = {
             "export_id": export_id,
             "items": len(scan.unique_items()),

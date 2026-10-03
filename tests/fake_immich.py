@@ -80,6 +80,12 @@ class FakeImmichServer:
             return httpx.Response(200, json={"major": 2, "minor": 7, "patch": 5})
         if path == "/api/api-keys/me":
             return httpx.Response(200, json={"name": "test", "permissions": self.permissions})
+        if path == "/api/assets/statistics":
+            if not {"asset.statistics", "all"} & set(self.permissions):
+                return httpx.Response(403, json={"message": "Missing permission"})
+            trashed = request.url.params.get("isTrashed") == "true"
+            kept = [a for a in self.assets.values() if a.trashed == trashed]
+            return httpx.Response(200, json={"images": len(kept), "videos": 0, "total": len(kept)})
         if path == "/api/assets/bulk-upload-check":
             return self._check(json.loads(request.read()))
         if path == "/api/assets" and request.method == "POST":

@@ -48,6 +48,8 @@ class Shared:
     update_banner: Callable[[Config], dict[str, object] | None]
     latest_release: Callable[[Config], tuple[UpdateInfo | None, str | None]]
     journey: Callable[[Config, State], dict[str, object]]
+    refresh_figures: Callable[[Config, State], list[str]]
+    """Read the journey's figures again now; returns what could not be read."""
     source_summaries: Callable[[Config, State], list[dict[str, object]]]
     destination_summary: Callable[[Config, State], dict[str, object]]
     cleanup_summary: Callable[[Config, State], dict[str, object]]

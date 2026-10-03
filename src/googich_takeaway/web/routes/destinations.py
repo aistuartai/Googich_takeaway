@@ -97,7 +97,7 @@ def register(app: FastAPI, web: Shared) -> None:
                 False,
                 f"Connected to Immich {version}, but the API key lacks: {', '.join(missing)}.",
             )
-        note = f" Optional, for stacking edited copies: {', '.join(optional)}." if optional else ""
+        note = "".join(f" Optional, for {OPTIONAL_PERMISSIONS[p]}: {p}." for p in optional)
         return result(request, True, f"Connected to Immich {version}. The API key is fine.{note}")
 
     @app.post("/destinations/downloads")
