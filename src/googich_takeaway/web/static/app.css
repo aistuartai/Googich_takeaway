@@ -186,9 +186,6 @@ footer { text-align: center; color: var(--muted); font-size: .8125rem; margin: 3
   display: grid; grid-template-columns: 1fr minmax(2rem, .6fr) 1fr minmax(2rem, .6fr) 1fr minmax(2rem, .6fr) 1fr;
   align-items: start; gap: 0; margin: .5rem 0 2rem;
 }
-.journey:has(+ .journey-refresh) { margin-bottom: .75rem; }
-.journey-refresh { display: flex; justify-content: flex-end; margin: 0 0 1.25rem; }
-.journey-refresh button { font-size: .8125rem; padding: .3rem .8rem; }
 .station { text-align: center; padding: 0 .5rem; }
 .station-icon {
   width: 5.25rem; height: 5.25rem; margin: 0 auto .75rem; border-radius: 26px; display: grid; place-items: center;
@@ -552,8 +549,9 @@ a.button.danger:hover { background: transparent; border-color: var(--error); }
 .last-run .run-success { color: var(--green); }
 .last-run .run-failed { color: var(--error); }
 .run-card.is-ready .status-head { align-items: center; }
-/* Run now and Options side by side; the options open as a panel under them. */
-.run-form { display: flex; align-items: center; gap: .6rem; position: relative; }
+/* Run now, Options and Refresh side by side; the options open as a panel under them. */
+.run-form { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; position: relative; }
+.run-form > button.secondary { padding: .95rem 1.2rem; font-size: 1.0625rem; }
 .options > summary.button {
   list-style: none; display: inline-flex; align-items: center; gap: .45rem; padding: .95rem 1.2rem;
   font-size: 1.0625rem; color: var(--ink); background: transparent; border-color: var(--line);

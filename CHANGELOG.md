@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The dashboard's Google Drive figure says how many of its archives have a copy in the download
+  folder now, instead of how many were ever downloaded.
+- **Refresh figures** is now **Refresh**, beside **Run now** and **Options**.
+
 ## [0.4.1] - 2026-10-03
 
 ### Added

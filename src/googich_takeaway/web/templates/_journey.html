@@ -25,12 +25,13 @@
     {% if journey.uses_drive %}
     <a class="station-icon" href="/sources" title="Sources">{{ cloud() }}<span class="visually-hidden">Sources</span></a>
     <p class="station-name">Google Drive</p>
+    {%- set copied = journey.drive_in_folder -%}
     {% if journey.drive_listed is not none %}
     <p class="station-figure">{{ journey.drive_listed }}</p>
-    <p class="station-note">{{ 'archive' if journey.drive_listed == 1 else 'archives' }} in Drive{% if journey.drive_listed_bytes %}, {{ journey.drive_listed_bytes|size }}{% endif %}, seen {{ journey.drive_listed_at.astimezone(zone).strftime('%d %b %H:%M') }}; {{ journey.drive_count }} downloaded so far</p>
+    <p class="station-note">{{ 'archive' if journey.drive_listed == 1 else 'archives' }} in Drive{% if journey.drive_listed_bytes %}, {{ journey.drive_listed_bytes|size }}{% endif %}, seen {{ journey.drive_listed_at.astimezone(zone).strftime('%d %b %H:%M') }}{% if copied is not none %}; {{ copied }} in the download folder{% endif %}</p>
     {% else %}
-    <p class="station-figure">{{ journey.drive_count }}</p>
-    <p class="station-note">{{ 'archive' if journey.drive_count == 1 else 'archives' }} downloaded so far{% if journey.drive_bytes %}, {{ journey.drive_bytes|size }}{% endif %}</p>
+    <p class="station-figure">?</p>
+    <p class="station-note">not listed yet: press Refresh{% if copied %}; {{ copied }} {{ 'archive' if copied == 1 else 'archives' }} in the download folder{% endif %}</p>
     {% endif %}
     <p class="station-link"><a href="/cleanup#drive">Cleanup</a></p>
     {% else %}
@@ -71,9 +72,3 @@
     {% if immich_link %}<p class="station-link"><a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Open Immich ↗</a></p>{% endif %}
   </div>
 </section>
-{% if not status.running %}
-<form class="journey-refresh" method="post" action="/dashboard/refresh">
-  <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-  <button type="submit" class="secondary" title="List Google Drive, the download folder and Immich again now">Refresh figures</button>
-</form>
-{% endif %}

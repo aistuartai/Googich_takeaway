@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from googich_takeaway.state import State
+from googich_takeaway.state import DownloadRecord, State
 from googich_takeaway.web import help
 from tests.web.test_settings import World, _ready
 
@@ -148,18 +148,28 @@ def test_refresh_reads_drive_the_folder_and_immich_again(world: World) -> None:
         },
     )
     world.immich.permissions.append("asset.statistics")
+    (world.tmp / "s").mkdir(exist_ok=True)
+    for part in ("001", "002"):
+        (world.tmp / "s" / f"takeout-20261001T010203Z-{part}.zip").write_bytes(b"x" * 10)
+    with State(world.tmp / "state.db") as state:  # one downloaded from Drive, one cleaned up
+        for part in ("001", "003"):
+            name = f"takeout-20261001T010203Z-{part}.zip"
+            state.record_download(
+                DownloadRecord(
+                    f"gdrive:{FOLDER_ID}", part, "f", name, 10, None, name, NOW, None, None
+                )
+            )
     world.client.get("/")  # Immich counted: empty
     world.immich.preload(b"added in Immich since")
-    (world.tmp / "s").mkdir(exist_ok=True)
-    (world.tmp / "s" / "takeout-20261001T010203Z-001.zip").write_bytes(b"x" * 10)
     page = world.client.get("/").text
-    assert "Refresh figures" in page
-    assert "archive in Drive" not in page  # not listed by a run yet
+    assert 'formaction="/dashboard/refresh"' in page
+    assert "not listed yet: press Refresh; 1 archive in the download folder" in page
     response = world.post("/dashboard/refresh")
     assert response.headers["location"] == "/?notice=refreshed"
     page = world.client.get("/?notice=refreshed").text
     assert "Figures read again just now." in page
     assert "archive in Drive, 1.0 kB" in page
+    assert "; 1 in the download folder" in page
     assert '<p class="station-figure">1</p>' in page
     assert "photo or video in Immich" in page
 

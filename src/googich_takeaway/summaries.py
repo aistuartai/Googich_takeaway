@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import PurePath
 
 from googich_takeaway import cleanup, downloads
 from googich_takeaway.config import Config, ConfigError
@@ -158,6 +159,7 @@ class Summaries:
         folder_count: int | None = 0
         folder_bytes = 0
         arriving = False
+        found: list[StoredFile] | None = []
         if location is not None:
             active = self._worker.tracker.active() if self._worker.status_running() else None
             name = active[1].name if active and active[0] is Stage.DOWNLOAD else None
@@ -175,6 +177,18 @@ class Summaries:
                     folder_bytes += min(active[1].done, active[1].size)  # arriving now
                     arriving = True
         drive_names = {f"gdrive:{s.location}" for s in config.sources() if s.kind == "gdrive"}
+        # Drive archives with a copy in the download folder now (not cleaned up yet).
+        drive_in_folder: int | None = None
+        if folder_count is not None:
+            here = {a.name for a in found or []}  # an archive arriving now is not here yet
+            drive_in_folder = len(
+                {
+                    (r.source, r.file_id)
+                    for source in drive_names
+                    for r in state.downloads(source)
+                    if PurePath(r.name.replace("\\", "/")).name in here
+                }
+            )
         listed = [v for k, v in downloads.listings(state).items() if k in drive_names]
         photos = latest_export(state)
         if photos and photos.get("uploading") and self._worker.status_running():
@@ -189,6 +203,7 @@ class Summaries:
             "uses_drive": bool(drive_names),
             "has_sources": bool(config.sources()),
             "drive_count": drive_count,
+            "drive_in_folder": drive_in_folder,
             "drive_bytes": drive_bytes,
             "drive_listed": sum(int(str(v["count"])) for v in listed) if listed else None,
             "drive_listed_bytes": sum(int(str(v["bytes"])) for v in listed),

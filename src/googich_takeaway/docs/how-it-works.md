@@ -16,7 +16,8 @@ The dashboard shows four places, from left to right:
 2. **Google Drive.** Takeout writes each export there as one or more archive files (`.zip` or
    `.tgz`). The app reads the folder with a service account that can see only that folder, and
    never changes anything in your Google account. The figure is what the folder held when a run
-   last looked, so it updates as soon as a run starts. Without a Drive source it is greyed out,
+   (or **Refresh**) last looked; the line under it says how many of those archives have a copy
+   in the download folder now. Without a Drive source it is greyed out,
    and leads to setting one up.
 3. **Download folder.** Archives are copied here, on this server or a network share, then read.
    While an archive downloads, its size so far is counted too. During and after an import it
@@ -28,8 +29,8 @@ The dashboard shows four places, from left to right:
    The latest export is the one imported last, which is not always the newest: a large export
    takes Takeout longer to write.
 
-The arrows animate while files are being downloaded or uploaded. **Refresh figures**, under
-the strip, reads Google Drive, the download folder and Immich again straight away, instead of
+The arrows animate while files are being downloaded or uploaded. **Refresh**, beside **Run now**
+and **Options**, reads Google Drive, the download folder and Immich again straight away, instead of
 waiting for the next run; it lists files only, and downloads nothing. **Configure dashboard**, at the
 bottom of the dashboard (or Configuration → Dashboard), chooses what else it shows: the
 schedule, summaries of sources, destinations and cleanup, and History.
