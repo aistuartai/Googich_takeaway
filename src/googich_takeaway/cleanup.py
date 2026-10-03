@@ -16,7 +16,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from googich_takeaway.destinations.immich import CheckAction, ImmichClient
@@ -59,6 +59,11 @@ class ExportCopy:
     """Uploads whose date in Immich differs from the one sent."""
 
     @property
+    def gone_from_drive(self) -> bool:
+        """Every part has been removed from Drive: nothing left to do there."""
+        return bool(self.parts) and all(p.removed_at is not None for p in self.parts)
+
+    @property
     def ready(self) -> bool:
         return self.completed_at is not None and not self.awaiting_check and not self.mismatched
 
@@ -97,8 +102,8 @@ def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> Ex
         )
     elif copy.awaiting_check:
         copy.reason = (
-            f"Imported. Immich is still processing {copy.awaiting_check} files; their dates are "
-            "checked on the next runs, and the archive is safe to remove after that."
+            f"Imported. Immich has not finished with {copy.awaiting_check} files yet, so their "
+            "dates are not checked: the next run checks them, or check now."
         )
     summary = state.export_summary(key) or {}
     ignored = summary.get("ignored")
@@ -164,6 +169,27 @@ def drive_exports(state: State, source_names: dict[str, str]) -> list[ExportCopy
                 copy.sources.append(label)
     copies = [_describe(c, state) for c in by_export.values()]
     return sorted(copies, key=lambda c: c.export_id, reverse=True)
+
+
+def forget_drive_export(state: State, source_names: dict[str, str], export_id: str) -> int:
+    """Drop an export from the Drive list once all its parts are removed from Drive. Returns
+    how many archives were forgotten; none if any part is still in Drive."""
+    found = [
+        (source, record)
+        for source in source_names
+        for record in state.downloads(source)
+        if next(iter(group_exports([Path(record.name)]))) == export_id
+    ]
+    if not found or any(record.removed_at is None for _, record in found):
+        return 0
+    with state.transaction():
+        for source, record in found:
+            state.forget_download(source, record.file_id)
+    return len({(source, record.file_id) for source, record in found})
+
+
+PENDING_GRACE = timedelta(days=1)
+"""How long Immich gets to finish with a file before Cleanup offers to stop waiting for it."""
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Dates not checked yet | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  <h1>{{ total }} {{ 'file is' if total == 1 else 'files are' }} waiting for Immich</h1>
+  <p>Export {{ export_id[:8]|export_date }}. These were uploaded, but Immich has not read their dates yet, so the app cannot confirm them. Immich does this in the background, and after a big import that can take hours. Runs check again each time; <strong>Check Immich now</strong> does it straight away.</p>
+  {% if checked %}<p class="result" role="status">Checked just now: {{ checked }} confirmed, {{ total }} still waiting.</p>{% endif %}
+  <table class="checks">
+    <thead><tr><th>File</th><th>Uploaded</th></tr></thead>
+    <tbody>
+    {% for record in files %}<tr><td>{{ record.path.rsplit('/', 1)[-1] }}</td><td class="muted">{{ record.uploaded_at.astimezone(zone).strftime('%d %b %H:%M') }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if total > files|length %}<p class="muted">…and {{ total - files|length }} more.</p>{% endif %}
+  {% if can_skip %}<p class="muted">Immich has had more than a day. If it still has no date for these, it may never read one, for example from a damaged file: open them in Immich to see. <strong>Stop waiting</strong> lets Cleanup go ahead without their dates checked. Nothing in Immich changes.</p>{% endif %}
+  <div class="actions">
+    <form method="post" action="/cleanup/pending/{{ export_id }}/check" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit">Check Immich now</button>
+    </form>
+    {% if can_skip %}
+    <form method="post" action="/cleanup/pending/{{ export_id }}/skip" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" class="secondary">Stop waiting</button>
+    </form>
+    {% endif %}
+    <a class="button secondary" href="/cleanup">Back</a>
+  </div>
+</section>
+{% endblock %}

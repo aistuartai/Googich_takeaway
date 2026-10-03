@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -105,6 +106,36 @@ def test_the_export_imported_last_is_the_latest(world: World) -> None:
     counts = world.state.get_json("photos.latest_export")
     assert counts["export_id"] < "20991231T000000Z"
     assert counts["in_immich"] == 13
+
+
+def test_files_deleted_in_immich_are_counted_and_explained(world: World) -> None:
+    world.configure()
+    world.pipeline().run()
+    for asset in list(world.immich.assets.values())[:2]:
+        world.immich.delete(asset.sha1)
+    world.state._db.execute("DELETE FROM completed_exports")  # read the export again
+    report = world.pipeline().run()
+    assert report.deleted_in_immich == 2
+    message = report.message()
+    assert "2 deleted in Immich" in message.title
+    assert any("deleted in Immich since" in line for line in message.lines)
+    assert len(world.immich.assets) == 11
+
+
+def test_a_different_library_starts_afresh(world: World) -> None:
+    from googich_takeaway.pipeline import forget_library
+
+    world.configure()
+    world.pipeline().run()
+    world.immich = FakeImmichServer()  # another library, empty
+    again = world.pipeline().run()
+    assert again.uploaded == 0  # the export counts as imported: skipped
+    forget_library(world.state, "immich", NOW)
+    assert world.state.upload_count("immich") == 0
+    fresh = world.pipeline().run()
+    assert fresh.uploaded == 13
+    assert fresh.deleted_in_immich == 0
+    assert len(world.immich.assets) == 13
 
 
 def test_local_folder_source(world: World) -> None:
@@ -377,7 +408,7 @@ def test_slow_immich_does_not_force_a_rescan(world: World) -> None:
     copy = cleanup.staged_exports(world.tmp / "staging", world.state)[0]
     assert copy.completed_at is not None  # imported: will not be rescanned
     assert not copy.ready  # but not safe to delete yet
-    assert "still processing 13 files" in copy.reason
+    assert "not finished with 13 files" in copy.reason
 
     world.immich.metadata_delay_reads = 0  # Immich has caught up
     second = world.pipeline().run()
@@ -481,12 +512,29 @@ def test_a_damaged_export_does_not_stop_the_others(world: World) -> None:
     assert any("20250101T000000Z not imported" in p for p in report.problems)
 
 
-def test_a_finished_export_forgets_what_reading_it_found(world: World) -> None:
+def test_a_reimport_does_not_read_the_archives_again(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.pipeline import RunOptions, forget_library
+    from googich_takeaway.takeout.archives import iter_entries
+
     world.configure()
+    assert world.pipeline().run().uploaded == 13
+    opened: list[object] = []
+
+    def spy(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        opened.append(args[0])
+        return iter_entries(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("googich_takeaway.takeout.scan.iter_entries", spy)
+    world.immich = FakeImmichServer()  # a different library
+    forget_library(world.state, "immich", NOW)
     report = world.pipeline().run()
     assert report.uploaded == 13
-    rows = world.config.state._db.execute("SELECT count(*) FROM scan_parts").fetchone()[0]
-    assert rows == 0
+    assert opened == []  # what reading found was kept
+    again = replace(world.pipeline(), options=RunOptions(reimport=True))
+    assert again.run().uploaded == 0
+    assert opened == []
 
 
 def test_dashboard_figures_are_saved_before_uploading_starts(

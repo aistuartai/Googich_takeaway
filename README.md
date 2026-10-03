@@ -26,9 +26,9 @@ date and time zone, and adds to Immich only what it does not have yet, on a sche
   of an export, and sends the date, time zone and location with each upload, then reads it back
   to check.
 - **Never twice.** Archives are not downloaded again, photos already in Immich are skipped, and
-  photos you delete in Immich stay deleted.
-- **Resumable.** Downloads continue where they stopped. Pause, resume or cancel at any time, even
-  across an update.
+  photos you delete in Immich stay deleted. Move to another Immich library and it starts afresh.
+- **Quick and resumable.** Each archive is read while the next one downloads, and several photos
+  upload at once. Pause, resume or cancel at any time, even across an update.
 - **Clear at a glance.** Live progress with time estimates, history, logs, a built-in guide with
   search, and notifications through [Apprise](https://github.com/caronc/apprise).
 - **Tidy.** Tells you which archives are fully in Immich and safe to delete, here and in Drive.
@@ -96,7 +96,7 @@ V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
 - HEIC and RAW photos are dated from Takeout's metadata file, which has no time zone; the one set
   in Settings fills the gap.
 - Albums are not recreated in Immich, and a very large first import takes hours (three files go
-  at a time by default; up to eight under Settings).
+  at a time by default; up to eight under Settings → Speed).
 
 ## Development
 

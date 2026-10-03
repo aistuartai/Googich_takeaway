@@ -428,3 +428,64 @@ def test_completed_with_errors_does_not_count_towards_pausing(world: World) -> N
     )
     assert config.scheduled_failures() == 0
     assert sent == []
+
+
+def _reading_threads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The thread that opened each archive part to read it."""
+    import threading
+
+    from googich_takeaway.takeout.archives import iter_entries as original
+
+    threads: list[str] = []
+
+    def spy(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        threads.append(threading.current_thread().name)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("googich_takeaway.takeout.scan.iter_entries", spy)
+    return threads
+
+
+def test_parts_are_read_while_the_next_ones_download(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    threads = _reading_threads(monkeypatch)
+    world.configure()
+    assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.SUCCESS
+    assert threads == ["googich-read-ahead", "googich-read-ahead"]  # never read again
+    assert len(world.immich.assets) == 13
+
+
+def test_reading_while_downloading_can_be_turned_off(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    threads = _reading_threads(monkeypatch)
+    world.configure()
+    world.config().save_read_while_downloading(False)
+    assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.SUCCESS
+    assert len(threads) == 2
+    assert "googich-read-ahead" not in threads
+    assert len(world.immich.assets) == 13
+
+
+def test_pause_while_reading_ahead_then_resume(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.progress import Stage
+
+    tracker = world.worker.tracker
+    begin_alongside = tracker.begin_alongside
+
+    def pausing(stage: Stage, name: str, more: int) -> None:
+        tracker.request_stop("pause")
+        begin_alongside(stage, name, more)
+
+    monkeypatch.setattr(tracker, "begin_alongside", pausing)
+    world.configure()
+    assert world.worker.run_once(Trigger.MANUAL).outcome is Outcome.STOPPED
+    assert world.worker.status().run_paused
+    monkeypatch.setattr(tracker, "begin_alongside", begin_alongside)
+    assert world.worker.resume_paused()
+    _, options = world.worker._due_trigger() or (None, None)
+    assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
+    assert len(world.immich.assets) == 13

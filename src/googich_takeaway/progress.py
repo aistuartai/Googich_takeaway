@@ -227,6 +227,7 @@ class Tracker:
                 item = replace(item, size=size)
             state.items[name] = replace(item, state=ItemState.ACTIVE)
             state.waiting.pop(name, None)
+            state.running.pop(name, None)  # begun alongside earlier: this thread has it now
             state.active = name
             now = self._clock()
             if state.started_at is None:
@@ -250,6 +251,44 @@ class Tracker:
                 state.started_at = now
                 state.window_start = now
             self._current = stage
+
+    def begin_alongside(self, stage: Stage, name: str, more: int) -> None:
+        """Work on ``name`` in a thread of its own while another stage goes on (reading parts
+        while the next ones download). ``more`` bytes are about to be worked on: the item grows
+        to fit them if it was planned smaller, or not at all. The stage shown as current does not
+        change. ``begin`` takes the item over later, keeping its bytes."""
+        self._checkpoint()
+        with self._lock:
+            state = self._stages[stage]
+            item = state.items.get(name) or Item(name, 0)
+            size = max(item.size, item.done + more)
+            state.total += size - item.size
+            state.items[name] = replace(item, size=size, state=ItemState.ACTIVE)
+            state.waiting.pop(name, None)
+            state.running[name] = None
+            now = self._clock()
+            if state.started_at is None:
+                state.started_at = now
+                state.window_start = now
+
+    def show_stage(self, stage: Stage) -> None:
+        """Make ``stage`` the one shown as current, such as while waiting for parts still being
+        read alongside the finished downloads."""
+        with self._lock:
+            self._current = stage
+
+    def advance_alongside(self, stage: Stage, name: str, amount: int) -> None:
+        """Bytes done on an item begun with ``begin_alongside``."""
+        self._checkpoint()
+        with self._lock:
+            state = self._stages[stage]
+            item = state.items.get(name)
+            if item is None:
+                return
+            counted = min(amount, max(0, item.size - item.done))
+            state.items[name] = replace(item, done=item.done + amount)
+            state.done += counted
+            self._sample(state, amount)
 
     def advance(self, amount: int) -> None:
         self._checkpoint()

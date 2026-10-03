@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from googich_takeaway import cleanup
 from googich_takeaway.destinations.immich import ImmichError
+from googich_takeaway.importer import verify_pending
 from googich_takeaway.locations import (
     LocationError,
 )
@@ -153,6 +154,79 @@ def register(app: FastAPI, web: Shared) -> None:
         log.warning("Deleted partial download %s", name)
         note = f"Deleted the partial download of {name}, freeing {format_size(freed)}."
         return RedirectResponse(f"/cleanup?message={quote(note)}", status_code=303)
+
+    @app.get("/cleanup/pending/{export_id}", response_class=HTMLResponse)
+    def pending_checks(
+        request: Request, config: ConfigDep, state: StateDep, export_id: str, checked: str = ""
+    ) -> Response:
+        """The files of an export whose dates are not checked yet, because Immich has not
+        finished with them."""
+        waiting = state.unverified_uploads("immich", 200, export_id)
+        total = state.verification_counts("immich", export_id).get("uploaded", 0)
+        if not total:
+            return RedirectResponse("/cleanup?saved=checked", status_code=303)
+        newest = max(r.uploaded_at for r in waiting)
+        return page(
+            request,
+            config,
+            "pending_confirm.html",
+            export_id=export_id,
+            files=waiting,
+            total=total,
+            can_skip=clock() - newest >= cleanup.PENDING_GRACE,
+            checked=checked,
+            zone=_zone(config.general().timezone),
+        )
+
+    @app.post("/cleanup/pending/{export_id}/check")
+    def check_pending_now(config: ConfigDep, state: StateDep, export_id: str) -> Response:
+        immich = config.immich()
+        key = config.immich_key()
+        if not immich.url or not key:
+            note = "Set up Immich first."
+            return RedirectResponse(f"/cleanup?error={quote(note)}", status_code=303)
+        try:
+            with immich_factory(immich.url, key) as client:
+                found = verify_pending(state, client, "immich", clock, export_id=export_id)
+        except ImmichError as error:
+            return RedirectResponse(f"/cleanup?error={quote(str(error))}", status_code=303)
+        log.info(
+            "Checked export %s now: %d confirmed, %d still waiting",
+            export_id,
+            found.verified,
+            found.remaining,
+        )
+        if not found.remaining:
+            return RedirectResponse("/cleanup?saved=checked", status_code=303)
+        return RedirectResponse(
+            f"/cleanup/pending/{quote(export_id)}?checked={found.verified}", status_code=303
+        )
+
+    @app.post("/cleanup/pending/{export_id}/skip")
+    def skip_pending(state: StateDep, export_id: str) -> Response:
+        waiting = state.unverified_uploads("immich", 1_000_000, export_id)
+        if not waiting:
+            return RedirectResponse("/cleanup?saved=checked", status_code=303)
+        if clock() - max(r.uploaded_at for r in waiting) < cleanup.PENDING_GRACE:
+            note = "Immich gets a day to finish with uploaded files first. Nothing changed."
+            return RedirectResponse(f"/cleanup?error={quote(note)}", status_code=303)
+        skipped = state.skip_checks("immich", export_id, clock())
+        log.warning(
+            "Stopped waiting for Immich to finish %d files of export %s: their dates were "
+            "not checked",
+            skipped,
+            export_id,
+        )
+        return RedirectResponse("/cleanup?saved=skipped", status_code=303)
+
+    @app.post("/cleanup/drive/{export_id}/forget")
+    def forget_drive(config: ConfigDep, state: StateDep, export_id: str) -> Response:
+        forgotten = cleanup.forget_drive_export(state, drive_labels(config), export_id)
+        if not forgotten:
+            note = "Only an export removed from Drive completely can be taken off this list."
+            return RedirectResponse(f"/cleanup?error={quote(note)}#drive", status_code=303)
+        log.info("Took export %s off the Drive list (%d archives)", export_id, forgotten)
+        return RedirectResponse("/cleanup?saved=forgot#drive", status_code=303)
 
     @app.post("/cleanup/drive/{export_id}/recheck", response_class=HTMLResponse)
     def recheck_drive(

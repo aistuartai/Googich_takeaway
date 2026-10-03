@@ -320,6 +320,13 @@ class Config:
             raise ConfigError(f"Choose between 1 and {MAX_PARALLEL_UPLOADS} uploads at a time.")
         self._state.set_setting("uploads.parallel", str(int(value)), self._clock())
 
+    def read_while_downloading(self) -> bool:
+        """Whether each archive is read as soon as it downloads, while the next one downloads."""
+        return self._state.get_setting("downloads.read_ahead") != "off"
+
+    def save_read_while_downloading(self, on: bool) -> None:
+        self._state.set_setting("downloads.read_ahead", "on" if on else "off", self._clock())
+
     # --- log retention ---------------------------------------------------------------------------
 
     def log_retention_days(self) -> int:

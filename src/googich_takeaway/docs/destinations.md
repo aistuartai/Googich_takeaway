@@ -27,6 +27,13 @@ you change the Immich address, enter the key again: a saved key is only ever sen
 address it was entered for. The same goes for the SMB password when the server or user
 changes.
 
+**Switching to a different library.** The app remembers what it uploaded, so a photo you delete
+in Immich is not uploaded again. Those records belong to one library. When you change the
+address or the key, the app asks whether this is the same library. If it is a different one,
+on another server or for another Immich user, choose **Different library: start afresh**: the
+next run imports everything the new library does not have. The same choice is under the Immich
+form, as **Start afresh with this library**, if you switched without it.
+
 ## Download folder
 
 Archives wait here between download and import. Choose:

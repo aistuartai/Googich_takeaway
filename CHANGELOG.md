@@ -7,6 +7,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Read archives while downloading:** each archive is read as soon as it has downloaded from
+  Drive, while the next one downloads, so uploading starts sooner on large exports. Nothing is
+  uploaded until the whole export has been read. Pause and Cancel stop it like the rest of the
+  run, and Resume carries on from what was read. On by default; Settings → Speed turns it off.
+- Changing the Immich address or API key asks whether it is the same library. **Different
+  library: start afresh** forgets what was uploaded to the old one, so the next run imports
+  everything the new library lacks. Also under Destinations, as **Start afresh with this
+  library**, for a switch made before.
+- Runs say how many files were left out because they were uploaded before and deleted in Immich
+  since, and how to bring them back. Before, they were skipped without a word.
+- Cleanup: **Check now** beside an export waiting for Immich lists the files and checks them
+  straight away, instead of on the next run; after a day, **Stop waiting** lets the export go
+  ahead without them. Exports removed from Drive completely fold away under **Already removed
+  from Drive**, and **Take off the list** drops one for good.
+
+### Changed
+
+- What reading an archive found is kept after the export is imported (until unused for 90
+  days), so a Re-import, or a run into a different Immich library, does not read it again.
+- Settings → Uploads is now Settings → Speed.
+
 ## [0.4.2] - 2026-10-03
 
 ### Changed

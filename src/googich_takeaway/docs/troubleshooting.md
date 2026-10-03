@@ -76,6 +76,13 @@ dashboard, fix the problem, then press **Resume the schedule**.
 They do not: the app remembers what it uploaded. Only **Re-import files missing from Immich**
 (under **Options**, beside Run now) uploads them again.
 
+**"files were left out because … deleted in Immich since"**
+The app uploaded them before, and Immich no longer has them, so it takes them as deleted on
+purpose. If you switched to a different Immich library, choose **Start afresh with this
+library** under Destinations (see
+[Switching to a different library](destinations.md#immich)), then run. Otherwise, **Re-import
+files missing from Immich** uploads them again.
+
 **A run "Completed with errors"**
 A few files could not be uploaded. The run box on the dashboard lists them, with Retry and
 Ignore: see [How it works](how-it-works.md#when-files-fail).
@@ -111,7 +118,7 @@ network address was used up. Try again later.
   zone; the time zone under Settings fills the gap.
 - **Albums are not recreated** in Immich.
 - **A very large first import takes hours**: files go three at a time by default (Settings →
-  Uploads, up to eight); later runs only send what is new.
+  Speed, up to eight); later runs only send what is new.
 
 ## Reporting a problem
 

@@ -157,6 +157,8 @@ class UploadStatus(StrEnum):
     """A date mismatch the user chose to keep as Immich has it."""
     GONE = "gone"
     """Deleted in Immich before its date could be checked: nothing left to check."""
+    CHECK_SKIPPED = "check-skipped"
+    """Immich never finished with it, and the user chose not to wait for its date check."""
 
 
 @dataclass(frozen=True)
@@ -220,6 +222,7 @@ class State:
         """``remember`` keeps settings and sources read once for the life of this State: for a
         web request, which reads the same few settings many times. Long-lived States (a run)
         leave it off, so they see changes made meanwhile from the web interface."""
+        self.path = path
         self._remember = remember
         self._settings: dict[str, str | None] = {}
         self._sealed: dict[str, str | None] = {}
@@ -380,14 +383,32 @@ class State:
         ).fetchone()
         return int(row[0]), int(row[1])
 
-    def unverified_uploads(self, destination: str, limit: int) -> list[UploadRecord]:
-        """Uploads Immich has not confirmed yet, oldest first."""
-        rows = self._db.execute(
-            "SELECT * FROM uploads WHERE destination = ? AND status = ? "
-            "ORDER BY uploaded_at, sha1 LIMIT ?",
-            (destination, UploadStatus.UPLOADED.value, limit),
-        )
+    def unverified_uploads(
+        self, destination: str, limit: int, export_id: str | None = None
+    ) -> list[UploadRecord]:
+        """Uploads Immich has not confirmed yet, oldest first; of one export, if given."""
+        query = "SELECT * FROM uploads WHERE destination = ? AND status = ?"
+        args: tuple[object, ...] = (destination, UploadStatus.UPLOADED.value)
+        if export_id is not None:
+            query += " AND export_id = ?"
+            args += (export_id,)
+        rows = self._db.execute(query + " ORDER BY uploaded_at, sha1 LIMIT ?", (*args, limit))
         return [_record(row) for row in rows]
+
+    def skip_checks(self, destination: str, export_id: str, at: datetime) -> int:
+        """Stop waiting for Immich to finish an export's unchecked uploads; returns how many."""
+        cursor = self._db.execute(
+            "UPDATE uploads SET status = ?, verified_at = ? "
+            "WHERE destination = ? AND export_id = ? AND status = ?",
+            (
+                UploadStatus.CHECK_SKIPPED.value,
+                _to_text(at),
+                destination,
+                export_id,
+                UploadStatus.UPLOADED.value,
+            ),
+        )
+        return int(cursor.rowcount)
 
     def verification_counts(self, destination: str, export_id: str | None = None) -> dict[str, int]:
         """Upload counts by status, for one export or all of them."""
@@ -398,6 +419,12 @@ class State:
             args = (destination, export_id)
         rows = self._db.execute(query + " GROUP BY status", args)
         return {str(row[0]): int(row[1]) for row in rows}
+
+    def forget_download(self, source: str, file_id: str) -> None:
+        """Drop an archive from the download history."""
+        self._db.execute(
+            "DELETE FROM downloads WHERE source = ? AND file_id = ?", (source, file_id)
+        )
 
     def record_download(self, record: DownloadRecord) -> None:
         self._db.execute(
@@ -622,6 +649,12 @@ class State:
         ).fetchall()
         return bool(row[0]), [(r[0], r[1]) for r in rows]
 
+    def touch_scan_part(self, archive: str, at: datetime) -> None:
+        """Note that a saved scan was used, so it is kept for longer."""
+        self._db.execute(
+            "UPDATE scan_parts SET updated_at = ? WHERE archive = ?", (_to_text(at), archive)
+        )
+
     def save_scan_part(
         self, archive: str, entries: list[tuple[str, str]], complete: bool, at: datetime
     ) -> None:
@@ -700,6 +733,23 @@ class State:
 
     def is_export_complete(self, export_key: str) -> bool:
         return self.export_completed_at(export_key) is not None
+
+    def forget_destination(self, destination: str) -> int:
+        """Forget every upload to ``destination`` and every export marked imported: for a
+        different library, which has none of them. Returns how many uploads were forgotten."""
+        with self.transaction():
+            removed = self._db.execute(
+                "DELETE FROM uploads WHERE destination = ?", (destination,)
+            ).rowcount
+            self._db.execute("DELETE FROM completed_exports")
+        return int(removed)
+
+    def export_id_completed(self, export_id: str) -> bool:
+        """Whether an export with this ID was imported completely, whatever its parts were."""
+        row = self._db.execute(
+            "SELECT 1 FROM completed_exports WHERE export_id = ? LIMIT 1", (export_id,)
+        ).fetchone()
+        return row is not None
 
     def export_completed_at(self, export_key: str) -> datetime | None:
         row = self._db.execute(

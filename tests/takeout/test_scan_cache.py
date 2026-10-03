@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from googich_takeaway.pipeline import StateScanCache
+from googich_takeaway.read_ahead import StateScanCache
 from googich_takeaway.state import State
 from googich_takeaway.takeout import scan as scan_module
 from googich_takeaway.takeout.dates import DateResolver

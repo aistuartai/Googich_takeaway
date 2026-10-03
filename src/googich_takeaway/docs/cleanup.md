@@ -10,8 +10,10 @@ dashboard) shows the total.
 All of these must be true:
 
 - The export was **imported completely**: every file is in Immich, or was deliberately left out.
-- Immich has **finished processing** the uploads, and their dates were **checked**. After a big
-  import this can take a few runs.
+- Immich has **finished processing** the uploads, and their dates were **checked**. Runs check
+  them; **Check now** beside the export lists the files still waiting and checks them straight
+  away. If Immich still has no date for a file a day after its upload, it may never read one
+  (from a damaged file, say): **Stop waiting** lets the export go ahead without that check.
 - No file shows a **different date** in Immich than the one sent, or you chose to keep Immich's
   dates: **Review dates** beside such an export lists the files and what differs, and
   **Keep Immich's dates** lets the export go ahead (it changes nothing in Immich).
@@ -44,7 +46,9 @@ it downloaded, and links to each one once its export is safe to remove. To free 
 3. **Empty Drive's trash.** Deleted files keep using your Google storage until the trash is
    emptied, or for 30 days.
 
-The next run notices the archives are gone, and Cleanup marks them as removed.
+The next run (or **Refresh** on the dashboard) notices the archives are gone. Exports with every
+archive removed fold away under **Already removed from Drive**, where **Take off the list**
+drops one from the list for good.
 
 > [!IMPORTANT]
 > Removing archives does not touch Google Photos. After removing them, your photos are in Google

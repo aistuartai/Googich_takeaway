@@ -4,7 +4,11 @@
 <div class="page-head"><h1>Cleanup</h1><a class="help-link" href="/help/cleanup">Guide: Cleanup</a></div>
 {% if message %}<p class="result ok" role="status">{{ message }}</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if request.query_params.get('saved') == 'dates' %}<p class="result ok" role="status">Immich's dates kept. That export no longer waits on them.</p>{% endif %}
+{%- set saved = request.query_params.get('saved') -%}
+{% if saved == 'dates' %}<p class="result ok" role="status">Immich's dates kept. That export no longer waits on them.</p>
+{% elif saved == 'checked' %}<p class="result ok" role="status">Immich has finished with every file of that export, and their dates are checked.</p>
+{% elif saved == 'skipped' %}<p class="result ok" role="status">Stopped waiting for those files. That export no longer waits on them.</p>
+{% elif saved == 'forgot' %}<p class="result ok" role="status">Taken off the list.</p>{% endif %}
 {% if running %}<p class="muted">A run is going; deleting is paused until it finishes.</p>{% endif %}
 
 <section class="card" id="folder">
@@ -22,7 +26,7 @@
         <td>
           {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
             {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% endif %}
-          {% else %}<span class="muted">{{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% endif %}{% endif %}
+          {% else %}<span class="muted">{{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% elif copy.awaiting_check %} <a href="/cleanup/pending/{{ copy.export_id }}">Check now</a>{% endif %}{% endif %}
         </td>
         <td>
           {% if copy.ready %}
@@ -58,14 +62,16 @@
   <h2>Google Drive</h2>
   <p>This app never deletes anything in Google Drive. Below are the Takeout archives it downloaded, and whether each export is safe to remove. To remove one: press <strong>Check Immich now</strong>, open each archive's link, delete it in Drive, then <strong>empty Drive's trash</strong>, because trashed files still count against your storage.</p>
   <p class="warn-text">Removing archives from Drive does not touch Google Photos. Once removed, your copies are Google Photos and Immich's storage: make sure Immich's storage is backed up.</p>
-  {% if drive %}
-  {% for copy in drive %}
+  {%- set removed = drive|selectattr('gone_from_drive')|list -%}
+  {%- set in_drive = drive|rejectattr('gone_from_drive')|list -%}
+  {% if in_drive %}
+  {% for copy in in_drive %}
   <div class="drive-export">
     <div class="stage-head">
       <strong><code>{{ copy.export_id }}</code>, {{ copy.size|size }}{% if copy.sources %}, from {{ copy.sources|join(', ') }}{% endif %}</strong>
       <span>
         {% if copy.ready %}<span class="ok-text">Ready to remove</span>, imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}
-        {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% endif %}{% endif %}
+        {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% elif copy.awaiting_check %} <a href="/cleanup/pending/{{ copy.export_id }}">Check now</a>{% endif %}{% endif %}
       </span>
     </div>
     {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, rejected by Immich, or failed and ignored). Removing the archive leaves them only in Google Photos.</p>{% endif %}
@@ -82,6 +88,23 @@
     {% endif %}
   </div>
   {% endfor %}
+  {% elif removed %}<p>Nothing left to remove from Google Drive.</p>
   {% else %}<p>Nothing downloaded from Google Drive yet.</p>{% endif %}
+  {% if removed %}
+  <details class="drive-removed">
+    <summary>Already removed from Drive ({{ removed|length }})</summary>
+    <ul class="removed-list">
+      {% for copy in removed %}
+      <li>
+        <span><code>{{ copy.export_id }}</code>, {{ copy.size|size }}, {{ copy.parts|length }} {{ 'archive' if copy.parts|length == 1 else 'archives' }}: <span class="muted">{% if copy.completed_at %}imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %Y') }}{% else %}never imported completely{% endif %}</span></span>
+        <form method="post" action="/cleanup/drive/{{ copy.export_id }}/forget" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+          <button type="submit" class="secondary small">Take off the list</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 </section>
 {% endblock %}

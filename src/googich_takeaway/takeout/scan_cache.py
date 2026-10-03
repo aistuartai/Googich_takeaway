@@ -7,6 +7,8 @@ same export takes those from the cache instead of the archive: in a zip it does 
 them; a tgz must still be unpacked in order, but nothing is hashed again.
 
 An archive part is known by its name and size, so a changed or replaced part is read afresh.
+What was found is kept after the export is imported, so a Re-import or a run into a different
+Immich library does not read it again; it goes once unused for a while.
 """
 
 import json
@@ -43,8 +45,14 @@ class ScanCache(Protocol):
         ...
 
 
+READ_VERSION = 1
+"""Raised when reading an archive finds something new (a fix in reading dates, say), so saved
+scans from before are read again rather than reused."""
+
+
 def archive_key(name: str, size: int) -> str:
-    return f"{name}:{size}"
+    key = f"{name}:{size}"
+    return key if READ_VERSION == 1 else f"{key}:v{READ_VERSION}"
 
 
 def encode(entry: CachedEntry) -> str:

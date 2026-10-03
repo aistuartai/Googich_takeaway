@@ -1,6 +1,7 @@
 """Destinations: Immich and the download folder."""
 
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,13 +14,14 @@ from googich_takeaway.destinations.immich import ImmichError
 from googich_takeaway.locations import (
     LocationError,
 )
+from googich_takeaway.pipeline import forget_library
 from googich_takeaway.progress import format_size
 from googich_takeaway.web.common import (
     OPTIONAL_PERMISSIONS,
     REQUIRED_PERMISSIONS,
     log,
 )
-from googich_takeaway.web.shared import ConfigDep, Shared
+from googich_takeaway.web.shared import ConfigDep, Shared, StateDep
 
 
 def register(app: FastAPI, web: Shared) -> None:
@@ -58,24 +60,58 @@ def register(app: FastAPI, web: Shared) -> None:
 
     @app.get("/destinations", response_class=HTMLResponse)
     def destinations_view(
-        request: Request, config: ConfigDep, saved: str | None = None
+        request: Request, config: ConfigDep, saved: str | None = None, error: str | None = None
     ) -> Response:
-        return destinations_page(request, config, saved=saved)
+        return destinations_page(request, config, error=error[:300] if error else None, saved=saved)
 
     @app.post("/destinations/immich")
     def save_immich(
         request: Request,
         config: ConfigDep,
+        state: StateDep,
         url: Annotated[str, Form()],
         public_url: Annotated[str, Form()] = "",
         api_key: Annotated[str, Form()] = "",
     ) -> Response:
+        before = config.immich()
+        old_key = config.immich_key() if api_key else None
         try:
             config.save_immich(url, public_url, api_key or None)
         except ConfigError as error:
             draft = {"url": url, "public_url": public_url}
             return destinations_page(request, config, str(error), draft=draft, failed="immich")
+        # Another server or another key may be another library: ask, if anything was uploaded.
+        moved = before.url is not None and (
+            before.url != config.immich().url or (old_key is not None and old_key != api_key)
+        )
+        if moved and state.upload_count("immich"):
+            return RedirectResponse("/destinations/immich/library?changed=1", status_code=303)
         return RedirectResponse("/destinations?saved=immich#immich", status_code=303)
+
+    @app.get("/destinations/immich/library", response_class=HTMLResponse)
+    def library_question(
+        request: Request, config: ConfigDep, state: StateDep, changed: str = ""
+    ) -> Response:
+        return page(
+            request,
+            config,
+            "library_confirm.html",
+            changed=bool(changed),
+            uploads=state.upload_count("immich"),
+        )
+
+    @app.post("/destinations/immich/forget")
+    def forget_previous_library(config: ConfigDep, state: StateDep) -> Response:
+        if web.worker.run_pending_or_going():
+            note = "A run is going: start afresh once it has finished."
+            return RedirectResponse(f"/destinations?error={quote(note)}#immich", status_code=303)
+        forgotten = forget_library(state, "immich", web.clock())
+        log.warning(
+            "Started afresh with a different Immich library: forgot %d uploads and every "
+            "imported export",
+            forgotten,
+        )
+        return RedirectResponse("/destinations?saved=afresh#immich", status_code=303)
 
     @app.post("/destinations/immich/test", response_class=HTMLResponse)
     def test_immich(request: Request, config: ConfigDep) -> Response:

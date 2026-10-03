@@ -8,7 +8,7 @@
   <p class="page-links">{% if immich_link %}<a href="{{ immich_link }}" target="_blank" rel="noopener noreferrer">Immich ↗</a> {% endif %}<a href="/help/destinations">Guide: Immich and the download folder</a></p>
 </div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
+{% if saved == 'afresh' %}<p class="result ok" role="status">Started afresh with this Immich library. The next run imports everything it does not have yet.</p>{% elif saved %}<p class="result ok" role="status">Saved.</p>{% endif %}
 
 <section class="settings-group" id="immich">
   <header><h2>Immich</h2><p>Where photos go. The app adds only what Immich does not already have.</p><p><a href="/help/destinations#immich">Guide: connecting Immich</a></p></header>
@@ -33,6 +33,7 @@
     </div>
     <div id="immich-test" aria-live="polite"></div>
   </form>
+  <p class="muted form-foot">Switched to a different Immich library or user? <a href="/destinations/immich/library">Start afresh with this library</a>.</p>
   </div>
 </section>
 

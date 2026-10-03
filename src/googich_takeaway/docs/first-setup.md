@@ -50,7 +50,8 @@ All under the **Configuration** menu:
 - **Settings → Time zone:** used for photos that carry no time zone of their own.
 - **Schedule:** when to run. **Follow my Takeout schedule** checks on each day an export is
   expected; **Weekly** is a simple alternative.
-- **Settings → Uploads:** how many files go to Immich at once (three unless you change it).
+- **Settings → Speed:** how many files go to Immich at once (three unless you change it), and
+  whether archives are read while the next ones download (on unless you turn it off).
 - **Notifications:** where to send messages after runs (see
   [Schedule and notifications](schedule.md)).
 

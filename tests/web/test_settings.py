@@ -1078,6 +1078,11 @@ def test_uploads_at_a_time_is_set_in_settings(world: World) -> None:
     assert world.post("/settings/uploads", data={"parallel": "6"}).status_code == 303
     assert 'value="6"' in world.client.get("/settings").text
     assert "between 1 and 8" in world.post("/settings/uploads", data={"parallel": "20"}).text
+    # Reading while downloading: on by default, and turned off by leaving the box unticked.
+    assert 'name="read_ahead" value="1" checked' in page
+    assert 'name="read_ahead" value="1" >' in world.client.get("/settings").text
+    world.post("/settings/uploads", data={"parallel": "3", "read_ahead": "1"})
+    assert 'name="read_ahead" value="1" checked' in world.client.get("/settings").text
 
 
 def test_install_command_checks_the_installer_against_the_app(world: World) -> None:
@@ -1193,3 +1198,120 @@ def test_dates_that_differ_can_be_reviewed_and_kept(world: World) -> None:
     response = world.post("/cleanup/dates/20261001T010203Z")
     assert response.headers["location"] == "/cleanup?saved=dates"
     assert world.client.get("/cleanup/dates/20261001T010203Z").headers["location"] == "/cleanup"
+
+
+def test_changing_immich_asks_whether_it_is_another_library(world: World) -> None:
+    from googich_takeaway.state import UploadRecord, UploadStatus
+
+    _ready(world)
+    # Same address, no new key: nothing to ask.
+    response = world.post(
+        "/destinations/immich", data={"url": "http://immich.test", "public_url": ""}
+    )
+    assert response.headers["location"] == "/destinations?saved=immich#immich"
+    with State(world.tmp / "state.db") as state:
+        state.record_upload(
+            UploadRecord(
+                destination="immich",
+                sha1="a" * 40,
+                asset_id="asset",
+                status=UploadStatus.UPLOADED,
+                export_id="20261001T010203Z",
+                archive="takeout-20261001T010203Z-001.zip",
+                path="Photos/a.jpg",
+                capture_date=None,
+                uploaded_at=datetime.now(UTC),
+                verified_at=None,
+                detail=None,
+            )
+        )
+    response = world.post(
+        "/destinations/immich",
+        data={"url": "http://other-immich.test", "public_url": "", "api_key": KEY},
+    )
+    assert response.headers["location"] == "/destinations/immich/library?changed=1"
+    page = world.client.get("/destinations/immich/library?changed=1").text
+    assert "Is this the same Immich library?" in page
+    assert "remembers the 1 photos and videos" in page
+    response = world.post("/destinations/immich/forget")
+    assert response.headers["location"] == "/destinations?saved=afresh#immich"
+    with State(world.tmp / "state.db") as state:
+        assert state.upload_count("immich") == 0
+    assert "Started afresh" in world.client.get("/destinations?saved=afresh").text
+
+
+def test_files_immich_has_not_finished_can_be_checked_or_let_go(world: World) -> None:
+    from datetime import timedelta
+
+    _ready(world)
+    now = datetime.now(UTC)
+    asset = world.immich.preload(b"slow file")
+    with State(world.tmp / "state.db") as state:
+        for sha1, asset_id, at in (
+            (asset.sha1, asset.id, now - timedelta(hours=1)),
+            ("c" * 40, "a2", now - timedelta(days=2)),
+        ):
+            state._db.execute(
+                "INSERT INTO uploads (destination, sha1, asset_id, status, export_id, archive, "
+                "path, capture_date, uploaded_at) VALUES ('immich', ?, ?, 'uploaded', "
+                "'20261001T010203Z', 'x.zip', ?, ?, ?)",
+                (sha1, asset_id, f"Takeout/{sha1[:4]}.jpg", now.isoformat(), at.isoformat()),
+            )
+    page = world.client.get("/cleanup/pending/20261001T010203Z").text
+    assert "2 files are waiting for Immich" in page
+    assert "Stop waiting" not in page  # one was uploaded less than a day ago
+    assert "less than a day" not in world.post("/cleanup/pending/20261001T010203Z/skip").text
+    with State(world.tmp / "state.db") as state:
+        assert state.verification_counts("immich")["uploaded"] == 2  # nothing skipped
+    # Immich has no date for either yet: still waiting after checking now.
+    response = world.post("/cleanup/pending/20261001T010203Z/check")
+    assert response.headers["location"].startswith("/cleanup/pending/20261001T010203Z")
+    with State(world.tmp / "state.db") as state:  # the recent one is old enough now
+        state._db.execute(
+            "UPDATE uploads SET uploaded_at = ?", ((now - timedelta(days=2)).isoformat(),)
+        )
+    assert "Stop waiting" in world.client.get("/cleanup/pending/20261001T010203Z").text
+    response = world.post("/cleanup/pending/20261001T010203Z/skip")
+    assert response.headers["location"] == "/cleanup?saved=skipped"
+    with State(world.tmp / "state.db") as state:
+        assert "uploaded" not in state.verification_counts("immich")
+    page = world.client.get("/cleanup/pending/20261001T010203Z")
+    assert page.headers["location"] == "/cleanup?saved=checked"
+
+
+def test_exports_removed_from_drive_fold_away_and_can_be_forgotten(world: World) -> None:
+    from googich_takeaway.state import DownloadRecord
+
+    world.post(
+        "/sources/drive",
+        data={"name": "Takeout", "folder_id": FOLDER_ID},
+        files={
+            "key_file": (
+                "key.json",
+                json.dumps(service_account_info()).encode(),
+                "application/json",
+            )
+        },
+    )
+    now = datetime.now(UTC)
+    with State(world.tmp / "state.db") as state:
+        for export_id, gone in (("20261001T010203Z", True), ("20261003T031753Z", False)):
+            name = f"takeout-{export_id}-001.zip"
+            state.record_download(
+                DownloadRecord(
+                    f"gdrive:{FOLDER_ID}", export_id, "f", name, 10, None, name, now, None, None
+                )
+            )
+            if gone:
+                state.mark_removed_from_source(f"gdrive:{FOLDER_ID}", [], now)
+    page = world.client.get("/cleanup").text
+    assert "Already removed from Drive (1)" in page
+    assert "never imported completely" in page
+    # Still in Drive: stays on the list.
+    response = world.post("/cleanup/drive/20261003T031753Z/forget")
+    assert "error=" in response.headers["location"]
+    response = world.post("/cleanup/drive/20261001T010203Z/forget")
+    assert response.headers["location"] == "/cleanup?saved=forgot#drive"
+    page = world.client.get("/cleanup").text
+    assert "Already removed from Drive" not in page
+    assert "20261003T031753Z" in page

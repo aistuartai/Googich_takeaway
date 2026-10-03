@@ -727,3 +727,10 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 .callout-warning { border-left-color: var(--warn); }
 .callout-warning .callout-title { color: var(--warn); }
 .prose blockquote.callout p + p { margin-top: .5rem; }
+.form-foot { margin: 1rem 0 0; font-size: .875rem; }
+.drive-removed { margin-top: 1.25rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+.drive-removed > summary { cursor: pointer; font-weight: 600; }
+.removed-list { list-style: none; padding: 0; margin: .75rem 0 0; }
+.removed-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .45rem 0; border-bottom: 1px solid var(--line); }
+.removed-list li:last-child { border-bottom: 0; }
+button.small { font-size: .8125rem; padding: .3rem .75rem; }

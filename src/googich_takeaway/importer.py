@@ -166,6 +166,7 @@ def verify_pending(
     clock: Callable[[], datetime],
     limit: int = 2000,
     budget: timedelta = timedelta(minutes=5),
+    export_id: str | None = None,
 ) -> PendingCheck:
     """Check earlier uploads that Immich had not processed yet, oldest first.
 
@@ -174,7 +175,7 @@ def verify_pending(
     """
     check = PendingCheck()
     deadline = clock() + budget
-    for record in state.unverified_uploads(destination, limit):
+    for record in state.unverified_uploads(destination, limit, export_id):
         if clock() >= deadline:
             break
         if not record.capture_date:
@@ -202,7 +203,9 @@ def verify_pending(
                 destination, record.sha1, UploadStatus.DATE_MISMATCH, clock(), detail
             )
             check.mismatched.append((record.path, detail))
-    check.remaining = state.verification_counts(destination).get(UploadStatus.UPLOADED.value, 0)
+    check.remaining = state.verification_counts(destination, export_id).get(
+        UploadStatus.UPLOADED.value, 0
+    )
     return check
 
 

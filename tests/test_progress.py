@@ -133,3 +133,38 @@ def test_eta_counts_files_when_overhead_dominates() -> None:
     assert view.eta_seconds == pytest.approx(
         90, rel=0.01
     )  # 90 files left, not 90 kB at a fast rate
+
+
+def test_reading_alongside_downloads_keeps_the_download_current() -> None:
+    tracker = Tracker(clock=lambda: 0.0)
+    tracker.start_run()
+    tracker.plan(Stage.DOWNLOAD, [("part-002.zip", 100)])
+    tracker.begin(Stage.DOWNLOAD, "part-002.zip", 100)
+    tracker.begin_alongside(Stage.SCAN, "export", 100)  # part 1, read in another thread
+    tracker.advance_alongside(Stage.SCAN, "export", 60)
+    tracker.advance(30)
+    active = tracker.active()
+    assert active is not None
+    assert (active[0], active[1].name, active[1].done) == (Stage.DOWNLOAD, "part-002.zip", 30)
+    tracker.end(Stage.DOWNLOAD, "part-002.zip")
+    tracker.show_stage(Stage.SCAN)  # downloads done, reading goes on
+    assert tracker.snapshot().stage is Stage.SCAN
+    tracker.begin_alongside(Stage.SCAN, "export", 100)  # part 2
+    tracker.advance_alongside(Stage.SCAN, "export", 100)
+    # The import takes the export over: what was read counts, and is not counted twice.
+    tracker.plan(Stage.SCAN, [("export", 200)])
+    tracker.begin(Stage.SCAN, "export", 200)
+    tracker.already_have(200)
+    view = next(v for v in tracker.snapshot().stages if v.stage is Stage.SCAN)
+    assert (view.done, view.total) == (200, 200)
+
+
+def test_reading_alongside_keeps_a_planned_size() -> None:
+    """Planned from the Drive listing: the first part shows as a share of the whole export."""
+    tracker = Tracker(clock=lambda: 0.0)
+    tracker.start_run()
+    tracker.plan(Stage.SCAN, [("export", 400)])
+    tracker.begin_alongside(Stage.SCAN, "export", 100)
+    tracker.advance_alongside(Stage.SCAN, "export", 100)
+    view = next(v for v in tracker.snapshot().stages if v.stage is Stage.SCAN)
+    assert (view.done, view.total) == (100, 400)

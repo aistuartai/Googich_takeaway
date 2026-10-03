@@ -9,6 +9,7 @@ run, because a photo's sidecar can sit in another part. An export that imported 
 remembered, so later runs do not rescan it.
 """
 
+import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -33,13 +34,13 @@ from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.progress import ItemState, Stage, Tracker
-from googich_takeaway.sources.base import SourceError
+from googich_takeaway.read_ahead import ReadAhead, StateScanCache
+from googich_takeaway.sources.base import RemoteFile, SourceError
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.takeout.archives import ArchiveError, group_exports, part_number
 from googich_takeaway.takeout.dates import DateResolver
 from googich_takeaway.takeout.scan import ExportScan, scan_export
-from googich_takeaway.takeout.scan_cache import CachedEntry, archive_key, decode_all, encode
 
 log = logging.getLogger("googich.run")
 
@@ -84,6 +85,8 @@ class RunReport:
     uploaded: int = 0
     already_present: int = 0
     needs_review: int = 0
+    deleted_in_immich: int = 0
+    """Files uploaded before and gone from Immich since: left out, as deleted on purpose."""
     date_mismatches: int = 0
     unverified: int = 0
     """Uploads Immich has not processed yet, across all exports."""
@@ -154,6 +157,8 @@ class RunReport:
             f"{uploaded} uploaded" if parts else f"{uploaded[0].upper()}{uploaded[1:]} uploaded"
         )
         parts.append(f"{self.already_present:,} skipped")
+        if self.deleted_in_immich:
+            parts.append(f"{self.deleted_in_immich:,} deleted in Immich")
         if self.failed_files:
             parts.append(f"{len(self.failed_files):,} failed")
         return ", ".join(parts)
@@ -177,6 +182,13 @@ class RunReport:
             lines.append(
                 f"Uploaded {self.uploaded} new files; "
                 f"{self.already_present} were already in Immich."
+            )
+        if self.deleted_in_immich:
+            lines.append(
+                f"{self.deleted_in_immich:,} files were left out because they were uploaded "
+                "before and have been deleted in Immich since. If they were not deleted on "
+                "purpose (for example, this is a different Immich library), run with Re-import, "
+                "or start afresh under Destinations."
             )
         if self.needs_review:
             lines.append(f"{self.needs_review} files have no date and need review.")
@@ -246,9 +258,36 @@ class Pipeline:
         if not sources:
             raise ConfigError("No sources are set up (Sources).")
 
-        # 1. Fetch from every Drive source; a failure on one does not stop the others.
+        resolver = DateResolver(default_timezone=ZoneInfo(general.timezone))
+
+        # 1. Fetch from every Drive source; a failure on one does not stop the others. Each
+        # archive is read as soon as it is downloaded, while the next one downloads.
         failed_names: set[str] = set()
         newest: dict[str, datetime] = {}
+        reader = (
+            ReadAhead(self.state.path, self.clock, resolver, self.tracker)
+            if self.config.read_while_downloading()
+            else None
+        )
+
+        def to_read(export_id: str) -> bool:
+            return self.options.reimport or not self.state.export_id_completed(export_id)
+
+        def listed(files: list[RemoteFile]) -> None:
+            """Each export's full size, so reading shows true progress from its first part."""
+            if not reader or not self.tracker:
+                return
+            sizes: dict[str, int] = {}
+            for file in files:
+                export_id = next(iter(group_exports([Path(file.name)])))
+                sizes[export_id] = sizes.get(export_id, 0) + file.size
+            self.tracker.plan(Stage.SCAN, [(e, size) for e, size in sizes.items() if to_read(e)])
+
+        def downloaded(archive: StoredFile) -> None:
+            export_id = next(iter(group_exports([Path(archive.name)])))
+            if reader and to_read(export_id):
+                reader.add(archive)
+
         downloader = Downloader(
             staging,
             self.state,
@@ -256,29 +295,38 @@ class Pipeline:
             self.sleep,
             progress=self.progress,
             tracker=self.tracker,
+            downloaded=downloaded,
+            listed=listed,
         )
-        for source in sources:
-            if source.kind != "gdrive":
-                continue
-            try:
-                with self.drive_factory(source.location, self.config.drive_key(source.id)) as drive:
-                    fetched = downloader.fetch_new(
-                        drive, ignore_history=self.options.download_again
-                    )
-            except NotEnoughSpaceError as error:
-                report.problems.append(str(error))
-                return
-            except (SourceError, ConfigError) as error:
-                report.problems.append(f"{source.name}: {error}")
-                continue
-            for file in fetched.listed:
-                export = next(iter(group_exports([Path(file.name)])))
-                newest[export] = max(newest.get(export, file.modified), file.modified)
-            report.downloaded += len(fetched.downloaded)
-            report.downloaded_bytes += sum(f.size for f, _ in fetched.downloaded)
-            for file, detail in fetched.failed:
-                failed_names.add(file.name)
-                report.problems.append(f"{source.name}: {detail}")
+        with reader or contextlib.nullcontext():
+            for source in sources:
+                if source.kind != "gdrive":
+                    continue
+                try:
+                    with self.drive_factory(
+                        source.location, self.config.drive_key(source.id)
+                    ) as drive:
+                        fetched = downloader.fetch_new(
+                            drive, ignore_history=self.options.download_again
+                        )
+                except NotEnoughSpaceError as error:
+                    report.problems.append(str(error))
+                    return
+                except (SourceError, ConfigError) as error:
+                    report.problems.append(f"{source.name}: {error}")
+                    continue
+                for file in fetched.listed:
+                    export = next(iter(group_exports([Path(file.name)])))
+                    newest[export] = max(newest.get(export, file.modified), file.modified)
+                report.downloaded += len(fetched.downloaded)
+                report.downloaded_bytes += sum(f.size for f, _ in fetched.downloaded)
+                for file, detail in fetched.failed:
+                    failed_names.add(file.name)
+                    report.problems.append(f"{source.name}: {detail}")
+            if reader:
+                if self.tracker:
+                    self.tracker.show_stage(Stage.SCAN)
+                reader.finish()  # the parts it is still reading: not read twice
 
         # 2. Import every complete export not imported before.
         try:
@@ -290,7 +338,6 @@ class Pipeline:
                 found += list_archives(LocalLocation(Path(source.location)))
         # The download folder may also be a local source; never list an archive twice.
         archives = sorted({_identity(a): a for a in found}.values())
-        resolver = DateResolver(default_timezone=ZoneInfo(general.timezone))
         # A part that failed to download is absent (only its .part file exists), so the export
         # would otherwise look complete without it. Block by export ID, from the failed names.
         blocked = set(group_exports([Path(name) for name in failed_names]))
@@ -418,6 +465,7 @@ class Pipeline:
         self._remember_export(export_id, scan, plan, result)
         report.uploaded += len(result.uploaded)
         report.already_present += len(plan.with_decision(Decision.IN_IMMICH)) + len(result.adopted)
+        report.deleted_in_immich += len(plan.with_decision(Decision.DELETED_IN_IMMICH))
         report.needs_review += len(plan.with_decision(Decision.NO_DATE))
         report.date_mismatches += len(result.date_mismatch)
 
@@ -443,8 +491,6 @@ class Pipeline:
             self.state.mark_export_complete(
                 export_key, export_id, json.dumps(summary), self.clock()
             )
-            # Fully in Immich: what reading it found is not needed again.
-            self.state.forget_scan_parts(archive_key(p.name, p.size) for p in parts)
 
     def _remember_failures(
         self,
@@ -541,6 +587,16 @@ class Pipeline:
             self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
 
 
+def forget_library(state: State, destination: str, at: datetime) -> int:
+    """Start afresh with a different Immich library: forget what was uploaded to the old one,
+    which exports were imported, and the failed files to retry. Archives, downloads and what
+    was read from them are kept. The next run imports whatever the new library lacks."""
+    forgotten = state.forget_destination(destination)
+    state.set_json(FAILURES_SETTING, None, at)
+    state.set_json(LATEST_EXPORT_SETTING, None, at)
+    return forgotten
+
+
 def ignore_failures(state: State, export_id: str, at: datetime) -> int:
     """Accept that an export's failed files will not be imported: mark it complete, so Cleanup
     offers it (asking first, as for undated files). Returns how many files were ignored."""
@@ -569,22 +625,6 @@ def pending_failures(state: State) -> list[dict[str, object]]:
     stored = state.get_json(FAILURES_SETTING)
     found = [{"export_id": k, **v} for k, v in stored.items() if isinstance(v, dict)]
     return sorted(found, key=lambda r: str(r["export_id"]), reverse=True)
-
-
-class StateScanCache:
-    """The scan cache (``takeout.scan_cache``), kept in the state database."""
-
-    def __init__(self, state: State, clock: Callable[[], datetime]) -> None:
-        self._state = state
-        self._clock = clock
-
-    def load(self, archive: str) -> tuple[bool, list[CachedEntry]]:
-        complete, rows = self._state.scan_part(archive)
-        return complete, decode_all(rows)
-
-    def save(self, archive: str, entries: list[CachedEntry], complete: bool = False) -> None:
-        rows = [(entry.path, encode(entry)) for entry in entries]
-        self._state.save_scan_part(archive, rows, complete, self._clock())
 
 
 def _identity(archive: StoredFile) -> str:

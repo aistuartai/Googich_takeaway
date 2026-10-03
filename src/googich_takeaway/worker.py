@@ -29,6 +29,9 @@ from googich_takeaway.schedule import next_run
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 
+SCAN_CACHE_KEPT = timedelta(days=90)
+"""How long what reading an archive found is kept after it was last used."""
+
 log = logging.getLogger("googich.worker")
 
 IDLE_CHECK_SECONDS = 30.0
@@ -314,8 +317,9 @@ class Worker:
         try:
             with State(self._state_path) as state:
                 cutoff = now - timedelta(days=self._config(state).log_retention_days())
-                # Saved scans of exports never finished (deleted, or abandoned): 60 days on.
-                state.forget_scan_parts(before=now - timedelta(days=60))
+                # What reading an archive found is kept for a Re-import or a new library, until
+                # it has not been used for a while.
+                state.forget_scan_parts(before=now - SCAN_CACHE_KEPT)
             files = logs.prune_files(self._state_path.parent / "logs", cutoff)
         except Exception:  # tidying up must never stop the worker
             log.exception("Could not delete old logs")

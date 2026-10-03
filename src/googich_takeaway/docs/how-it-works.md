@@ -48,11 +48,14 @@ A run starts on the schedule you choose, or when you press **Run now**.
 3. **Read.** The archives of each export are read without unpacking them to disk. Every photo and
    video is paired with Takeout's metadata file, and its capture date is worked out (see
    [Dates and time zones](dates.md)). What is found is saved as it goes, so a paused or
-   interrupted run does not read the same files again.
+   interrupted run does not read the same files again. Each archive downloaded from Drive is
+   read as soon as it arrives, while the next one downloads (Settings → Speed). Nothing is
+   uploaded until every part of the export has been read, because a photo's date can be in
+   any part.
 4. **Compare.** Immich is asked which files it already has, by content, so renamed copies and
    files from earlier exports are not uploaded twice.
 5. **Upload.** New files go to Immich with their date and location, three at a time (Settings →
-   Uploads, one to eight; files over 32 MB always go one at a time). Copies of the same photo
+   Speed, one to eight; files over 32 MB always go one at a time). Copies of the same photo
    inside the export, such as album copies, go once.
 6. **Check.** Each upload is read back to confirm Immich shows the date that was sent. Immich
    processes big imports in the background, so some checks finish on later runs.

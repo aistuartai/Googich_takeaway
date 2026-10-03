@@ -55,7 +55,7 @@
   </div>
 </section>
 <section class="settings-group" id="uploads">
-  <header><h2>Uploads</h2><p>How many photos are sent to Immich at the same time. More is faster on a good network; fewer is gentler on a small Immich server.</p></header>
+  <header><h2>Speed</h2><p>How much the app does at once. More is faster on a good network; less is gentler on a small server.</p></header>
   <div class="card">
   {% if saved == 'uploads' %}<p class="result ok" role="status">Saved.</p>{% endif %}
   <form method="post" action="/settings/uploads">
@@ -64,6 +64,8 @@
       <input name="parallel" type="number" min="1" max="{{ max_parallel }}" value="{{ parallel_uploads }}" required>
       <small>1 to {{ max_parallel }}; 3 suits most setups. Files over 32 MB, usually videos, always go one at a time.</small>
     </label>
+    <label class="check"><input type="checkbox" name="read_ahead" value="1" {{ 'checked' if read_ahead }}> Read archives while downloading</label>
+    <small>Reads each archive as soon as it has downloaded, while the next one downloads, so uploading starts sooner. Turn it off if the download folder is on a slow network share and both at once are slower.</small>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>

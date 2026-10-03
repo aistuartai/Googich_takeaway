@@ -46,6 +46,7 @@ def register(app: FastAPI, web: Shared) -> None:
             general=config.general(),
             retention_days=config.log_retention_days(),
             parallel_uploads=config.parallel_uploads(),
+            read_ahead=config.read_while_downloading(),
             max_parallel=MAX_PARALLEL_UPLOADS,
             log_usage=log_usage(),
             timezones=TIMEZONES,
@@ -89,10 +90,14 @@ def register(app: FastAPI, web: Shared) -> None:
 
     @app.post("/settings/uploads")
     def save_parallel_uploads(
-        request: Request, config: ConfigDep, parallel: Annotated[str, Form()] = ""
+        request: Request,
+        config: ConfigDep,
+        parallel: Annotated[str, Form()] = "",
+        read_ahead: Annotated[str, Form()] = "",
     ) -> Response:
         try:
             config.save_parallel_uploads(parallel)
+            config.save_read_while_downloading(bool(read_ahead))
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=uploads#uploads", status_code=303)

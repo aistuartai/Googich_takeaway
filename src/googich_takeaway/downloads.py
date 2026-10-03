@@ -65,6 +65,10 @@ class Downloader:
     free_margin: int = DEFAULT_FREE_MARGIN
     progress: Callable[[int], None] | None = None
     tracker: Tracker | None = None
+    downloaded: Callable[[StoredFile], None] | None = None
+    """Called with each archive as soon as it is downloaded."""
+    listed: Callable[[list[RemoteFile]], None] | None = None
+    """Called with every archive a source holds, once it has been listed."""
 
     @property
     def location(self) -> Location:
@@ -82,6 +86,8 @@ class Downloader:
         files = source.list_archives()
         result.listed = files
         record_listing(self.state, source.name, files, self.clock())
+        if self.listed:
+            self.listed(files)
         result.removed_from_source = self.state.mark_removed_from_source(
             source.name, (f.file_id for f in files), self.clock()
         )
@@ -118,6 +124,8 @@ class Downloader:
             result.downloaded.append((file, stored))
             if self.tracker:
                 self.tracker.end(Stage.DOWNLOAD, file.name)
+            if self.downloaded:
+                self.downloaded(stored)
         return result
 
     def _have_copy(self, file: RemoteFile) -> bool:
