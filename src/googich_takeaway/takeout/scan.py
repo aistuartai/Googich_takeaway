@@ -22,16 +22,19 @@ from googich_takeaway.takeout.metadata import (
     TAIL_BYTES,
     MediaMetadata,
     SidecarData,
+    parse_album,
     parse_sidecar,
     read_media_metadata,
 )
 from googich_takeaway.takeout.scan_cache import (
+    ALBUM,
     MEDIA,
     OTHER,
     SIDECAR,
     CachedEntry,
     ScanCache,
     archive_key,
+    legacy_key,
 )
 from googich_takeaway.takeout.sidecars import (
     VIDEO_EXTENSIONS,
@@ -40,6 +43,7 @@ from googich_takeaway.takeout.sidecars import (
     is_sidecar_candidate,
     match_sidecars,
 )
+from googich_takeaway.takeout.stacks import mark_stacks
 
 CHUNK_BYTES = 1024 * 1024
 
@@ -67,6 +71,22 @@ class ScannedItem:
     description: str
     duplicate_of: str | None = None
     """Path of an identical file in the same export that will be uploaded instead."""
+    archived: bool = False
+    """In Google Photos' Archive."""
+    trashed: bool = False
+    """In Google Photos' bin."""
+    partner: bool = False
+    """Saved from a partner's shared library."""
+    people: tuple[str, ...] = ()
+    albums: tuple[str, ...] = ()
+    """Titles of the Google Photos albums holding this file (or an identical copy of it)."""
+    stack: str | None = None
+    """Files that belong together (an edited copy and its original, RAW and JPEG, a burst)
+    share this key."""
+    stack_kind: str = ""
+    """``edited``, ``raw`` or ``burst``."""
+    stack_cover: bool = False
+    """The one shown for its stack."""
 
     @property
     def name(self) -> str:
@@ -83,6 +103,8 @@ class ExportScan:
     """Entries that are neither media nor sidecars, e.g. ``archive_browser.html``."""
     repeated_paths: list[str] = field(default_factory=list)
     """Paths found in more than one part; only the first copy is used."""
+    albums: dict[str, str] = field(default_factory=dict)
+    """Album titles, by the folder holding the album."""
     motion_companions: list[str] = field(default_factory=list)
     """Pixel ``PXL_….MP`` videos whose ``PXL_….MP.jpg`` still already embeds the same video.
     Immich plays the embedded video, so the separate copy is not uploaded."""
@@ -132,12 +154,21 @@ def scan_export(
             )
         elif entry.kind == SIDECAR and entry.sidecar is not None:
             sidecars[entry.path] = entry.sidecar
+        elif entry.kind == ALBUM:
+            scan.albums[_folder(entry.path)] = entry.album
         else:
             scan.ignored.append(entry.path)
 
     for archive in archives:
-        key = archive_key(archive.name, _archive_size(archive))
+        size = _archive_size(archive)
+        key = archive_key(archive.name, size)
         complete, saved = cache.load(key) if cache else (False, [])
+        if cache and not complete and not saved and key != legacy_key(archive.name, size):
+            # Read by an earlier version: its files are known; only its JSON is read again.
+            was_complete, old = cache.load(legacy_key(archive.name, size))
+            if was_complete:
+                saved = _upgrade(archive, old, cache, key)
+                complete = True
         if complete:
             for cached in saved:
                 use(archive, cached)
@@ -163,13 +194,10 @@ def scan_export(
                     data = entry.stream.read(MAX_SIDECAR_BYTES + 1)
                     if progress:
                         progress(len(data))
-                    parsed = parse_sidecar(data)
-                    if parsed is not None:
-                        sidecars[entry.path] = parsed
-                        pending.append(CachedEntry(entry.path, SIDECAR, sidecar=parsed))
-                    else:
-                        scan.ignored.append(entry.path)
-                        pending.append(CachedEntry(entry.path, OTHER))
+                    read = _read_json(entry.path, data)
+                    seen.discard(entry.path)  # use() records it
+                    use(archive, read)
+                    pending.append(read)
                 elif is_media(entry.path):
                     sha1, size, head, tail = _hash(entry.stream, progress)
                     extension = PurePosixPath(entry.path).suffix
@@ -194,6 +222,13 @@ def scan_export(
         if path.lower().endswith(".mp") and any(still in media for still in _motion_stills(path)):
             scan.motion_companions.append(path)
             del media[path]
+
+    # Album folders hold copies of photos also found elsewhere: each file's albums, by content.
+    in_albums: dict[str, set[str]] = {}
+    for path, found in media.items():
+        title = scan.albums.get(_folder(path))
+        if title:
+            in_albums.setdefault(found.sha1, set()).add(title)
 
     titles = {path: data.title for path, data in sidecars.items() if data.title}
     matches = match_sidecars([*media, *sidecars], titles)
@@ -226,10 +261,47 @@ def scan_export(
                 gps=gps,
                 favorited=sidecar.favorited if sidecar else False,
                 description=sidecar.description if sidecar else "",
+                archived=sidecar.archived if sidecar else False,
+                trashed=sidecar.trashed if sidecar else False,
+                partner=sidecar.partner if sidecar else False,
+                people=sidecar.people if sidecar else (),
+                albums=tuple(sorted(in_albums.get(found.sha1, ()))),
             )
         )
-    scan.items = _mark_duplicates(scan.items)
+    scan.items = mark_stacks(_mark_duplicates(scan.items))
     return scan
+
+
+def _folder(path: str) -> str:
+    return str(PurePosixPath(path).parent)
+
+
+def _read_json(path: str, data: bytes) -> CachedEntry:
+    """A JSON file from an export: an album's metadata, a photo's sidecar, or neither."""
+    title = parse_album(data)
+    if title is not None:
+        return CachedEntry(path, ALBUM, album=title)
+    parsed = parse_sidecar(data)
+    if parsed is not None:
+        return CachedEntry(path, SIDECAR, sidecar=parsed)
+    return CachedEntry(path, OTHER)
+
+
+def _upgrade(
+    archive: ArchiveSource, old: list[CachedEntry], cache: ScanCache, key: str
+) -> list[CachedEntry]:
+    """Bring an earlier version's scan of ``archive`` up to date: its media are known (sizes,
+    hashes, metadata), so only its JSON files are read again, for what is now taken from them.
+    A zip opens just those; a tgz is passed through without hashing anything."""
+    kept = [e for e in old if not e.path.lower().endswith(".json")]
+    wanted = {e.path for e in old if e.path.lower().endswith(".json")}
+    fresh: list[CachedEntry] = []
+    for entry in iter_entries(archive, only=wanted):
+        data = entry.stream.read(MAX_SIDECAR_BYTES + 1)
+        fresh.append(_read_json(entry.path, data))
+    entries = kept + fresh
+    cache.save(key, entries, complete=True)
+    return entries
 
 
 def _hash(stream: Readable, progress: ProgressCallback | None) -> tuple[str, int, bytes, bytes]:

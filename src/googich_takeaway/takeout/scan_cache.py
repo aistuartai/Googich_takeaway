@@ -21,6 +21,8 @@ from googich_takeaway.takeout.metadata import MediaMetadata, SidecarData
 
 MEDIA = "media"
 SIDECAR = "sidecar"
+ALBUM = "album"
+"""An album's metadata file: its folder's album title."""
 OTHER = "other"
 
 
@@ -33,6 +35,8 @@ class CachedEntry:
     sha1: str = ""
     media: MediaMetadata | None = None
     sidecar: SidecarData | None = None
+    album: str = ""
+    """For an album's metadata file: the album's title."""
 
 
 class ScanCache(Protocol):
@@ -45,14 +49,26 @@ class ScanCache(Protocol):
         ...
 
 
-READ_VERSION = 1
+READ_VERSION = 2
 """Raised when reading an archive finds something new (a fix in reading dates, say), so saved
-scans from before are read again rather than reused."""
+scans from before are read again rather than reused. Version 2 reads albums and more from the
+sidecars (archived, bin, partner, people); a version 1 scan is brought up to date by reading
+just its JSON files again (see ``legacy_key``)."""
 
 
 def archive_key(name: str, size: int) -> str:
     key = f"{name}:{size}"
     return key if READ_VERSION == 1 else f"{key}:v{READ_VERSION}"
+
+
+def legacy_key(name: str, size: int) -> str:
+    """The key a version 1 scan was saved under."""
+    return f"{name}:{size}"
+
+
+def known_keys(name: str, size: int) -> tuple[str, ...]:
+    """Keys a scan of this part may be saved under, newest first."""
+    return tuple(dict.fromkeys((archive_key(name, size), legacy_key(name, size))))
 
 
 def encode(entry: CachedEntry) -> str:
@@ -75,7 +91,13 @@ def encode(entry: CachedEntry) -> str:
             gps=list(side.gps) if side.gps else None,
             favorited=side.favorited,
             description=side.description,
+            archived=side.archived,
+            trashed=side.trashed,
+            partner=side.partner,
+            people=list(side.people),
         )
+    elif entry.kind == ALBUM:
+        data.update(title=entry.album)
     return json.dumps(data, separators=(",", ":"))
 
 
@@ -100,8 +122,14 @@ def decode(path: str, text: str) -> CachedEntry | None:
                 gps=_gps(data.get("gps")),
                 favorited=bool(data.get("favorited")),
                 description=str(data.get("description") or ""),
+                archived=bool(data.get("archived")),
+                trashed=bool(data.get("trashed")),
+                partner=bool(data.get("partner")),
+                people=tuple(str(n) for n in data.get("people") or ()),
             )
             return CachedEntry(path, SIDECAR, sidecar=sidecar)
+        if kind == ALBUM:
+            return CachedEntry(path, ALBUM, album=str(data["title"]))
         if kind == OTHER:
             return CachedEntry(path, OTHER)
     except (ValueError, KeyError, TypeError):

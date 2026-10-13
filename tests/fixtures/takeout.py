@@ -116,6 +116,7 @@ def sidecar_json(
     geo: tuple[float, float] | None = None,
     favorited: bool = False,
     description: str = "",
+    extra: dict[str, object] | None = None,
 ) -> bytes:
     """Sidecar JSON in the shape Takeout writes for Google Photos items."""
     latitude, longitude = geo if geo else (0.0, 0.0)
@@ -139,6 +140,7 @@ def sidecar_json(
         data["creationTime"] = _takeout_time(taken_utc + timedelta(minutes=5))
     if favorited:
         data["favorited"] = True
+    data.update(extra or {})
     return json.dumps(data, indent=2).encode()
 
 
@@ -200,8 +202,10 @@ class TakeoutBuilder:
         geo: tuple[float, float] | None = None,
         favorited: bool = False,
         data: bytes | None = None,
+        extra: dict[str, object] | None = None,
     ) -> ExpectedItem:
-        """Add a photo and, by default, its sidecar.
+        """Add a photo and, by default, its sidecar. ``extra`` adds fields to the sidecar
+        (``archived``, ``trashed``, ``people``, ``googlePhotosOrigin``).
 
         ``name`` is the original file name (the sidecar ``title``). ``archive_name`` overrides
         the name used inside the archive, for truncation cases. ``data`` reuses existing bytes,
@@ -216,7 +220,7 @@ class TakeoutBuilder:
         if sidecar:
             sidecar_path = self.add_file(
                 f"{folder}/{sidecar_name(name, style, duplicate)}",
-                sidecar_json(name, taken_utc, geo, favorited),
+                sidecar_json(name, taken_utc, geo, favorited, extra=extra),
                 sidecar_part or media_part,
             )
         item = ExpectedItem(media_path, name, sidecar_path, taken_utc if sidecar else None)

@@ -33,6 +33,7 @@ from googich_takeaway.importer import (
 from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
+from googich_takeaway.organise import OrganiseResult, organise
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.read_ahead import ReadAhead, StateScanCache
 from googich_takeaway.sources.base import RemoteFile, SourceError
@@ -67,6 +68,8 @@ class RunOptions:
     """Rescan finished exports and upload files Immich no longer has, even ones deleted there."""
     download_again: bool = False
     """Download archives from Drive even if they were downloaded before."""
+    include_trashed: bool = False
+    """Also import photos from Google Photos' bin, into Immich's trash."""
 
     def describe(self) -> list[str]:
         chosen = []
@@ -74,6 +77,8 @@ class RunOptions:
             chosen.append("re-import files missing from Immich")
         if self.download_again:
             chosen.append("download archives again")
+        if self.include_trashed:
+            chosen.append("photos in Google's bin go to Immich's trash")
         return chosen
 
 
@@ -87,6 +92,12 @@ class RunReport:
     needs_review: int = 0
     deleted_in_immich: int = 0
     """Files uploaded before and gone from Immich since: left out, as deleted on purpose."""
+    in_google_bin: int = 0
+    """Left out because they are in Google Photos' bin."""
+    partner_skipped: int = 0
+    out_of_range: int = 0
+    """Taken outside the date range in the settings."""
+    organised: OrganiseResult = field(default_factory=OrganiseResult)
     date_mismatches: int = 0
     unverified: int = 0
     """Uploads Immich has not processed yet, across all exports."""
@@ -189,6 +200,31 @@ class RunReport:
                 "before and have been deleted in Immich since. If they were not deleted on "
                 "purpose (for example, this is a different Immich library), run with Re-import, "
                 "or start afresh under Destinations."
+            )
+        made = self.organised
+        if made.album_photos:
+            lines.append(
+                f"Added {made.album_photos:,} photos and videos to albums"
+                + (f" ({made.albums_made} new)." if made.albums_made else ".")
+            )
+        if made.stacks:
+            lines.append(f"Stacked {made.stacks:,} sets of photos that belong together.")
+        if made.tagged:
+            lines.append(f"Tagged {made.tagged:,} photos and videos.")
+        if made.trashed:
+            lines.append(f"Put {made.trashed:,} photos from Google's bin in Immich's trash.")
+        lines += made.notes
+        if self.in_google_bin:
+            lines.append(
+                f"{self.in_google_bin:,} files in Google Photos' bin were left out (Options → "
+                "include them, in Immich's trash)."
+            )
+        if self.partner_skipped:
+            lines.append(f"{self.partner_skipped:,} photos from a partner's library were left out.")
+        if self.out_of_range:
+            lines.append(
+                f"{self.out_of_range:,} files were taken outside the date range in Settings and "
+                "left out."
             )
         if self.needs_review:
             lines.append(f"{self.needs_review} files have no date and need review.")
@@ -444,8 +480,16 @@ class Pipeline:
         checks = client.check_existing((i.sha1, i.sha1) for i in scan.unique_items())
         if self.tracker:
             self.tracker.set_detail(Stage.SCAN, "")
+        settings = self.config.import_settings()
         plan = plan_import(
-            export_id, scan, checks, self.state, self.destination, self.options.reimport
+            export_id,
+            scan,
+            checks,
+            self.state,
+            self.destination,
+            self.options.reimport,
+            settings,
+            self.options.include_trashed,
         )
         # The dashboard's figures update now, while uploading, not only when it is all done.
         self._remember_export(export_id, scan, plan, ImportResult(), pending=True)
@@ -462,11 +506,27 @@ class Pipeline:
             parallel=self.config.parallel_uploads(),
         )
         report.exports_imported += 1
+        if not result.aborted:
+            report.organised.add(
+                organise(
+                    plan,
+                    result,
+                    client,
+                    self.state,
+                    self.destination,
+                    settings,
+                    self.clock,
+                    self.tracker,
+                )
+            )
         self._remember_export(export_id, scan, plan, result)
         report.uploaded += len(result.uploaded)
         report.already_present += len(plan.with_decision(Decision.IN_IMMICH)) + len(result.adopted)
         report.deleted_in_immich += len(plan.with_decision(Decision.DELETED_IN_IMMICH))
         report.needs_review += len(plan.with_decision(Decision.NO_DATE))
+        report.in_google_bin += len(plan.with_decision(Decision.IN_GOOGLE_BIN))
+        report.partner_skipped += len(plan.with_decision(Decision.PARTNER))
+        report.out_of_range += len(plan.with_decision(Decision.OUT_OF_RANGE))
         report.date_mismatches += len(result.date_mismatch)
 
         # A few files that failed do not fail the run: the export stays unfinished, so the next
@@ -486,6 +546,7 @@ class Pipeline:
                 "verified": len(result.verified),
                 "no_date": len(plan.with_decision(Decision.NO_DATE)),
                 "unsupported": len(plan.with_decision(Decision.UNSUPPORTED)),
+                "out_of_range": len(plan.with_decision(Decision.OUT_OF_RANGE)),
                 "parts": sorted(p.name for p in parts),
             }
             self.state.mark_export_complete(
@@ -553,7 +614,8 @@ class Pipeline:
             "in_trash": len(plan.with_decision(Decision.IN_IMMICH_TRASH)),
             "deleted": len(plan.with_decision(Decision.DELETED_IN_IMMICH)),
             "not_imported": len(plan.with_decision(Decision.NO_DATE))
-            + len(plan.with_decision(Decision.UNSUPPORTED)),
+            + len(plan.with_decision(Decision.UNSUPPORTED))
+            + len(plan.with_decision(Decision.OUT_OF_RANGE)),
             "failed": len(result.failed),
             # Not in Immich yet: being uploaded now, or failed and tried again next run.
             "to_upload": len(plan.with_decision(Decision.UPLOAD))

@@ -143,6 +143,61 @@ class Look:
     motion: str = "auto"
 
 
+@dataclass(frozen=True)
+class ImportSettings:
+    """What a run brings into Immich besides the photos themselves, and which photos."""
+
+    archived: str = "archive"
+    """Photos in Google Photos' Archive: ``archive`` puts them in Immich's Archive too,
+    ``timeline`` shows them like any other."""
+    partner: str = "import"
+    """Photos saved from a partner's shared library: ``import`` or ``skip``."""
+    albums: bool = True
+    """Recreate Google Photos albums in Immich."""
+    stack_edited: bool = True
+    """Stack edited copies with their originals."""
+    stack_raw: bool = True
+    """Stack RAW files with the JPEG shot alongside."""
+    stack_burst: bool = True
+    """Stack burst photos."""
+    tag_people: bool = False
+    """Tag photos with the people Google Photos named in them (``People/<name>``)."""
+    tag_import: bool = False
+    """Tag what each import uploads (``Google Takeout/<export date>``)."""
+    taken_from: date | None = None
+    taken_to: date | None = None
+    """Only photos taken in this range (either end open); others are left out."""
+
+    @property
+    def stacking(self) -> bool:
+        return self.stack_edited or self.stack_raw or self.stack_burst
+
+    @property
+    def tagging(self) -> bool:
+        return self.tag_people or self.tag_import
+
+    def in_range(self, taken: date) -> bool:
+        if self.taken_from and taken < self.taken_from:
+            return False
+        return not (self.taken_to and taken > self.taken_to)
+
+    def permissions(self) -> dict[str, str]:
+        """Immich permissions the chosen options need beyond uploading, and what for."""
+        needed: dict[str, str] = {}
+        if self.albums:
+            needed["album.create"] = needed["albumAsset.create"] = "albums"
+            needed["album.read"] = "albums"
+        if self.stacking:
+            needed["stack.create"] = "stacks"
+        if self.tagging:
+            needed["tag.create"] = needed["tag.asset"] = "tags"
+        return needed
+
+
+ARCHIVED_CHOICES = {"archive": "In Immich's Archive", "timeline": "In the timeline, like any other"}
+PARTNER_CHOICES = {"import": "Import them", "skip": "Leave them out"}
+
+
 class Config:
     def __init__(self, state: State, box: SecretBox, clock: Callable[[], datetime]) -> None:
         self.state = state
@@ -326,6 +381,56 @@ class Config:
 
     def save_read_while_downloading(self, on: bool) -> None:
         self._state.set_setting("downloads.read_ahead", "on" if on else "off", self._clock())
+
+    # --- what to import ------------------------------------------------------------------------
+
+    def import_settings(self) -> ImportSettings:
+        data = self._state.get_json("import.options")
+        defaults = ImportSettings()
+
+        def flag(name: str) -> bool:
+            value = data.get(name)
+            return value if isinstance(value, bool) else bool(getattr(defaults, name))
+
+        def day(name: str) -> date | None:
+            try:
+                return date.fromisoformat(str(data[name])) if data.get(name) else None
+            except ValueError:
+                return None
+
+        return ImportSettings(
+            archived=str(data["archived"])
+            if data.get("archived") in ARCHIVED_CHOICES
+            else "archive",
+            partner=str(data["partner"]) if data.get("partner") in PARTNER_CHOICES else "import",
+            albums=flag("albums"),
+            stack_edited=flag("stack_edited"),
+            stack_raw=flag("stack_raw"),
+            stack_burst=flag("stack_burst"),
+            tag_people=flag("tag_people"),
+            tag_import=flag("tag_import"),
+            taken_from=day("taken_from"),
+            taken_to=day("taken_to"),
+        )
+
+    def save_import_settings(self, chosen: ImportSettings) -> None:
+        if chosen.archived not in ARCHIVED_CHOICES or chosen.partner not in PARTNER_CHOICES:
+            raise ConfigError("Choose from the options listed.")
+        if chosen.taken_from and chosen.taken_to and chosen.taken_from > chosen.taken_to:
+            raise ConfigError("The first date of the range is after the last.")
+        data = {
+            "archived": chosen.archived,
+            "partner": chosen.partner,
+            "albums": chosen.albums,
+            "stack_edited": chosen.stack_edited,
+            "stack_raw": chosen.stack_raw,
+            "stack_burst": chosen.stack_burst,
+            "tag_people": chosen.tag_people,
+            "tag_import": chosen.tag_import,
+            "taken_from": chosen.taken_from.isoformat() if chosen.taken_from else None,
+            "taken_to": chosen.taken_to.isoformat() if chosen.taken_to else None,
+        }
+        self._state.set_json("import.options", data, self._clock())
 
     # --- log retention ---------------------------------------------------------------------------
 

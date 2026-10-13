@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
+from googich_takeaway.config import ImportSettings
 from googich_takeaway.destinations.immich import (
     AssetDates,
     CheckAction,
@@ -55,6 +56,13 @@ class Decision(StrEnum):
     """This app uploaded it before; it is gone from Immich, so the user removed it."""
     NO_DATE = "no-date"
     UNSUPPORTED = "unsupported"
+    IN_GOOGLE_BIN = "in-google-bin"
+    """In Google Photos' bin: left out, unless the run asked to put such photos in Immich's
+    trash."""
+    PARTNER = "partner"
+    """Saved from a partner's library, and the settings leave those out."""
+    OUT_OF_RANGE = "out-of-range"
+    """Taken outside the date range the settings ask for."""
 
 
 @dataclass(frozen=True)
@@ -62,6 +70,10 @@ class PlannedItem:
     item: ScannedItem
     decision: Decision
     existing_asset: str | None = None
+    archive: bool = False
+    """Upload it into Immich's Archive."""
+    to_trash: bool = False
+    """Move it to Immich's trash once uploaded (it was in Google Photos' bin)."""
 
 
 @dataclass
@@ -99,7 +111,10 @@ def plan_import(
     state: State,
     destination: str,
     reimport: bool = False,
+    settings: ImportSettings | None = None,
+    include_trashed: bool = False,
 ) -> ImportPlan:
+    chosen = settings or ImportSettings()
     unique = scan.unique_items()
     ours = state.uploaded_hashes(destination, (i.sha1 for i in unique))
     plan = ImportPlan(export_id)
@@ -113,10 +128,19 @@ def plan_import(
             plan.items.append(PlannedItem(item, decision, check.existing_asset))
         elif item.sha1 in ours and not reimport:
             plan.items.append(PlannedItem(item, Decision.DELETED_IN_IMMICH))
+        elif item.trashed and not include_trashed:
+            plan.items.append(PlannedItem(item, Decision.IN_GOOGLE_BIN))
+        elif item.partner and chosen.partner == "skip":
+            plan.items.append(PlannedItem(item, Decision.PARTNER))
         elif item.date is None:
             plan.items.append(PlannedItem(item, Decision.NO_DATE))
+        elif not chosen.in_range(item.date.local.date()):
+            plan.items.append(PlannedItem(item, Decision.OUT_OF_RANGE))
         else:
-            plan.items.append(PlannedItem(item, Decision.UPLOAD))
+            archive = item.archived and chosen.archived == "archive"
+            plan.items.append(
+                PlannedItem(item, Decision.UPLOAD, archive=archive, to_trash=item.trashed)
+            )
     return plan
 
 
@@ -253,6 +277,7 @@ def _upload(
     parallel: int = PARALLEL_UPLOADS,
 ) -> None:
     wanted = {p.item.path: p.item for p in plan.with_decision(Decision.UPLOAD)}
+    to_archive = {p.item.path for p in plan.with_decision(Decision.UPLOAD) if p.archive}
     if tracker:
         tracker.plan(Stage.UPLOAD, [(p, i.size) for p, i in sorted(wanted.items())])
 
@@ -278,6 +303,7 @@ def _upload(
             sidecar=build_xmp(item.date, item.gps, item.description),
             favorite=item.favorited,
             progress=report,
+            archived=item.path in to_archive,
         )
 
     failures_in_a_row = [0]

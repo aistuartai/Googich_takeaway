@@ -3,7 +3,57 @@
 {% block content %}
 <div class="page-head"><h1>Settings</h1><a class="help-link" href="/help/dates">Guide: Dates and time zones</a></div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if saved and saved not in ("logs", "uploads") %}<p class="result ok" role="status">Saved.</p>{% endif %}
+{% if saved and saved not in ("logs", "uploads", "import") %}<p class="result ok" role="status">Saved.</p>{% endif %}
+
+<section class="settings-group" id="import">
+  <header><h2>What to import</h2><p>What each run brings into Immich besides the photos themselves, and which photos it leaves out. The dashboard's run box shows the choices.</p><p><a href="/help/what-gets-imported">Guide: what gets imported</a></p></header>
+  <div class="card">
+  {% if saved == 'import' %}<p class="result ok" role="status">Saved. These apply to the next exports imported; to bring them to photos imported before, run once with <strong>Re-import</strong> (Options, beside Run now).</p>{% endif %}
+  <form method="post" action="/settings/import" class="import-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <fieldset>
+      <legend>Albums</legend>
+      <label class="check"><input type="checkbox" name="albums" value="1" {{ 'checked' if imports.albums }}> Recreate Google Photos albums</label>
+      <small>Each album becomes an Immich album of the same name, with the same photos. A photo you take out of an album in Immich, or an album you delete there, stays that way.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Stacks</legend>
+      <p class="muted">Photos that belong together show as one in Immich, with the others behind it.</p>
+      <label class="check"><input type="checkbox" name="stack_edited" value="1" {{ 'checked' if imports.stack_edited }}> Edited copies with their originals</label>
+      <small>Google keeps both; the edited one is shown.</small>
+      <label class="check"><input type="checkbox" name="stack_raw" value="1" {{ 'checked' if imports.stack_raw }}> RAW files with the JPEG shot alongside</label>
+      <label class="check"><input type="checkbox" name="stack_burst" value="1" {{ 'checked' if imports.stack_burst }}> Bursts</label>
+      <small>Recognised by the names Pixel, Samsung, Huawei, Sony and Nothing phones give them.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Tags</legend>
+      <label class="check"><input type="checkbox" name="tag_people" value="1" {{ 'checked' if imports.tag_people }}> People named in Google Photos</label>
+      <small>As tags such as <code>People/Ann</code>. Immich finds faces itself; these keep the names you gave in Google Photos.</small>
+      <label class="check"><input type="checkbox" name="tag_import" value="1" {{ 'checked' if imports.tag_import }}> The export each photo came from</label>
+      <small>As tags such as <code>Google Takeout/2026-10-03</code>, on what each import uploads.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Photos in Google Photos' Archive</legend>
+      {% for value, label in archived_choices.items() %}<label class="check"><input type="radio" name="archived" value="{{ value }}" {{ 'checked' if imports.archived == value }}> {{ label }}</label>{% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Photos saved from a partner's library</legend>
+      {% for value, label in partner_choices.items() %}<label class="check"><input type="radio" name="partner" value="{{ value }}" {{ 'checked' if imports.partner == value }}> {{ label }}</label>{% endfor %}
+      <small>Leave them out if your partner imports their own library into Immich, and share it with Immich's partner sharing instead.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Only photos taken</legend>
+      <div class="date-range">
+        <label>From <input type="date" name="taken_from" value="{{ imports.taken_from.isoformat() if imports.taken_from }}"></label>
+        <label>To <input type="date" name="taken_to" value="{{ imports.taken_to.isoformat() if imports.taken_to }}"></label>
+      </div>
+      <small>Leave both empty for every photo. Photos outside the range stay in the archive; Cleanup asks before removing it.</small>
+    </fieldset>
+    <p class="muted">Photos in Google Photos' bin are always left out, unless a run includes them under <strong>Options</strong>.{% if needed %} The API key needs these permissions for what is ticked: {% for permission in needed %}<code>{{ permission }}</code>{{ ', ' if not loop.last }}{% endfor %}. Test connection under <a href="/destinations#immich">Destinations</a> checks them.{% endif %}</p>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</section>
 
 <section class="settings-group" id="timezone">
   <header><h2>Time zone</h2><p>For photos that carry no time zone of their own, so their dates come out right in Immich.</p></header>

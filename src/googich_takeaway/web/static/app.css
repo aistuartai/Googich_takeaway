@@ -734,3 +734,19 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 .removed-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .45rem 0; border-bottom: 1px solid var(--line); }
 .removed-list li:last-child { border-bottom: 0; }
 button.small { font-size: .8125rem; padding: .3rem .75rem; }
+
+/* What each run brings into Immich, under the run controls. */
+.imports {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.4rem;
+  margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid var(--line); font-size: .8125rem;
+}
+.imports-group { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.imports-label { color: var(--muted); font-weight: 600; margin-right: .15rem; }
+.chips { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem; margin: 0; padding: 0; }
+.chip {
+  padding: .18rem .65rem; border-radius: 999px; line-height: 1.4;
+  background: color-mix(in srgb, var(--violet) 7%, var(--raised));
+  border: 1px solid color-mix(in srgb, var(--violet) 25%, var(--line));
+}
+.chip-out { background: transparent; border-style: dashed; color: var(--muted); }
+.imports-change { margin-left: auto; font-weight: 600; }

@@ -45,10 +45,10 @@ EDITED_SUFFIXES = (
     "-redigerad",  # Swedish
 )
 
-# JSON files Takeout writes that are not media sidecars.
+# JSON files Takeout writes that are not media sidecars. An album's ``metadata.json`` (named in
+# the export's language) is read, as an album, by what its contents say.
 NON_SIDECAR_NAMES = frozenset(
     {
-        "metadata.json",
         "print-subscriptions.json",
         "shared_album_comments.json",
         "user-generated-memory-titles.json",

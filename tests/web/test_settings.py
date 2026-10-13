@@ -92,6 +92,11 @@ def test_immich_settings_saved_tested_and_key_never_shown(world: World) -> None:
     assert KEY not in page
     assert "Saved. Leave blank to keep it, unless you change the address." in page
     assert 'href="https://photos.example"' in page  # header link uses the public address
+    # Albums are on by default: the key needs more than uploading for them.
+    answer = world.htmx("/destinations/immich/test")
+    assert "Uploading works, but what is ticked under Settings → What to import" in answer
+    assert "albums: album.create, albumAsset.create, album.read" in answer
+    world.immich.permissions += ["album.create", "albumAsset.create", "album.read"]
     assert "Connected to Immich 2.7.5. The API key is fine." in world.htmx(
         "/destinations/immich/test"
     )
@@ -1315,3 +1320,41 @@ def test_exports_removed_from_drive_fold_away_and_can_be_forgotten(world: World)
     page = world.client.get("/cleanup").text
     assert "Already removed from Drive" not in page
     assert "20261003T031753Z" in page
+
+
+def test_what_to_import_is_set_in_settings_and_shown_with_the_run(world: World) -> None:
+    _ready(world)
+    page = world.client.get("/").text
+    assert '<span class="imports-label">Brings</span>' in page
+    assert '<li class="chip">Albums</li>' in page
+    assert '<li class="chip">Archive kept</li>' in page
+    assert "People tags" not in page  # off by default
+    assert 'name="include_trashed"' in page  # the bin is a choice per run
+    settings = world.client.get("/settings").text
+    assert 'name="albums" value="1" checked' in settings
+    assert "album.create" in settings  # the permissions what is ticked needs
+    response = world.post(
+        "/settings/import",
+        data={"stack_edited": "1", "tag_people": "1", "archived": "timeline", "partner": "skip",
+              "taken_from": "2010-01-01"},
+    )  # fmt: skip
+    assert response.headers["location"] == "/settings?saved=import#import"
+    page = world.client.get("/").text
+    assert '<li class="chip">Albums</li>' not in page
+    assert '<li class="chip">People tags</li>' in page
+    assert '<li class="chip chip-out">Partner photos</li>' in page
+    assert "Taken before 01 Jan 2010" in page
+    assert "Archive kept" not in page
+    bad = world.post(
+        "/settings/import", data={"taken_from": "2020-01-01", "taken_to": "2019-01-01"}
+    )
+    assert "The first date of the range is after the last." in bad.text
+    assert "is not a date" in world.post("/settings/import", data={"taken_to": "soon"}).text
+
+
+def test_a_run_can_include_googles_bin(world: World) -> None:
+    _ready(world)
+    world.post("/runs", data={"include_trashed": "1"})
+    requested = world.app.state.worker._manual_requested
+    assert requested is not None
+    assert requested.include_trashed

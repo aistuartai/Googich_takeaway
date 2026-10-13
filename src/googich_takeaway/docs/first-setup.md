@@ -12,7 +12,8 @@ Open **Configuration → Destinations**.
 1. Enter the address this app uses to reach Immich, for example `http://immich:2283` or
    `http://192.168.1.20:2283`.
 2. In Immich, open *Account Settings → API Keys*, create a key with the `asset.upload` and
-   `asset.read` permissions (add `stack.create` if offered), and paste it in.
+   `asset.read` permissions, plus those for albums and stacks (listed under
+   [Immich and the download folder](destinations.md#immich)), and paste it in.
 3. Press **Save**, then **Test connection**.
 
 If you open Immich at a different address in your browser, such as
@@ -50,6 +51,8 @@ All under the **Configuration** menu:
 - **Settings → Time zone:** used for photos that carry no time zone of their own.
 - **Schedule:** when to run. **Follow my Takeout schedule** checks on each day an export is
   expected; **Weekly** is a simple alternative.
+- **Settings → What to import:** albums, stacks, tags, and which photos to leave out (see
+  [What gets imported](what-gets-imported.md)). The defaults suit most libraries.
 - **Settings → Speed:** how many files go to Immich at once (three unless you change it), and
   whether archives are read while the next ones download (on unless you turn it off).
 - **Notifications:** where to send messages after runs (see

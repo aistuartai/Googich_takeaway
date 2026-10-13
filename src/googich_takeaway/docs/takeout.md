@@ -12,9 +12,9 @@ browser, signed in to the Google account that holds your photos.
 1. Open [Google Takeout for Google Photos](https://takeout.google.com/settings/takeout/custom/photos).
    It opens with only Google Photos selected. If it shows every product instead, press
    **Deselect all**, then tick **Google Photos**.
-2. **All photo albums included:** to make the export much smaller, include only the year
-   folders (see [Making the export smaller](#making-the-export-smaller) below). Press
-   **Next step**.
+2. **All photo albums included:** leave it so, and your albums are recreated in Immich. For a
+   smaller export without albums, include only the year folders (see
+   [Making the export smaller](#making-the-export-smaller) below). Press **Next step**.
 3. **Destination:** choose **Add to Drive**, so the app fetches each export by itself. To
    download the exports yourself instead, with no Google Cloud setup, choose **Send download link
    via email** (see [Downloading exports yourself](manual-downloads.md)).
@@ -49,7 +49,9 @@ and uploads each photo once, but they are still downloaded and read. To leave th
 press **All photo albums included**, then **Deselect all**, and tick only the folders named
 *Photos from …*. Every photo in your own library is in one of those.
 
-- Albums are not recreated in Immich either way, so nothing is lost by leaving them out.
+- The album folders are how albums are recreated in Immich (see
+  [What gets imported](what-gets-imported.md)). Leave them out only if you do not want albums;
+  the export is then smaller by the size of those copies.
 - One exception: photos in a **shared album** that someone else added, and that you never saved
   to your library, are only in that album's folder. Tick those shared albums too if you want
   them.

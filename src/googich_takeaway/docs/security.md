@@ -10,6 +10,9 @@
 - **The master key** that encrypts them is read from a Docker secret (`secrets/master.key` in the
   example `compose.yaml`), not from the database.
 - **Google access** is read-only, limited to the folder you share with the service account.
+- **Immich access** is only what the API key allows. Give it the permissions listed under
+  [Immich and the download folder](destinations.md#immich) and no more; the app never needs an
+  admin key.
 - **Logs** pass through a filter that removes keys, tokens and passwords before anything is
   written.
 - **The web interface** refuses requests from other sites, sends a strict Content Security Policy,

@@ -16,5 +16,10 @@ uv run googich fetch --drive-folder FOLDER_ID --service-account key.json \
 `--staging` is the download folder. Key files must be readable only by you (`chmod 600`). Keys are never accepted on the command
 line, so they stay out of your shell history.
 
+`import` uploads photos and videos with their dates, and leaves out photos in Google Photos' bin.
+It does not make albums, stacks or tags, and does not apply the date range or partner choice:
+those come from **Settings → What to import** in the web interface, on its runs (see
+[What gets imported](what-gets-imported.md)).
+
 In the container, `googich reset-password` clears the web password, so the next start offers
 first-run setup again: see [Forgot the password](troubleshooting.md#the-web-interface).

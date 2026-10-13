@@ -1,5 +1,6 @@
 """Settings, schedule and notifications."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import FastAPI, Form, Request, Response
@@ -7,13 +8,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from googich_takeaway import reminders
 from googich_takeaway.config import (
+    ARCHIVED_CHOICES,
     BAR_STYLES,
     COLOUR_SCHEMES,
     MAX_PARALLEL_UPLOADS,
     MOTION,
+    PARTNER_CHOICES,
     THEMES,
     Config,
     ConfigError,
+    ImportSettings,
 )
 from googich_takeaway.schedule import TAKEOUT_FREQUENCIES, WEEKDAYS, upcoming_runs
 from googich_takeaway.web.common import (
@@ -47,6 +51,10 @@ def register(app: FastAPI, web: Shared) -> None:
             retention_days=config.log_retention_days(),
             parallel_uploads=config.parallel_uploads(),
             read_ahead=config.read_while_downloading(),
+            imports=config.import_settings(),
+            needed=sorted(config.import_settings().permissions()),
+            archived_choices=ARCHIVED_CHOICES,
+            partner_choices=PARTNER_CHOICES,
             max_parallel=MAX_PARALLEL_UPLOADS,
             log_usage=log_usage(),
             timezones=TIMEZONES,
@@ -87,6 +95,39 @@ def register(app: FastAPI, web: Shared) -> None:
         except ConfigError as error:
             return settings_page(request, config, error=str(error))
         return RedirectResponse("/settings?saved=look#look", status_code=303)
+
+    @app.post("/settings/import")
+    def save_import(
+        request: Request,
+        config: ConfigDep,
+        albums: Annotated[str, Form()] = "",
+        stack_edited: Annotated[str, Form()] = "",
+        stack_raw: Annotated[str, Form()] = "",
+        stack_burst: Annotated[str, Form()] = "",
+        tag_people: Annotated[str, Form()] = "",
+        tag_import: Annotated[str, Form()] = "",
+        archived: Annotated[str, Form()] = "archive",
+        partner: Annotated[str, Form()] = "import",
+        taken_from: Annotated[str, Form()] = "",
+        taken_to: Annotated[str, Form()] = "",
+    ) -> Response:
+        try:
+            chosen = ImportSettings(
+                archived=archived,
+                partner=partner,
+                albums=bool(albums),
+                stack_edited=bool(stack_edited),
+                stack_raw=bool(stack_raw),
+                stack_burst=bool(stack_burst),
+                tag_people=bool(tag_people),
+                tag_import=bool(tag_import),
+                taken_from=_day(taken_from, "first"),
+                taken_to=_day(taken_to, "last"),
+            )
+            config.save_import_settings(chosen)
+        except ConfigError as error:
+            return settings_page(request, config, error=str(error))
+        return RedirectResponse("/settings?saved=import#import", status_code=303)
 
     @app.post("/settings/uploads")
     def save_parallel_uploads(
@@ -291,3 +332,12 @@ def register(app: FastAPI, web: Shared) -> None:
             return result(request, True, f"Test notification sent.{note}")
         why = " ".join(reasons) if reasons else "The service did not accept it."
         return result(request, False, f"Not delivered: {why}")
+
+
+def _day(value: str, which: str) -> date | None:
+    if not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise ConfigError(f"The {which} date of the range is not a date.") from None

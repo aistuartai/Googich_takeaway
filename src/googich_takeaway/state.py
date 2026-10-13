@@ -9,14 +9,14 @@ import contextlib
 import json
 import os
 import sqlite3
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 SESSION_SEEN_EVERY = timedelta(minutes=1)
 
 _MIGRATIONS: dict[int, str] = {
@@ -139,6 +139,22 @@ _MIGRATIONS: dict[int, str] = {
             path    TEXT NOT NULL,
             entry   TEXT NOT NULL,
             PRIMARY KEY (archive, path)
+        ) STRICT;
+    """,
+    10: """
+        CREATE TABLE organised (
+            destination TEXT NOT NULL,
+            kind        TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            sha1        TEXT NOT NULL,
+            done_at     TEXT NOT NULL,
+            PRIMARY KEY (destination, kind, name, sha1)
+        ) STRICT;
+        CREATE TABLE destination_albums (
+            destination TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            album_id    TEXT NOT NULL,
+            PRIMARY KEY (destination, title)
         ) STRICT;
     """,
 }
@@ -649,15 +665,23 @@ class State:
         ).fetchall()
         return bool(row[0]), [(r[0], r[1]) for r in rows]
 
-    def media_read(self, archives: Iterable[str]) -> tuple[int, int]:
-        """Of these archive parts (scan cache keys): how many were read to the end, and how
-        many distinct photos and videos they hold, by content (album copies count once)."""
-        names = json.dumps(sorted(set(archives)))
-        row = self._db.execute(
-            "SELECT count(*) FROM scan_parts WHERE complete = 1 "
-            "AND archive IN (SELECT value FROM json_each(?))",
-            (names,),
-        ).fetchone()
+    def media_read(self, archives: Iterable[str | Sequence[str]]) -> tuple[int, int]:
+        """Of these archive parts: how many were read to the end, and how many distinct photos
+        and videos they hold, by content (album copies count once). Each part is a scan cache
+        key, or several (newest first), of which the first read to the end is used."""
+        choices = [[a] if isinstance(a, str) else list(a) for a in archives]
+        every = json.dumps(sorted({key for keys in choices for key in keys}))
+        complete = {
+            row[0]
+            for row in self._db.execute(
+                "SELECT archive FROM scan_parts WHERE complete = 1 "
+                "AND archive IN (SELECT value FROM json_each(?))",
+                (every,),
+            )
+        }
+        chosen = [next((k for k in keys if k in complete), None) for keys in choices]
+        read = [key for key in chosen if key is not None]
+        names = json.dumps(read)
         media = self._db.execute(
             "SELECT count(DISTINCT json_extract(e.entry, '$.sha1')) FROM scan_entries e "
             "JOIN scan_parts p ON p.archive = e.archive "
@@ -665,7 +689,7 @@ class State:
             "AND json_extract(e.entry, '$.kind') = 'media'",
             (names,),
         ).fetchone()
-        return int(row[0]), int(media[0])
+        return len(read), int(media[0])
 
     def touch_scan_part(self, archive: str, at: datetime) -> None:
         """Note that a saved scan was used, so it is kept for longer."""
@@ -760,7 +784,57 @@ class State:
                 "DELETE FROM uploads WHERE destination = ?", (destination,)
             ).rowcount
             self._db.execute("DELETE FROM completed_exports")
+            self._db.execute("DELETE FROM organised WHERE destination = ?", (destination,))
+            self._db.execute("DELETE FROM destination_albums WHERE destination = ?", (destination,))
         return int(removed)
+
+    # --- organising: albums, stacks, tags -----------------------------------------------------
+
+    def organised(self, destination: str, kind: str, sha1s: Iterable[str]) -> set[tuple[str, str]]:
+        """(name, sha1) pairs already done for these files: an album, stack or tag each was
+        given once, so a later removal in Immich is respected."""
+        wanted = json.dumps(sorted(set(sha1s)))
+        rows = self._db.execute(
+            "SELECT name, sha1 FROM organised WHERE destination = ? AND kind = ? "
+            "AND sha1 IN (SELECT value FROM json_each(?))",
+            (destination, kind, wanted),
+        )
+        return {(row[0], row[1]) for row in rows}
+
+    def mark_organised(
+        self, destination: str, kind: str, pairs: Iterable[tuple[str, str]], at: datetime
+    ) -> None:
+        with self.transaction():
+            self._db.executemany(
+                "INSERT OR IGNORE INTO organised (destination, kind, name, sha1, done_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ((destination, kind, name, sha1, _to_text(at)) for name, sha1 in pairs),
+            )
+
+    def destination_album(self, destination: str, title: str) -> str | None:
+        """The album made for ``title``; empty if it was deleted in Immich since."""
+        row = self._db.execute(
+            "SELECT album_id FROM destination_albums WHERE destination = ? AND title = ?",
+            (destination, title),
+        ).fetchone()
+        return str(row[0]) if row else None
+
+    def set_destination_album(self, destination: str, title: str, album_id: str) -> None:
+        self._db.execute(
+            "INSERT OR REPLACE INTO destination_albums (destination, title, album_id) "
+            "VALUES (?, ?, ?)",
+            (destination, title, album_id),
+        )
+
+    def asset_ids(self, destination: str, sha1s: Iterable[str]) -> dict[str, str]:
+        """Immich asset ids of these files, where known."""
+        wanted = json.dumps(sorted(set(sha1s)))
+        rows = self._db.execute(
+            "SELECT sha1, asset_id FROM uploads WHERE destination = ? "
+            "AND sha1 IN (SELECT value FROM json_each(?)) AND status != ?",
+            (destination, wanted, UploadStatus.GONE.value),
+        )
+        return {row[0]: row[1] for row in rows if row[1]}
 
     def export_id_completed(self, export_id: str) -> bool:
         """Whether an export with this ID was imported completely, whatever its parts were."""

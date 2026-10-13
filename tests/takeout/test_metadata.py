@@ -124,3 +124,35 @@ def test_deeply_nested_video_boxes_do_not_crash() -> None:
     depth = 20_000
     data = b"".join(struct.pack(">I4s", 8 * (depth - n), b"moov") for n in range(depth))
     assert read_media_metadata(".mp4", data[:262_144]).video_utc is None
+
+
+def test_sidecar_flags_and_people() -> None:
+    from tests.fixtures.takeout import sidecar_json
+
+    data = sidecar_json(
+        "a.jpg",
+        None,
+        extra={
+            "archived": True,
+            "trashed": True,
+            "googlePhotosOrigin": {"fromPartnerSharing": {}},
+            "people": [{"name": "Bo"}, {"name": " Ann "}, {"name": ""}, {"x": 1}],
+        },
+    )
+    parsed = parse_sidecar(data)
+    assert parsed is not None
+    assert (parsed.archived, parsed.trashed, parsed.partner) == (True, True, True)
+    assert parsed.people == ("Ann", "Bo")
+    plain = parse_sidecar(sidecar_json("a.jpg", None))
+    assert plain is not None
+    assert (plain.archived, plain.trashed, plain.partner, plain.people) == (False, False, False, ())
+
+
+def test_album_metadata_is_told_apart_from_sidecars() -> None:
+    from googich_takeaway.takeout.metadata import parse_album
+    from tests.fixtures.takeout import album_metadata_json, sidecar_json
+
+    assert parse_album(album_metadata_json("Trip")) == "Trip"
+    assert parse_album(album_metadata_json("")) is None  # untitled
+    assert parse_album(sidecar_json("Trip", None)) is None
+    assert parse_album(b"not json") is None

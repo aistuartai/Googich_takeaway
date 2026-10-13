@@ -59,6 +59,7 @@ def register(app: FastAPI, web: Shared) -> None:
             runs=state.recent_runs(15) if "runs" in items else [],
             last_run=next(iter(state.recent_runs(1)), None),
             failed_exports=pending_failures(state),
+            imports=config.import_settings(),
             notice=dashboard_notice(request.query_params.get("notice", "")),
             reminders=reminders.takeout_reminders(config, state, clock()),
             zone=_zone(config.general().timezone),
@@ -114,6 +115,7 @@ def register(app: FastAPI, web: Shared) -> None:
                 "immich_link": config.immich().link,
                 "journey": journey(config, state),
                 "look": config.look(),
+                "imports": config.import_settings(),
                 "status": current,
                 "schedule": config.schedule(),
                 "general": config.general(),
@@ -133,8 +135,13 @@ def register(app: FastAPI, web: Shared) -> None:
     def run_now(
         reimport: Annotated[str, Form()] = "",
         download_again: Annotated[str, Form()] = "",
+        include_trashed: Annotated[str, Form()] = "",
     ) -> Response:
-        options = RunOptions(reimport=bool(reimport), download_again=bool(download_again))
+        options = RunOptions(
+            reimport=bool(reimport),
+            download_again=bool(download_again),
+            include_trashed=bool(include_trashed),
+        )
         if not worker.request_run(options):
             return RedirectResponse("/?notice=busy", status_code=303)
         worker.discard_paused()  # a new run replaces a paused one

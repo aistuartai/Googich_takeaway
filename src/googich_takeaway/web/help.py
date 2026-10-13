@@ -57,6 +57,12 @@ TOPICS = (
         START,
     ),
     Topic("destinations", "Immich and the download folder", "Where photos go, and wait.", START),
+    Topic(
+        "what-gets-imported",
+        "What gets imported",
+        "Albums, stacks, tags, and the photos left out.",
+        RUNNING,
+    ),
     Topic("schedule", "Schedule and notifications", "When runs happen, and messages.", RUNNING),
     Topic("cleanup", "Cleanup", "Freeing space safely, here and in Google Drive.", RUNNING),
     Topic("updates", "Updates", "New releases, and one-click updates.", RUNNING),

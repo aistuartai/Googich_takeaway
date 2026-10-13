@@ -402,6 +402,9 @@ def _print_plans(plans: list[ImportPlan], version: str, out: TextIO) -> None:
         Decision.DELETED_IN_IMMICH: "deleted in Immich since uploaded (skipped)",
         Decision.NO_DATE: "no date found (skipped, needs review)",
         Decision.UNSUPPORTED: "rejected by Immich",
+        Decision.IN_GOOGLE_BIN: "in Google Photos' bin (skipped)",
+        Decision.PARTNER: "from a partner's library (skipped)",
+        Decision.OUT_OF_RANGE: "taken outside the date range (skipped)",
     }
     for plan in plans:
         out.write(f"Export {plan.export_id}\n")

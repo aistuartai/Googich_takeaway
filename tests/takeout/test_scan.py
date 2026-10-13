@@ -78,10 +78,16 @@ def test_album_copy_is_marked_duplicate_of_year_folder(archives: list[Path]) -> 
     assert len(scan.unique_items()) == len(scan.items) - 1
 
 
-def test_album_metadata_is_ignored_and_no_sidecar_left_over(archives: list[Path]) -> None:
+def test_albums_are_read_and_no_sidecar_left_over(archives: list[Path]) -> None:
     scan = scan_export(archives, RESOLVER, NOW)
-    assert f"{ROOT}/Holiday 2019/metadata.json" in scan.ignored
+    assert scan.albums == {f"{ROOT}/Holiday 2019": "Holiday 2019"}
+    assert f"{ROOT}/Holiday 2019/metadata.json" not in scan.ignored
     assert scan.unmatched_sidecars == []
+    # The album's photo is uploaded once, from its year folder, and knows its album.
+    in_album = [i for i in scan.unique_items() if i.albums]
+    assert in_album
+    assert all(i.albums == ("Holiday 2019",) for i in in_album)
+    assert all("/Holiday 2019/" not in i.path for i in in_album)
 
 
 def test_progress_reports_every_byte(archives: list[Path]) -> None:

@@ -83,6 +83,15 @@ library** under Destinations (see
 [Switching to a different library](destinations.md#immich)), then run. Otherwise, **Re-import
 files missing from Immich** uploads them again.
 
+**"No albums: the API key needs …"** (or stacks, or tags)
+The photos were imported; only that part was skipped. Add the permissions it names to the key in
+Immich (*Account Settings → API Keys*), then run with **Re-import** to organise what is there.
+Or turn that choice off under Settings → What to import.
+
+**Albums, stacks or tags missing for photos imported before**
+They are made as each export is imported. Run once with **Re-import** to bring them to exports
+imported earlier (see [What gets imported](what-gets-imported.md)).
+
 **A run "Completed with errors"**
 A few files could not be uploaded. The run box on the dashboard lists them, with Retry and
 Ignore: see [How it works](how-it-works.md#when-files-fail).
@@ -112,11 +121,11 @@ network address was used up. Try again later.
 
 ## Known limitations
 
-- **Live Photos appear as two items**, a photo and a short video, and **edited copies sit beside
-  their originals** rather than stacked with them. Immich can stack items by hand.
+- **iPhone Live Photos appear as two items**, a photo and a short video. Immich can stack them
+  by hand.
 - **HEIC and RAW photos** take their date from Takeout's sidecar file, which carries no time
   zone; the time zone under Settings fills the gap.
-- **Albums are not recreated** in Immich.
+- **Shared albums** come across as your own albums, without the people they were shared with.
 - **A very large first import takes hours**: files go three at a time by default (Settings →
   Speed, up to eight); later runs only send what is new.
 

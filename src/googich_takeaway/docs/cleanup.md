@@ -20,9 +20,11 @@ All of these must be true:
 - No **failed files** are waiting: they were retried successfully, or you chose to ignore them
   (see [When files fail](how-it-works.md#when-files-fail)).
 
-Files with **no date**, types Immich does not accept, and failed files you ignored are not in
-Immich. They exist only in the archive and in Google Photos, so removing such an export asks you
-to confirm first.
+Files with **no date**, types Immich does not accept, failed files you ignored, and photos
+taken **outside the date range** in Settings are not in Immich. They exist only in the archive
+and in Google Photos, so removing such an export asks you to confirm first. Photos left out
+because they were in Google Photos' bin, or saved from a partner's library when you chose to
+leave those out, do not count: leaving them out was the choice.
 
 ## The download folder
 

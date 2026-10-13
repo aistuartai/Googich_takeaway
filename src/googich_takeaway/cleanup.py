@@ -29,7 +29,7 @@ from googich_takeaway.locations import (
 )
 from googich_takeaway.state import State, UploadStatus
 from googich_takeaway.takeout.archives import group_exports
-from googich_takeaway.takeout.scan_cache import archive_key
+from googich_takeaway.takeout.scan_cache import known_keys
 
 
 @dataclass(frozen=True)
@@ -93,7 +93,7 @@ def export_key(export_id: str, parts: list[tuple[str, int]]) -> str:
 
 def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> ExportCopy:
     key = export_key(copy.export_id, [(p.name, p.size) for p in copy.parts])
-    copy.parts_read, copy.media = state.media_read(archive_key(p.name, p.size) for p in copy.parts)
+    copy.parts_read, copy.media = state.media_read(known_keys(p.name, p.size) for p in copy.parts)
     copy.completed_at = state.export_completed_at(key)
     if copy.completed_at is None:
         copy.reason = "Not imported completely yet."
@@ -116,6 +116,7 @@ def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> Ex
     copy.not_imported = (
         _count(summary.get("no_date"))
         + _count(summary.get("unsupported"))
+        + _count(summary.get("out_of_range"))
         + (len(ignored) if isinstance(ignored, list) else 0)
     )
     return copy

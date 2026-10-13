@@ -44,6 +44,14 @@ class SidecarData:
     gps: tuple[float, float] | None
     favorited: bool
     description: str
+    archived: bool = False
+    """In Google Photos' Archive."""
+    trashed: bool = False
+    """In Google Photos' bin."""
+    partner: bool = False
+    """Saved from a partner's shared library."""
+    people: tuple[str, ...] = ()
+    """Names of the people Google Photos recognised and the user named."""
 
 
 def read_media_metadata(extension: str, head: bytes, tail: bytes = b"") -> MediaMetadata:
@@ -70,13 +78,52 @@ def parse_sidecar(data: bytes) -> SidecarData | None:
     if not isinstance(document, dict):
         return None
     title = document.get("title")
+    origin = document.get("googlePhotosOrigin")
+    people = document.get("people")
     return SidecarData(
         title=title if isinstance(title, str) else None,
         taken_utc=_takeout_timestamp(document.get("photoTakenTime")),
         gps=_takeout_geo(document.get("geoDataExif")) or _takeout_geo(document.get("geoData")),
         favorited=document.get("favorited") is True,
         description=str(document.get("description") or ""),
+        archived=document.get("archived") is True,
+        trashed=document.get("trashed") is True,
+        partner=isinstance(origin, dict) and "fromPartnerSharing" in origin,
+        people=tuple(
+            sorted(
+                {
+                    name.strip()[:100]
+                    for person in people
+                    if isinstance(person, dict)
+                    and isinstance(name := person.get("name"), str)
+                    and name.strip()
+                }
+            )
+        )
+        if isinstance(people, list)
+        else (),
     )
+
+
+_MEDIA_KEYS = ("photoTakenTime", "creationTime", "url", "imageViews")
+
+
+def parse_album(data: bytes) -> str | None:
+    """The title from an album's metadata file (``metadata.json``, named in the export's
+    language), or None if this is not one. An album's file has a title but none of the fields
+    a photo's sidecar has. An album without a title (Google's "untitled") gives None too."""
+    if len(data) > MAX_SIDECAR_BYTES:
+        return None
+    try:
+        document = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(document, dict) or any(key in document for key in _MEDIA_KEYS):
+        return None
+    title = document.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None
+    return title.strip()[:200]
 
 
 def _read_image(head: bytes) -> MediaMetadata:

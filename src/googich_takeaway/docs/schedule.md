@@ -56,14 +56,18 @@ is fixed.
 
 ### Run options
 
-**Options**, beside **Run now**, has two tick boxes for unusual cases. Tick one, then press
-**Run now**:
+**Options**, beside **Run now**, has three tick boxes for unusual cases. They apply to that one
+run. Tick what you need, then press **Run now**:
 
 - **Re-import files missing from Immich:** rescans exports that were already imported and uploads
   anything Immich no longer has, including photos you deleted there. Photos in Immich's trash are
-  left alone: restore those in Immich instead.
+  left alone: restore those in Immich instead. It also brings albums, stacks and tags to photos
+  imported before you chose them (see [What gets imported](what-gets-imported.md)).
 - **Download archives again:** fetches Drive archives downloaded before whose copy is no longer
   in the download folder, for example after a cleanup. Copies still there are not fetched again.
+- **Include photos in Google's bin:** imports photos you deleted in Google Photos but that are
+  still in its bin, straight into Immich's trash, where you can restore the ones to keep. Needs
+  the `asset.delete` permission on the API key.
 
 ## Notifications
 

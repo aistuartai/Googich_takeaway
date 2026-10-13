@@ -1,5 +1,6 @@
 """Destinations: Immich and the download folder."""
 
+from collections.abc import Iterable
 from typing import Annotated
 from urllib.parse import quote
 
@@ -125,15 +126,32 @@ def register(app: FastAPI, web: Shared) -> None:
                 granted = set(client.key_permissions())
         except ImmichError as error:
             return result(request, False, str(error))
-        missing = [p for p in REQUIRED_PERMISSIONS if p not in granted and "all" not in granted]
-        optional = [p for p in OPTIONAL_PERMISSIONS if p not in granted and "all" not in granted]
+
+        def lacking(wanted: Iterable[str]) -> list[str]:
+            return [p for p in wanted if p not in granted and "all" not in granted]
+
+        missing = lacking(REQUIRED_PERMISSIONS)
         if missing:
             return result(
                 request,
                 False,
                 f"Connected to Immich {version}, but the API key lacks: {', '.join(missing)}.",
             )
-        note = "".join(f" Optional, for {OPTIONAL_PERMISSIONS[p]}: {p}." for p in optional)
+        chosen = config.import_settings().permissions()
+        features: dict[str, list[str]] = {}
+        for permission in lacking(chosen):
+            features.setdefault(chosen[permission], []).append(permission)
+        if features:
+            listed = "; ".join(f"{what}: {', '.join(p)}" for what, p in sorted(features.items()))
+            return result(
+                request,
+                False,
+                f"Connected to Immich {version}. Uploading works, but what is ticked under "
+                f"Settings → What to import needs more permissions ({listed}).",
+            )
+        note = "".join(
+            f" Optional, for {OPTIONAL_PERMISSIONS[p]}: {p}." for p in lacking(OPTIONAL_PERMISSIONS)
+        )
         return result(request, True, f"Connected to Immich {version}. The API key is fine.{note}")
 
     @app.post("/destinations/downloads")

@@ -60,8 +60,11 @@ A run starts on the schedule you choose, or when you press **Run now**.
    files from earlier exports are not uploaded twice.
 5. **Upload.** New files go to Immich with their date and location, three at a time (Settings →
    Speed, one to eight; files over 32 MB always go one at a time). Copies of the same photo
-   inside the export, such as album copies, go once.
-6. **Check.** Each upload is read back to confirm Immich shows the date that was sent. Immich
+   inside the export, such as album copies, go once. Photos in Google Photos' bin, and any the
+   settings leave out, stay behind.
+6. **Organise.** Albums are recreated and photos that belong together are stacked, with tags if
+   you chose them (see [What gets imported](what-gets-imported.md)).
+7. **Check.** Each upload is read back to confirm Immich shows the date that was sent. Immich
    processes big imports in the background, so some checks finish on later runs.
 
 At the end the run is recorded under **History** on the dashboard, and a notification is sent if
@@ -122,6 +125,7 @@ Until you choose, the export counts as unfinished, and every run tries those fil
 ## What it remembers
 
 The app keeps a small database in its `data` folder: which archives were downloaded, which files
-were uploaded, and your settings. That is why archives are not downloaded twice, and why photos you
-delete in Immich are not brought back by the next export. **Re-import files missing from Immich**
+were uploaded, which albums, stacks and tags it made, and your settings. That is why archives are
+not downloaded twice, and why photos you delete in Immich, or take out of an album there, are not
+brought back by the next export. **Re-import files missing from Immich**
 (under **Options**, beside Run now) brings them back on purpose.

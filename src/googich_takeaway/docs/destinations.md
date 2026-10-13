@@ -18,8 +18,14 @@ whose library should receive the photos. Give it these permissions:
 |---|---|
 | `asset.upload` | uploading photos and videos |
 | `asset.read` | checking what Immich already has, and reading dates back |
+| `album.read`, `album.create`, `albumAsset.create` | albums, unless you turn them off |
+| `stack.create` | stacks, unless you turn them off |
+| `tag.create`, `tag.asset` | optional: tags, if you turn them on |
+| `asset.delete` | optional: putting photos from Google's bin in Immich's trash |
 | `asset.statistics` | optional: the dashboard's count of everything in Immich |
-| `stack.create` | optional: kept for stacking edited copies in a later release |
+
+See [What gets imported](what-gets-imported.md) for the choices these serve. A key without one
+still uploads; the run's summary says what was skipped.
 
 **Test connection** shows the Immich version and any missing permission. The key is encrypted
 before it is stored, and never shown again; leave the field empty to keep the saved key. If

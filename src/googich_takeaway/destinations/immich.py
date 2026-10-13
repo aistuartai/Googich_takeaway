@@ -156,6 +156,7 @@ class ImmichClient:
         sidecar: bytes | None = None,
         favorite: bool = False,
         progress: Callable[[int], None] | None = None,
+        archived: bool = False,
     ) -> UploadResult:
         """Stream one file to Immich without holding it in memory.
 
@@ -171,6 +172,8 @@ class ImmichClient:
             "fileModifiedAt": created,
             "isFavorite": "true" if favorite else "false",
         }
+        if archived:
+            fields["visibility"] = "archive"
         head = b"".join(_field(boundary, k, v) for k, v in fields.items())
         head += _file_header(boundary, "assetData", filename, "application/octet-stream")
         tail = b"\r\n"
@@ -202,6 +205,46 @@ class ImmichClient:
         data = self._request("POST", "/assets", content=body(), headers=headers)
         return UploadResult(asset_id=str(data["id"]), duplicate=data.get("status") == "duplicate")
 
+    # --- organising: albums, stacks, tags, trash -------------------------------------------------
+
+    def albums(self) -> dict[str, str]:
+        """The albums the key's user can see: id by name (the first, if names repeat)."""
+        found: dict[str, str] = {}
+        for album in self._request_any("GET", "/albums") or []:
+            if isinstance(album, dict) and isinstance(album.get("albumName"), str):
+                found.setdefault(album["albumName"], str(album["id"]))
+        return found
+
+    def create_album(self, name: str, description: str = "") -> str:
+        data = self._request(
+            "POST", "/albums", json={"albumName": name, "description": description}
+        )
+        return str(data["id"])
+
+    def add_to_album(self, album_id: str, asset_ids: list[str]) -> None:
+        """Add assets to an album. Ones already in it are fine."""
+        self._request_any("PUT", f"/albums/{album_id}/assets", json={"ids": asset_ids})
+
+    def create_stack(self, asset_ids: list[str]) -> str:
+        """Stack these assets; the first is shown for the stack."""
+        data = self._request("POST", "/stacks", json={"assetIds": asset_ids})
+        return str(data.get("id", ""))
+
+    def upsert_tags(self, names: list[str]) -> dict[str, str]:
+        """Tag ids by name (``Parent/Child`` makes nested tags), created where missing."""
+        found: dict[str, str] = {}
+        for tag in self._request_any("PUT", "/tags", json={"tags": names}) or []:
+            if isinstance(tag, dict) and isinstance(tag.get("value"), str):
+                found[tag["value"]] = str(tag["id"])
+        return found
+
+    def tag_assets(self, tag_id: str, asset_ids: list[str]) -> None:
+        self._request_any("PUT", f"/tags/{tag_id}/assets", json={"ids": asset_ids})
+
+    def trash(self, asset_ids: list[str]) -> None:
+        """Move assets to Immich's trash (not deleted for good)."""
+        self._request_any("DELETE", "/assets", json={"ids": asset_ids, "force": False})
+
     def asset_dates(self, asset_id: str) -> AssetDates:
         data = self._request("GET", f"/assets/{asset_id}")
         exif = data.get("exifInfo") or {}
@@ -220,6 +263,21 @@ class ImmichClient:
         headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        data = self._request_any(method, path, json, content, headers, params)
+        if not isinstance(data, dict):
+            raise ImmichError(f"unexpected response for {method} {path}")
+        return data
+
+    def _request_any(
+        self,
+        method: str,
+        path: str,
+        json: object = None,
+        content: Iterator[bytes] | None = None,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+    ) -> Any:
+        """Any JSON answer (an object, a list), or None for an empty one."""
         try:
             response = self._client.request(
                 method, path, json=json, content=content, headers=headers, params=params
@@ -239,13 +297,12 @@ class ImmichClient:
             if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
                 raise ImmichRefusedError(text)
             raise ImmichError(text)
+        if not response.content:
+            return None
         try:
-            data = response.json()
+            return response.json()
         except ValueError:
             raise ImmichError(f"Immich sent invalid JSON for {method} {path}") from None
-        if not isinstance(data, dict):
-            raise ImmichError(f"unexpected response for {method} {path}")
-        return data
 
 
 def _reason(response: httpx.Response) -> str:

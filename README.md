@@ -22,6 +22,9 @@ date and time zone, and adds to Immich only what it does not have yet, on a sche
 
 - **Two ways in.** Fetch scheduled exports from Google Drive with a read-only service account,
   or download them yourself from Takeout's email, with no Google Cloud setup at all.
+- **Your library as you left it.** Albums are recreated, edited copies, RAW+JPEG pairs and
+  bursts are stacked, archived photos stay archived, and photos in Google's bin stay out. Tags
+  for people and imports, partner photos and a date range are yours to choose.
 - **Dates done right.** Pairs every photo and video with its Takeout metadata, across all parts
   of an export, and sends the date, time zone and location with each upload, then reads it back
   to check.
@@ -68,7 +71,7 @@ The same guide is built into the app under **Help → Guide**, with search.
 
 | Getting started | Running it | Reference |
 |---|---|---|
-| [How it works](src/googich_takeaway/docs/how-it-works.md) | [Schedule and notifications](src/googich_takeaway/docs/schedule.md) | [Dates and time zones](src/googich_takeaway/docs/dates.md) |
+| [How it works](src/googich_takeaway/docs/how-it-works.md) | [What gets imported](src/googich_takeaway/docs/what-gets-imported.md) and [schedule](src/googich_takeaway/docs/schedule.md) | [Dates and time zones](src/googich_takeaway/docs/dates.md) |
 | [Setting up Immich](src/googich_takeaway/docs/immich-setup.md) | [Cleanup](src/googich_takeaway/docs/cleanup.md) | [Security and backups](src/googich_takeaway/docs/security.md) |
 | [First-time setup](src/googich_takeaway/docs/first-setup.md) | [Updates and one-click updates](src/googich_takeaway/docs/updates.md) | [Command-line tools](src/googich_takeaway/docs/command-line.md) |
 | [Google Takeout](src/googich_takeaway/docs/takeout.md) and [Google Drive](src/googich_takeaway/docs/google-drive.md) | [Backing up an Android phone](src/googich_takeaway/docs/android-backup.md) | [Troubleshooting](src/googich_takeaway/docs/troubleshooting.md) |
@@ -91,12 +94,11 @@ V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
 
 ## Limitations
 
-- iPhone Live Photos import as a photo and a video, and Google's edited copies sit beside their
-  originals rather than stacked with them.
+- iPhone Live Photos import as a photo and a video, and shared albums arrive as your own albums.
 - HEIC and RAW photos are dated from Takeout's metadata file, which has no time zone; the one set
   in Settings fills the gap.
-- Albums are not recreated in Immich, and a very large first import takes hours (three files go
-  at a time by default; up to eight under Settings → Speed).
+- A very large first import takes hours (three files go at a time by default; up to eight under
+  Settings → Speed).
 
 ## Development
 

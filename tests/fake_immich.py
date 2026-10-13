@@ -28,6 +28,7 @@ class Asset:
     favorite: bool
     trashed: bool = False
     reads: int = 0
+    archived: bool = False
 
 
 @dataclass
@@ -45,6 +46,11 @@ class FakeImmichServer:
         default_factory=lambda: ["asset.upload", "asset.read", "stack.create"]
     )
     assets: dict[str, Asset] = field(default_factory=dict)
+    albums: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
+    """Album id: (name, asset ids)."""
+    stacks: list[list[str]] = field(default_factory=list)
+    tags: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
+    """Tag id: (value, asset ids)."""
     requests: list[str] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
@@ -90,10 +96,68 @@ class FakeImmichServer:
             return self._check(json.loads(request.read()))
         if path == "/api/assets" and request.method == "POST":
             return self._upload(request)
+        organised = self._organise(request, path)
+        if organised is not None:
+            return organised
         found = re.fullmatch(r"/api/assets/([0-9a-f-]+)", path)
         if found and request.method == "GET":
             return self._asset(found[1])
         return httpx.Response(404)
+
+    def _allowed(self, permission: str) -> bool:
+        return permission in self.permissions or "all" in self.permissions
+
+    def _organise(self, request: httpx.Request, path: str) -> httpx.Response | None:
+        """Albums, stacks, tags and trash, as Immich 2.7.5 answers them."""
+        method = request.method
+        body = json.loads(request.read() or b"null")
+        rules = (
+            ("GET", r"/api/albums", "album.read"),
+            ("POST", r"/api/albums", "album.create"),
+            ("PUT", r"/api/albums/([^/]+)/assets", "albumAsset.create"),
+            ("POST", r"/api/stacks", "stack.create"),
+            ("PUT", r"/api/tags", "tag.create"),
+            ("PUT", r"/api/tags/([^/]+)/assets", "tag.asset"),
+            ("DELETE", r"/api/assets", "asset.delete"),
+        )
+        for rule_method, pattern, permission in rules:
+            found = re.fullmatch(pattern, path)
+            if method != rule_method or not found:
+                continue
+            if not self._allowed(permission):
+                return httpx.Response(403, json={"message": f"Missing permission: {permission}"})
+            if path == "/api/albums" and method == "GET":
+                listed = [{"id": k, "albumName": v[0]} for k, v in self.albums.items()]
+                return httpx.Response(200, json=listed)
+            if path == "/api/albums":
+                album_id = str(uuid.uuid4())
+                self.albums[album_id] = (body["albumName"], set())
+                return httpx.Response(201, json={"id": album_id, "albumName": body["albumName"]})
+            if path.startswith("/api/albums/"):
+                album = self.albums.get(found[1])
+                if album is None:
+                    return httpx.Response(404, json={"message": "Album not found"})
+                album[1].update(body["ids"])
+                return httpx.Response(200, json=[{"id": i, "success": True} for i in body["ids"]])
+            if path == "/api/stacks":
+                self.stacks.append(list(body["assetIds"]))
+                return httpx.Response(201, json={"id": str(uuid.uuid4())})
+            if path == "/api/tags":
+                answer = []
+                for value in body["tags"]:
+                    tag_id = next((k for k, v in self.tags.items() if v[0] == value), None)
+                    if tag_id is None:
+                        tag_id = str(uuid.uuid4())
+                        self.tags[tag_id] = (value, set())
+                    answer.append({"id": tag_id, "value": value, "name": value.split("/")[-1]})
+                return httpx.Response(200, json=answer)
+            if path.startswith("/api/tags/"):
+                self.tags[found[1]][1].update(body["ids"])
+                return httpx.Response(200, json=[{"id": i, "success": True} for i in body["ids"]])
+            for asset_id in body["ids"]:
+                self.assets[asset_id].trashed = True
+            return httpx.Response(204)
+        return None
 
     def _check(self, body: dict) -> httpx.Response:  # type: ignore[type-arg]
         results = []
@@ -130,6 +194,7 @@ class FakeImmichServer:
             data,
             parts.get("sidecarData", (None, None))[1],
             parts["isFavorite"][1] == b"true",
+            archived=parts.get("visibility", (None, b""))[1] == b"archive",
         )
         if asset.filename in self.refuse_names:
             return httpx.Response(400, json={"message": "Unsupported file type"})

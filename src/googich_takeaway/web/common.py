@@ -60,7 +60,7 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 REQUIRED_PERMISSIONS = ("asset.upload", "asset.read")
 OPTIONAL_PERMISSIONS = {
     "asset.statistics": "the dashboard's count of everything in Immich",
-    "stack.create": "stacking edited copies, in a later release",
+    "asset.delete": "putting photos from Google's bin in Immich's trash, a run option",
 }
 
 SECURITY_HEADERS = {

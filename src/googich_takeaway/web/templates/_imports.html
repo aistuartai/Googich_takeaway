@@ -1,0 +1,26 @@
+{#- What each run brings into Immich and what it leaves out, from Settings → What to import. -#}
+{%- set range_text = (imports.taken_from.strftime('%d %b %Y') if imports.taken_from else '') ~ ('–' if imports.taken_from and imports.taken_to else '') ~ (imports.taken_to.strftime('%d %b %Y') if imports.taken_to else '') -%}
+<div class="imports">
+  <div class="imports-group">
+    <span class="imports-label">Brings</span>
+    <ul class="chips">
+      <li class="chip">Photos and videos</li>
+      {% if imports.albums %}<li class="chip">Albums</li>{% endif %}
+      {% if imports.stacking %}<li class="chip" title="{{ [imports.stack_edited and 'edited copies', imports.stack_raw and 'RAW with JPEG', imports.stack_burst and 'bursts']|select|join(', ')|capitalize }}">Stacks</li>{% endif %}
+      {% if imports.tag_people %}<li class="chip">People tags</li>{% endif %}
+      {% if imports.tag_import %}<li class="chip">Import tags</li>{% endif %}
+      {% if imports.archived == 'archive' %}<li class="chip">Archive kept</li>{% endif %}
+    </ul>
+  </div>
+  <div class="imports-group">
+    <span class="imports-label">Leaves out</span>
+    <ul class="chips">
+      <li class="chip chip-out" title="Options can include them, in Immich's trash">Google's bin</li>
+      {% if imports.partner == 'skip' %}<li class="chip chip-out">Partner photos</li>{% endif %}
+      {% if imports.taken_from and not imports.taken_to %}<li class="chip chip-out">Taken before {{ imports.taken_from.strftime('%d %b %Y') }}</li>
+      {% elif imports.taken_to and not imports.taken_from %}<li class="chip chip-out">Taken after {{ imports.taken_to.strftime('%d %b %Y') }}</li>
+      {% elif imports.taken_from %}<li class="chip chip-out">Taken outside {{ range_text }}</li>{% endif %}
+    </ul>
+  </div>
+  <a class="imports-change" href="/settings#import">Change</a>
+</div>

@@ -25,7 +25,7 @@ from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, DriveFactory, Immic
 from googich_takeaway.progress import Stage
 from googich_takeaway.sources.base import SourceError
 from googich_takeaway.state import State
-from googich_takeaway.takeout.scan_cache import archive_key
+from googich_takeaway.takeout.scan_cache import known_keys
 from googich_takeaway.worker import Worker
 
 log = logging.getLogger(__name__)
@@ -252,8 +252,8 @@ class Summaries:
         until at least one has been read. Remembered for 30 seconds."""
         if not parts:
             return None
-        keys = sorted(archive_key(name, size) for name, size in parts)
-        digest = hashlib.sha256("\n".join(keys).encode()).hexdigest()
+        keys = sorted(known_keys(name, size) for name, size in parts)
+        digest = hashlib.sha256(repr(keys).encode()).hexdigest()
 
         def read() -> tuple[int, int]:
             return state.media_read(keys)

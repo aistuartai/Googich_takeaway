@@ -109,3 +109,54 @@ def test_entries_survive_encoding() -> None:
     for entry in (media, side, CachedEntry("x.html", "other")):
         assert decode(entry.path, encode(entry)) == entry
     assert decode("bad", "not json") is None
+
+
+def test_new_fields_and_albums_survive_encoding() -> None:
+    from googich_takeaway.takeout.metadata import SidecarData
+
+    side = CachedEntry(
+        "b.jpg.json", "sidecar",
+        sidecar=SidecarData("b.jpg", None, None, False, "", archived=True, trashed=True,
+                            partner=True, people=("Ann", "Bo")),
+    )  # fmt: skip
+    album = CachedEntry("Trip/metadata.json", "album", album="Trip")
+    for entry in (side, album):
+        assert decode(entry.path, encode(entry)) == entry
+
+
+@pytest.mark.parametrize("kind", ["zip", "tgz"])
+def test_a_scan_from_the_previous_version_rereads_only_its_json(
+    tmp_path: Path, kind: Literal["zip", "tgz"], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway.takeout import scan_cache
+
+    archives = quirks_export().write(_folder(tmp_path), kind)
+    full = scan_export(archives, RESOLVER, NOW)
+    state = State(tmp_path / "state.db")
+    cache = StateScanCache(state, lambda: NOW)
+    with monkeypatch.context() as old:  # saved by version 1, as name:size
+        old.setattr(scan_module, "archive_key", scan_cache.legacy_key)
+        scan_export(archives, RESOLVER, NOW, cache=cache)
+    asked: list[object] = []
+    from googich_takeaway.takeout.archives import iter_entries as original
+
+    def spy(source: object, only: object = None, skipped: object = None):  # type: ignore[no-untyped-def]
+        asked.append(only)
+        return original(source, only=only, skipped=skipped)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(scan_module, "iter_entries", spy)
+    hashed = [0]
+    upgraded = scan_export(
+        archives, RESOLVER, NOW, progress=lambda n: hashed.__setitem__(0, hashed[0] + n),
+        cache=cache,
+    )  # fmt: skip
+    assert _summary(upgraded) == _summary(full)
+    assert upgraded.albums == full.albums
+    assert hashed[0] == 0  # nothing hashed again
+    assert asked
+    for only in asked:
+        assert isinstance(only, set)
+        assert all(p.endswith(".json") for p in only)
+    asked.clear()
+    scan_export(archives, RESOLVER, NOW, cache=cache)
+    assert asked == []  # saved in the new version: not opened at all

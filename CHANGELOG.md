@@ -7,6 +7,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **What to import**, a new section in Settings, with the choices shown in the dashboard's run
+  box under **Brings** and **Leaves out**:
+  - **Albums** recreated in Immich (on by default).
+  - **Stacks**: edited copies with their originals, RAW with JPEG, and bursts (on by default).
+  - **Tags** for the people named in Google Photos and for the export each photo came from
+    (off by default).
+  - Photos in Google Photos' **Archive** go to Immich's Archive (or the timeline, if chosen).
+  - Photos saved from a **partner's** library: imported, or left out.
+  - A **date range**: only photos taken between two dates.
+- Photos in **Google Photos' bin** are left out; **Include photos in Google's bin**, under
+  Options, brings them into Immich's trash for one run.
+- Albums, stacks and tags are applied once per photo: what you change in Immich afterwards stays
+  changed. Re-import brings them to photos imported before.
+- **Test connection** lists the permissions the chosen options need, and a run without one
+  imports the photos anyway and says what it skipped.
+- New guide page: What gets imported.
+
+### Changed
+
+- Archives read by an earlier version are brought up to date by reading only their JSON files
+  again, not the photos.
+- The command-line plan lists photos left out because they are in Google's bin, from a
+  partner's library, or outside the date range.
+- Guides updated throughout for the new choices: Takeout setup keeps album folders, the run
+  options, Cleanup, security (the API key's permissions) and the command-line tools.
+
 ## [0.5.1] - 2026-10-03
 
 ### Added

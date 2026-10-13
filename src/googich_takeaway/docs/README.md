@@ -15,6 +15,7 @@ The same guide is built into the app, under **Help → Guide**, with search.
 
 ## Running it
 
+- [What gets imported](what-gets-imported.md): albums, stacks, tags, and the photos left out.
 - [Schedule and notifications](schedule.md): when runs happen, and messages.
 - [Cleanup](cleanup.md): freeing space safely, here and in Google Drive.
 - [Updates](updates.md): new releases, and one-click updates.
