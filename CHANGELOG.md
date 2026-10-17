@@ -13,8 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   you install it. The update banner's **What's new** link leads there.
 - **Change log** page, from Help → Updates and Help → About: every release, newest first, with
   the one running marked and earlier releases folded away. The app carries its own change log,
-  so it reads without a network; a newer release's is fetched from GitHub once, when the update
-  check finds it.
+  so it reads without a network; a newer release's notes are fetched from GitHub once, with the
+  update check, and only the releases newer than the one running are taken from it.
 
 ## [0.5.2] - 2026-10-17
 

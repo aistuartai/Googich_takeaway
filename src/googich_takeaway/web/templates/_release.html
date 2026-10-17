@@ -7,13 +7,27 @@
 {%- if release.newer %}<span class="release-tag new">New</span>{% elif release.running %}<span class="release-tag running">Running</span>{% endif -%}
 {%- endmacro -%}
 
-{%- macro release_card(release, heading='h2') -%}
+{#- The version is a heading at ``level``; Added, Changed and the like sit one level below it. -#}
+{%- macro release_card(release, level=2) -%}
 <article class="release" id="{{ release.anchor }}">
   <header class="release-head">
-    <{{ heading }}>{{ release.version }}</{{ heading }}>
+    <h{{ level }}>{{ release.version }}</h{{ level }}>
     <span class="release-date">{{ release_date(release) }}</span>
     {{ release_tags(release) }}
   </header>
-  <div class="release-body prose">{{ release.html }}</div>
+  <div class="release-body prose">{{ release.notes(level + 1) }}</div>
 </article>
+{%- endmacro -%}
+
+{#- A release folded away: version, date and kinds of change, with the notes inside. -#}
+{%- macro release_folded(release, level=3) -%}
+<details class="release-folded" id="{{ release.anchor }}">
+  <summary>
+    <span class="release-version">{{ release.version }}</span>
+    <span class="release-date">{{ release_date(release) }}</span>
+    {{ release_tags(release) }}
+    {% if release.kinds %}<span class="release-kinds">{% for kind in release.kinds %}<span class="change-dot change-{{ kind|lower }}">{{ kind }}</span>{% endfor %}</span>{% endif %}
+  </summary>
+  <div class="release-body prose">{{ release.notes(level) }}</div>
+</details>
 {%- endmacro -%}

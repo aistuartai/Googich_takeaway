@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_release.html" import release_card %}
+{% from "_release.html" import release_card, release_folded %}
 {% block title %}Updates | Googich Takeaway{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Updates</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
@@ -19,13 +19,14 @@
     {% if saved == 'update-after-pause' %}<p class="result ok" role="status">Update requested. The run going now pauses at its next safe point, then the update installs, and the run resumes by itself once the app is back.</p>{% endif %}
     {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
     {% if update_available %}
-    <div class="whats-new" id="whats-new">
-      <p class="whats-new-label">What's new</p>
-      {% for release in whats_new %}{{ release_card(release, 'h3') }}{% endfor %}
-      {% if not whats_new %}
-      <p class="muted">What {{ update_available.latest }} brings could not be fetched from GitHub. Read its <a href="{{ update_available.url }}" target="_blank" rel="noopener noreferrer">release notes on GitHub ↗</a>.</p>
-      {% endif %}
-    </div>
+    <section class="whats-new" id="whats-new" aria-labelledby="whats-new-title">
+      <h3 class="whats-new-label" id="whats-new-title">What's new</h3>
+      {% for release in whats_new %}
+      {% if loop.first %}{{ release_card(release, 4) }}{% else %}{{ release_folded(release, 5) }}{% endif %}
+      {% else %}
+      <p class="muted">What {{ update_available.latest }} brings is not here yet. Read its <a href="{{ update_available.url }}" target="_blank" rel="noopener noreferrer">release notes on GitHub ↗</a>.</p>
+      {% endfor %}
+    </section>
     {% endif %}
     <div class="actions">
       <form method="post" action="/updates/check" class="inline">

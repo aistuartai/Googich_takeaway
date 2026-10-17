@@ -15,12 +15,14 @@ Help → Updates if you prefer. The app never installs anything by itself.
 
 When a new release is out, **What's new** under Help → Updates shows what it brings, before you
 install it; the banner's **What's new** link leads there. **Change log**, under Help → Updates and
-Help → About, lists every release: the newest in full, with the one you are running marked, and
-earlier ones folded away.
+Help → About, lists every release, newest first: any newer releases, the one you are running
+(marked **Running**) and the three before it in full, and earlier ones folded away.
 
 The app carries its own change log, so the releases up to the one running can always be read.
-For a newer release it fetches that release's `CHANGELOG.md` from GitHub once, anonymously, when
-the check finds it. If that fails, What's new links to the release notes on GitHub instead.
+For a newer release it fetches that release's `CHANGELOG.md` from GitHub once, anonymously: with
+the daily check, when you press **Check now**, or in the background when Help → Updates opens.
+Until then, What's new links to the release notes on GitHub instead. From the fetched change log
+the app uses only the releases newer than the one running.
 
 ## Updating by hand
 

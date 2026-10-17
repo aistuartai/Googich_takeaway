@@ -18,7 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from googich_takeaway import logs, reminders, updates
+from googich_takeaway import changelog, logs, reminders, updates
 from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
 from googich_takeaway.destinations.immich import ImmichClient
@@ -280,6 +280,7 @@ class Worker:
         try:
             with State(self._state_path) as state:
                 updates.check_if_due(state, self._clock)
+                changelog.fetch_newer(state, self._clock())
         except Exception:  # an update check must never stop the worker
             log.exception("Update check failed")
 

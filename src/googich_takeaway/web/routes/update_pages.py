@@ -1,5 +1,6 @@
-"""Updates: checking for releases and one-click updates."""
+"""Updates: checking for releases, what they bring, and one-click updates."""
 
+import threading
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -26,9 +27,25 @@ def register(app: FastAPI, web: Shared) -> None:
     update_banner = web.update_banner
     latest_release = web.latest_release
 
+    def fetch_notes_in_background() -> None:
+        """Fetch what a newer release brings without holding up the page: it shows the next
+        time the page opens. A failure waits an hour before the next try."""
+
+        def fetch() -> None:
+            try:
+                with State(settings.state_path) as state:
+                    changelog.fetch_newer(state, clock(), github_transport)
+            except Exception:  # never let a background fetch go unnoticed
+                log.exception("Fetching the change log failed")
+
+        threading.Thread(target=fetch, name="changelog-fetch", daemon=True).start()
+
     @app.get("/updates", response_class=HTMLResponse)
     def updates_view(request: Request, config: ConfigDep) -> Response:
         known, latest = latest_release(config)
+        newer = known if known and known.newer else None
+        if newer and not changelog.has_notes_for(config.state, newer.latest):
+            fetch_notes_in_background()
         return page(
             request,
             config,
@@ -36,7 +53,7 @@ def register(app: FastAPI, web: Shared) -> None:
             latest_shown=latest,
             updates_enabled=updates.enabled(config.state),
             update_known=known,
-            update_available=known if known and known.newer else None,
+            update_available=newer,
             whats_new=[r for r in changelog.releases(config.state) if r.newer],
             repository=updates.REPOSITORY,
             saved=request.query_params.get("saved"),
@@ -109,6 +126,8 @@ def register(app: FastAPI, web: Shared) -> None:
     @app.post("/updates/check")
     def check_updates(state: StateDep) -> Response:
         found = updates.check_now(state, clock, github_transport)
+        if found is updates.CheckResult.NEWER:  # what it brings, before the page shows it
+            changelog.fetch_newer(state, clock(), github_transport, retry_after=None)
         return RedirectResponse(f"/updates?saved=check-{found.value}", status_code=303)
 
     @app.post("/updates/daily")

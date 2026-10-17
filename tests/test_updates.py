@@ -4,8 +4,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from googich_takeaway import changelog, updates
+from googich_takeaway import updates
 from googich_takeaway.state import State
+from tests.fake_github import FakeGitHub
 
 NOW = datetime(2026, 10, 2, tzinfo=UTC)
 
@@ -23,68 +24,6 @@ NOW = datetime(2026, 10, 2, tzinfo=UTC)
 )
 def test_is_newer(latest: str, current: str, newer: bool) -> None:
     assert updates.is_newer(latest, current) is newer
-
-
-CHANGELOG = """# Changelog
-
-## [Unreleased]
-
-## [9.9.9] - 2026-10-20
-
-### Added
-
-- **Time travel**: photos arrive before they are taken.
-
-### Fixed
-
-- Nothing was broken.
-
-## [0.0.1] - 2026-10-01
-
-### Added
-
-- The first release.
-"""
-
-
-class FakeGitHub:
-    def __init__(self, body: dict[str, object] | None = None, status: int = 200) -> None:
-        self.body = body or {
-            "tag_name": "v9.9.9",
-            "html_url": "https://github.com/aistuartai/Googich_takeaway/releases/tag/v9.9.9",
-            "prerelease": False,
-            "draft": False,
-        }
-        self.status = status
-        self.calls = 0
-        self.page = True
-        """Answer the releases page with a redirect, as GitHub does; False: only the API."""
-        self.changelog: str | None = CHANGELOG
-        """CHANGELOG.md as raw.githubusercontent.com serves it; None: not found."""
-        self.changelog_calls = 0
-
-    def transport(self) -> httpx.MockTransport:
-        def handle(request: httpx.Request) -> httpx.Response:
-            self.calls += 1
-            assert "authorization" not in request.headers
-            assert request.headers["user-agent"].startswith("googich-takeaway/")
-            if request.url.host == "raw.githubusercontent.com":
-                self.calls -= 1  # counted on their own
-                self.changelog_calls += 1
-                if self.changelog is None:
-                    return httpx.Response(404)
-                return httpx.Response(200, text=self.changelog)
-            if request.url.host == "github.com" and not self.page:
-                return httpx.Response(404)
-            if request.url.host == "github.com":  # the releases page, as GitHub answers it
-                tag = str(self.body.get("tag_name", ""))
-                if self.status != 200 or self.body.get("prerelease") or self.body.get("draft"):
-                    return httpx.Response(404 if self.status == 200 else self.status)
-                location = f"https://github.com/aistuartai/Googich_takeaway/releases/tag/{tag}"
-                return httpx.Response(302, headers={"location": location})
-            return httpx.Response(self.status, json=self.body)
-
-        return httpx.MockTransport(handle)
 
 
 @pytest.fixture
@@ -199,10 +138,7 @@ def test_the_check_uses_the_releases_page_not_the_rate_limited_api(state: State)
     assert info is not None
     assert info.latest == "9.9.9"
     assert info.url.endswith("/releases/tag/v9.9.9")
-    assert asked == [
-        "https://github.com/aistuartai/Googich_takeaway/releases/latest",
-        "https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v9.9.9/CHANGELOG.md",
-    ]  # then what the release brings; never the API
+    assert asked == ["https://github.com/aistuartai/Googich_takeaway/releases/latest"]
 
 
 def test_a_redirect_elsewhere_falls_back_to_the_api(state: State) -> None:
@@ -217,5 +153,4 @@ def test_a_redirect_elsewhere_falls_back_to_the_api(state: State) -> None:
     info = updates.check_if_due(state, lambda: NOW, httpx.MockTransport(handle))
     assert info is not None
     assert info.latest == "1.2.3"
-    assert asked == ["github.com", "api.github.com", "raw.githubusercontent.com"]
-    assert changelog.releases(state) == changelog.bundled()  # that answer was no change log
+    assert asked == ["github.com", "api.github.com"]

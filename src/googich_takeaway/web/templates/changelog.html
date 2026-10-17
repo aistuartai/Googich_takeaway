@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_release.html" import release_card, release_date, release_tags %}
+{% from "_release.html" import release_card, release_folded %}
 {% block title %}Change log | Googich Takeaway{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Change log</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
@@ -20,15 +20,7 @@
 <section class="card release-earlier">
   <h2>Earlier releases</h2>
   {% for release in earlier %}
-  <details id="{{ release.anchor }}">
-    <summary>
-      <span class="release-version">{{ release.version }}</span>
-      <span class="release-date">{{ release_date(release) }}</span>
-      {{ release_tags(release) }}
-      {% if release.kinds %}<span class="release-kinds">{% for kind in release.kinds %}<span class="change-dot change-{{ kind|lower }}">{{ kind }}</span>{% endfor %}</span>{% endif %}
-    </summary>
-    <div class="release-body prose">{{ release.html }}</div>
-  </details>
+  {{ release_folded(release) }}
   {% endfor %}
 </section>
 {% endif %}

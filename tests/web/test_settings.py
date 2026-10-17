@@ -1,6 +1,6 @@
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,8 +15,8 @@ from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.web.app import WebSettings, create_app
 from tests.fake_drive import ACCOUNT, FOLDER, FOLDER_NAME, FakeDrive, service_account_info
+from tests.fake_github import CHANGELOG, FakeGitHub
 from tests.fake_immich import KEY, FakeImmichServer
-from tests.test_updates import FakeGitHub
 from tests.web.test_app import ORIGIN, PASSWORD
 
 FOLDER_ID = FOLDER + "-abcdefghij"
@@ -1360,40 +1360,69 @@ def test_a_run_can_include_googles_bin(world: World) -> None:
     assert requested.include_trashed
 
 
+def _wait_for(check: Callable[[], bool], seconds: float = 5.0) -> None:
+    import time
+
+    deadline = time.monotonic() + seconds
+    while not check():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.02)
+
+
 def test_change_log_page_lists_every_release_and_marks_the_one_running(world: World) -> None:
     from googich_takeaway import __version__, changelog
 
     page = world.client.get("/updates/changelog").text
     assert "<h1>Change log</h1>" in page
-    assert f'id="v{__version__}"' in page
+    assert f"<h2>{__version__}</h2>" in page
+    assert '<h3 class="change-kind change-added">Added</h3>' in page  # under its version
     assert '<span class="release-tag running">Running</span>' in page
     assert "Earlier releases" in page
-    assert 'id="v0.1.0"' in page  # the first release, folded away
+    assert '<details class="release-folded" id="v0.1.0">' in page  # the first, folded away
     assert 'is out: <a href="/updates">update</a>' not in page  # nothing newer
-    assert page.count('class="release"') + page.count("<details id=") == len(changelog.bundled())
+    shown = page.count('<article class="release"') + page.count('<details class="release-folded"')
+    assert shown == len(changelog.bundled())
     for path in ("/updates", "/about"):
         assert 'href="/updates/changelog"' in world.client.get(path).text
 
 
 def test_update_shows_what_the_new_release_brings(world: World) -> None:
     world.post("/updates/check")
-    assert world.github.changelog_calls == 1
+    assert world.github.changelog_calls == 1  # fetched with the check, before the page shows
     updates_page = world.client.get("/updates").text
-    assert 'id="whats-new"' in updates_page
+    assert '<h3 class="whats-new-label" id="whats-new-title">What\'s new</h3>' in updates_page
+    assert "<h4>9.9.9</h4>" in updates_page
+    assert '<h5 class="change-kind change-added">Added</h5>' in updates_page
     assert "<strong>Time travel</strong>" in updates_page
     assert '<span class="release-tag new">New</span>' in updates_page
-    assert "The first release." not in updates_page  # only what is newer than this version
+    assert "max-height" not in updates_page
+    assert "as GitHub tells it" not in updates_page  # only what is newer than this version
     assert '<a href="/updates#whats-new">What\'s new</a>' in world.client.get("/").text
     log = world.client.get("/updates/changelog").text
     assert "1 newer release is out" in log
-    assert 'id="v9.9.9"' in log
     assert log.index('id="v9.9.9"') < log.index('<span class="release-tag running">')
+    assert "as GitHub tells it" not in log  # older releases in this version's own words
+    assert world.github.changelog_calls == 1
 
 
-def test_update_without_its_change_log_links_to_github(world: World) -> None:
-    world.github.changelog = None
+def test_whats_new_shows_with_the_daily_check_off(world: World) -> None:
+    world.post("/updates/daily", data={})
     world.post("/updates/check")
     page = world.client.get("/updates").text
-    assert 'id="whats-new"' in page
-    assert "could not be fetched from GitHub" in page
+    assert "<strong>Time travel</strong>" in page
+    assert "is not here yet" not in page
+
+
+def test_update_found_on_opening_the_page_fetches_its_notes_in_the_background(
+    world: World,
+) -> None:
+    world.github.changelog = None
+    world.post("/updates/check")  # the notes cannot be fetched now
+    page = world.client.get("/updates").text
+    assert "is not here yet" in page
     assert 'href="https://github.com/aistuartai/Googich_takeaway/releases/tag/v9.9.9"' in page
+    with State(world.tmp / "state.db") as state:  # an hour later, GitHub answers again
+        state.set_setting("updates.changelog_attempted", None, datetime.now(UTC))
+    world.github.changelog = CHANGELOG
+    world.client.get("/updates")
+    _wait_for(lambda: "Time travel" in world.client.get("/updates").text)

@@ -19,6 +19,8 @@ from markdown.extensions import Extension
 from markdown.treeprocessors import Treeprocessor
 from markupsafe import Markup
 
+from googich_takeaway.safe_markdown import forbid_raw_html, open_in_new_tab, split_at
+
 DOCS = Path(__file__).parent.parent / "docs"
 
 
@@ -95,8 +97,7 @@ class _Links(Treeprocessor):
         for link in root.iter("a"):
             href = link.get("href", "")
             if href.startswith(("http://", "https://")):
-                link.set("target", "_blank")
-                link.set("rel", "noopener noreferrer")
+                open_in_new_tab(link)
                 continue
             page, _, anchor = href.partition("#")
             if page.endswith(".md") and "/" not in page:
@@ -135,9 +136,7 @@ class _GuideExtension(Extension):
     def extendMarkdown(self, md: markdown.Markdown) -> None:
         md.treeprocessors.register(_Links(md), "guide-links", 1)
         md.treeprocessors.register(_Callouts(md), "guide-callouts", 2)
-        # No raw HTML: show it as text.
-        md.preprocessors.deregister("html_block")
-        md.inlinePatterns.deregister("html")
+        forbid_raw_html(md)
 
 
 @cache
@@ -189,11 +188,9 @@ def _sections(slug: str) -> list[tuple[str, str, str]]:
     found = page(slug)
     if found is None:
         return []
-    html = str(found.html)
-    parts = _HEADING.split(html)
-    sections = [("", found.topic.title, _plain(parts[0]))]
-    for i in range(1, len(parts), 3):
-        sections.append((parts[i], _plain(parts[i + 1]), _plain(parts[i + 2])))
+    before, headed = split_at(_HEADING, str(found.html))
+    sections = [("", found.topic.title, _plain(before))]
+    sections.extend((anchor, _plain(heading), _plain(body)) for anchor, heading, body in headed)
     return sections
 
 
