@@ -53,9 +53,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/googich_takeaway"]
 
-# The update helper's files ship inside the app too, so it can show their checksums.
+# The update helper's files ship inside the app too, so it can show their checksums, and the
+# change log, so Help → Updates can show what each release brought.
 [tool.hatch.build.targets.wheel.force-include]
 "deploy/updater" = "googich_takeaway/updater_files"
+"CHANGELOG.md" = "googich_takeaway/CHANGELOG.md"
 
 [tool.ruff]
 line-length = 100

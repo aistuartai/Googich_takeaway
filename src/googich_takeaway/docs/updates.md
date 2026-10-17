@@ -11,6 +11,17 @@ check reads GitHub's public releases page. If a check fails, Help → Updates sa
 The check is anonymous and sends nothing but the app's version. Switch the daily check off under
 Help → Updates if you prefer. The app never installs anything by itself.
 
+## What's new
+
+When a new release is out, **What's new** under Help → Updates shows what it brings, before you
+install it; the banner's **What's new** link leads there. **Change log**, under Help → Updates and
+Help → About, lists every release: the newest in full, with the one you are running marked, and
+earlier ones folded away.
+
+The app carries its own change log, so the releases up to the one running can always be read.
+For a newer release it fetches that release's `CHANGELOG.md` from GitHub once, anonymously, when
+the check finds it. If that fails, What's new links to the release notes on GitHub instead.
+
 ## Updating by hand
 
 On the Docker host, in the folder holding `compose.yaml`:

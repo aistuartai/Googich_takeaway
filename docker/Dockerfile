@@ -9,7 +9,7 @@ COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
 # Dependencies first, from the lockfile only, so this layer is cached across code changes.
-COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY pyproject.toml uv.lock README.md LICENSE CHANGELOG.md ./
 RUN uv sync --locked --no-dev --no-install-project
 COPY src ./src
 COPY deploy/updater ./deploy/updater

@@ -2,7 +2,7 @@
 
 Once a day while the update check is switched on, and whenever the user presses Check now, the
 app asks GitHub for the latest release of this project and compares it with its own version. A
-newer release shows a banner with the release notes link and how to update. Nothing is ever
+newer release shows a banner with what it brings and how to update. Nothing is ever
 downloaded or installed automatically: an app holding Google and Immich credentials should not
 replace its own code. Pre-releases are ignored. The request is anonymous and sends nothing but a
 User-Agent naming the app version.
@@ -155,6 +155,24 @@ def check_now(
 
 
 def _fetch(
+    state: State,
+    now: datetime,
+    transport: httpx.BaseTransport | None,
+    timeout: float = 10.0,
+) -> UpdateInfo | None:
+    """The latest release, saved for the banner; None if GitHub could not say.
+
+    A newer release's change log is fetched too, once, so Help → Updates can show what it
+    brings. Without it the update is still shown, with a link to the notes on GitHub."""
+    info = _fetch_latest(state, now, transport, timeout)
+    if info is not None and info.newer:
+        from googich_takeaway import changelog  # it imports this module
+
+        changelog.fetch(state, info.latest, now, transport, timeout)
+    return info
+
+
+def _fetch_latest(
     state: State,
     now: datetime,
     transport: httpx.BaseTransport | None,

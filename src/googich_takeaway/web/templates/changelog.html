@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_release.html" import release_card, release_date, release_tags %}
+{% block title %}Change log | Googich Takeaway{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Change log</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
+<p class="changelog-intro">What each release brought. You are running version <strong>{{ version }}</strong>.
+{%- if newer %} {{ newer|length }} newer release{{ 's' if newer|length != 1 }} {{ 'is' if newer|length == 1 else 'are' }} out: <a href="/updates">update</a>.{% endif %}</p>
+
+{% if not recent %}
+<section class="card"><p class="muted">The change log is not part of this install. Read it on <a href="https://github.com/{{ repository }}/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">GitHub ↗</a>.</p></section>
+{% endif %}
+
+{% for release in recent %}
+<section class="card release-card{{ ' is-new' if release.newer }}{{ ' is-running' if release.running }}">
+  {{ release_card(release) }}
+</section>
+{% endfor %}
+
+{% if earlier %}
+<section class="card release-earlier">
+  <h2>Earlier releases</h2>
+  {% for release in earlier %}
+  <details id="{{ release.anchor }}">
+    <summary>
+      <span class="release-version">{{ release.version }}</span>
+      <span class="release-date">{{ release_date(release) }}</span>
+      {{ release_tags(release) }}
+      {% if release.kinds %}<span class="release-kinds">{% for kind in release.kinds %}<span class="change-dot change-{{ kind|lower }}">{{ kind }}</span>{% endfor %}</span>{% endif %}
+    </summary>
+    <div class="release-body prose">{{ release.html }}</div>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+
+<p class="changelog-foot muted">Also on <a href="https://github.com/{{ repository }}/releases" target="_blank" rel="noopener noreferrer">GitHub's releases page ↗</a>.</p>
+{% endblock %}

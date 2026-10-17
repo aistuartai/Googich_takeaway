@@ -1,0 +1,19 @@
+{#- One release from the change log: version, date, what it is to this install, and its notes. -#}
+{%- macro release_date(release) -%}
+{%- if release.released %}<time datetime="{{ release.released.isoformat() }}">{{ release.released.strftime('%d %B %Y').lstrip('0') }}</time>{% endif -%}
+{%- endmacro -%}
+
+{%- macro release_tags(release) -%}
+{%- if release.newer %}<span class="release-tag new">New</span>{% elif release.running %}<span class="release-tag running">Running</span>{% endif -%}
+{%- endmacro -%}
+
+{%- macro release_card(release, heading='h2') -%}
+<article class="release" id="{{ release.anchor }}">
+  <header class="release-head">
+    <{{ heading }}>{{ release.version }}</{{ heading }}>
+    <span class="release-date">{{ release_date(release) }}</span>
+    {{ release_tags(release) }}
+  </header>
+  <div class="release-body prose">{{ release.html }}</div>
+</article>
+{%- endmacro -%}

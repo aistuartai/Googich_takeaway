@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from googich_takeaway import updates
+from googich_takeaway import changelog, updates
 from googich_takeaway.state import State
 from googich_takeaway.web.common import (
     _zone,
@@ -37,9 +37,28 @@ def register(app: FastAPI, web: Shared) -> None:
             updates_enabled=updates.enabled(config.state),
             update_known=known,
             update_available=known if known and known.newer else None,
+            whats_new=[r for r in changelog.releases(config.state) if r.newer],
+            repository=updates.REPOSITORY,
             saved=request.query_params.get("saved"),
             check_error=updates.last_error(config.state),
             zone=_zone(config.general().timezone),
+        )
+
+    @app.get("/updates/changelog", response_class=HTMLResponse)
+    def changelog_view(request: Request, config: ConfigDep) -> Response:
+        """Every release, newest first: those newer than this one, this one and the three
+        before it in full, the rest folded away."""
+        releases = changelog.releases(config.state)
+        running = next((i for i, r in enumerate(releases) if r.running), None)
+        shown = (running + 4) if running is not None else 4
+        return page(
+            request,
+            config,
+            "changelog.html",
+            recent=releases[:shown],
+            earlier=releases[shown:],
+            newer=[r for r in releases if r.newer],
+            repository=updates.REPOSITORY,
         )
 
     @app.post("/updates/apply")

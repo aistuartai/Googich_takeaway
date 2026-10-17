@@ -750,3 +750,55 @@ button.small { font-size: .8125rem; padding: .3rem .75rem; }
 }
 .chip-out { background: transparent; border-style: dashed; color: var(--muted); }
 .imports-change { margin-left: auto; font-weight: 600; }
+
+/* The change log, and what an update brings. Each kind of change has a colour: green for what
+   is added, sky for what changed, violet for fixes, red for what is removed. */
+.changelog-intro { font-size: 1.0625rem; margin: -.25rem 0 1.5rem; }
+.changelog-foot { text-align: center; margin-top: 1.5rem; font-size: .875rem; }
+.release-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .9rem; margin-bottom: .25rem; }
+.release-head h2, .release-head h3 { margin: 0; font-variant-numeric: tabular-nums; }
+.release-head h2 { font-size: 1.625rem; }
+.release-head h3 { font-size: 1.25rem; }
+.release-date { color: var(--muted); font-size: .9375rem; }
+.release-tag {
+  align-self: center; padding: .22rem .6rem; border-radius: 999px; border: 1px solid var(--line);
+  font: 650 .6875rem/1.2 var(--text); text-transform: uppercase; letter-spacing: .07em;
+}
+.release-tag.new { color: var(--sky); background: color-mix(in srgb, var(--sky) 10%, var(--raised)); border-color: color-mix(in srgb, var(--sky) 40%, var(--line)); }
+.release-tag.running { color: var(--green); background: color-mix(in srgb, var(--green) 9%, var(--raised)); border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.release-card.is-new { border-top: 4px solid var(--sky); }
+.release-card.is-running { border-top: 4px solid var(--green); }
+.release-body { max-width: none; }
+.release-body > :first-child { margin-top: .5rem; }
+.release-body ul { padding-left: 1.25rem; margin: .35rem 0 0; }
+.release-body li::marker { color: var(--muted); }
+.release-body h3.change-kind {
+  display: flex; align-items: center; gap: .5rem; margin: 1.25rem 0 .35rem; padding: 0; border: 0;
+  font: 650 .75rem/1 var(--text); text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+}
+.change-kind::before, .change-dot::before {
+  content: ""; width: .6rem; height: .6rem; border-radius: 50%; background: var(--kind, var(--muted)); flex: none;
+}
+.change-added { --kind: var(--green); }
+.change-changed { --kind: var(--sky); }
+.change-fixed { --kind: var(--violet); }
+.change-removed { --kind: var(--error); }
+.change-deprecated, .change-security { --kind: var(--warn); }
+.release-earlier > h2 { margin-bottom: .75rem; }
+.release-earlier details { border-top: 1px solid var(--line); }
+.release-earlier summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .9rem; padding: .7rem 0; }
+.release-earlier summary::marker { color: var(--muted); }
+.release-earlier details[open] summary { padding-bottom: .2rem; }
+.release-earlier details[open] .release-body { padding-bottom: 1rem; }
+.release-version { font: 650 1.0625rem/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.release-kinds { display: inline-flex; flex-wrap: wrap; gap: .3rem .8rem; margin-left: auto; font-size: .8125rem; color: var(--muted); }
+.change-dot { display: inline-flex; align-items: center; gap: .35rem; }
+.whats-new {
+  margin: 1rem 0 .25rem; padding: 1rem 1.25rem 1.1rem; border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--sky) 35%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--sky) 7%, var(--raised)), color-mix(in srgb, var(--green) 6%, var(--raised)));
+}
+.whats-new-label { margin: 0 0 .5rem; font: 650 .75rem/1 var(--text); text-transform: uppercase; letter-spacing: .08em; color: var(--sky); }
+.whats-new .release + .release { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.whats-new .release-body { max-height: 26rem; overflow-y: auto; }
+@media (max-width: 760px) { .release-kinds { margin-left: 0; width: 100%; } }

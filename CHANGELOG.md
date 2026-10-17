@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **What's new** under Help → Updates: when a new release is out, what it brings, shown before
+  you install it. The update banner's **What's new** link leads there.
+- **Change log** page, from Help → Updates and Help → About: every release, newest first, with
+  the one running marked and earlier releases folded away. The app carries its own change log,
+  so it reads without a network; a newer release's is fetched from GitHub once, when the update
+  check finds it.
+
 ## [0.5.2] - 2026-10-17
 
 ### Added

@@ -1358,3 +1358,42 @@ def test_a_run_can_include_googles_bin(world: World) -> None:
     requested = world.app.state.worker._manual_requested
     assert requested is not None
     assert requested.include_trashed
+
+
+def test_change_log_page_lists_every_release_and_marks_the_one_running(world: World) -> None:
+    from googich_takeaway import __version__, changelog
+
+    page = world.client.get("/updates/changelog").text
+    assert "<h1>Change log</h1>" in page
+    assert f'id="v{__version__}"' in page
+    assert '<span class="release-tag running">Running</span>' in page
+    assert "Earlier releases" in page
+    assert 'id="v0.1.0"' in page  # the first release, folded away
+    assert 'is out: <a href="/updates">update</a>' not in page  # nothing newer
+    assert page.count('class="release"') + page.count("<details id=") == len(changelog.bundled())
+    for path in ("/updates", "/about"):
+        assert 'href="/updates/changelog"' in world.client.get(path).text
+
+
+def test_update_shows_what_the_new_release_brings(world: World) -> None:
+    world.post("/updates/check")
+    assert world.github.changelog_calls == 1
+    updates_page = world.client.get("/updates").text
+    assert 'id="whats-new"' in updates_page
+    assert "<strong>Time travel</strong>" in updates_page
+    assert '<span class="release-tag new">New</span>' in updates_page
+    assert "The first release." not in updates_page  # only what is newer than this version
+    assert '<a href="/updates#whats-new">What\'s new</a>' in world.client.get("/").text
+    log = world.client.get("/updates/changelog").text
+    assert "1 newer release is out" in log
+    assert 'id="v9.9.9"' in log
+    assert log.index('id="v9.9.9"') < log.index('<span class="release-tag running">')
+
+
+def test_update_without_its_change_log_links_to_github(world: World) -> None:
+    world.github.changelog = None
+    world.post("/updates/check")
+    page = world.client.get("/updates").text
+    assert 'id="whats-new"' in page
+    assert "could not be fetched from GitHub" in page
+    assert 'href="https://github.com/aistuartai/Googich_takeaway/releases/tag/v9.9.9"' in page

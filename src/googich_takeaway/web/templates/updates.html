@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_release.html" import release_card %}
 {% block title %}Updates | Googich Takeaway{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Updates</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
@@ -17,13 +18,22 @@
     {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
     {% if saved == 'update-after-pause' %}<p class="result ok" role="status">Update requested. The run going now pauses at its next safe point, then the update installs, and the run resumes by itself once the app is back.</p>{% endif %}
     {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
+    {% if update_available %}
+    <div class="whats-new" id="whats-new">
+      <p class="whats-new-label">What's new</p>
+      {% for release in whats_new %}{{ release_card(release, 'h3') }}{% endfor %}
+      {% if not whats_new %}
+      <p class="muted">What {{ update_available.latest }} brings could not be fetched from GitHub. Read its <a href="{{ update_available.url }}" target="_blank" rel="noopener noreferrer">release notes on GitHub ↗</a>.</p>
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="actions">
       <form method="post" action="/updates/check" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
         <button type="submit" class="secondary">Check now</button>
       </form>
+      <a class="button secondary" href="/updates/changelog">Change log</a>
       {% if update_available %}
-      <a class="button secondary" href="{{ update_available.url }}" target="_blank" rel="noopener noreferrer">Release notes ↗</a>
       {% if helper and helper.state != 'updating' %}
       <form method="post" action="/updates/apply" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">

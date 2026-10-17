@@ -3,6 +3,7 @@
 !uv.lock
 !README.md
 !LICENSE
+!CHANGELOG.md
 !src/
 !deploy/updater/
 src/**/__pycache__
