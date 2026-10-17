@@ -34,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   partner's library, or outside the date range.
 - Guides updated throughout for the new choices: Takeout setup keeps album folders, the run
   options, Cleanup, security (the API key's permissions) and the command-line tools.
+- Dependencies updated: google-auth 2.60.0, apprise 2.0.1, tzdata 2026.5, and uv 0.13.1 in
+  the container image.
 
 ## [0.5.1] - 2026-10-03
 
