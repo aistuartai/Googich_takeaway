@@ -27,7 +27,7 @@ jobs:
         with:
           version: "0.13.1"
       - name: Install
-        run: uv sync --locked
+        run: uv sync --locked --group e2e  # e2e: so the type check covers e2e/ too
       - name: Lint
         run: uv run ruff check
       - name: Format
@@ -56,7 +56,9 @@ jobs:
       - name: Scan full history
         run: ./gitleaks git --redact --no-banner .
 
-  image:
+  deploy:
+    # The image as users run it: the example compose file, a real browser, and an upgrade from
+    # the release users run today. Screenshots and logs are kept as the run's artifact.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,22 +72,22 @@ jobs:
           file: docker/Dockerfile
           load: true
           tags: googich:test
-      - name: Start it the way the example compose file does, and check health
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.13.1"
+      - name: Install the browser
         run: |
-          mkdir -p data && sudo chown 10001:10001 data
-          head -c 32 /dev/urandom | base64 > master.key && chmod 644 master.key
-          docker run -d --name googich -p 8080:8080 --read-only --tmpfs /tmp \
-            --cap-drop ALL --security-opt no-new-privileges:true --user 10001:10001 \
-            -v "$PWD/data:/data" -v "$PWD/master.key:/run/secrets/master_key:ro" \
-            -e GOOGICH_MASTER_KEY_FILE=/run/secrets/master_key googich:test
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/healthz; then break; fi
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8080/healthz
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)" = "303"
-          docker logs googich 2>&1 | grep -q "First-run setup"
-          docker exec googich id -u | grep -qx 10001
-      - name: Show logs on failure
-        if: failure()
-        run: docker logs googich || true
+          uv sync --locked --only-group e2e
+          uv run --no-sync playwright install --with-deps chromium
+      - name: End-to-end tests
+        env:
+          E2E_IMAGE: googich:test
+        run: uv run --no-sync pytest e2e -v -p no:cacheprovider
+      - name: Keep screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-artifacts
+          path: e2e-artifacts/
+          retention-days: 14
+          if-no-files-found: ignore

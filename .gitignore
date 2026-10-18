@@ -50,3 +50,6 @@ takeout-*.tgz
 *.swp
 .DS_Store
 Thumbs.db
+
+# End-to-end test output
+/e2e-artifacts/

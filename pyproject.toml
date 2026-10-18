@@ -37,6 +37,11 @@ dev = [
     "mypy>=1.18",
     "types-markdown>=3.10.2.20260712",
 ]
+# The end-to-end tests under e2e/: real Docker and a real browser (uv run --group e2e pytest e2e).
+e2e = [
+    "pytest>=8",
+    "playwright==1.63.0",
+]
 
 [project.scripts]
 googich = "googich_takeaway.cli:main"
@@ -68,10 +73,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "PT", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+"e2e/**" = ["S101"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "e2e"]
 
 [[tool.mypy.overrides]]
 module = ["smbclient", "smbclient.*", "smbprotocol.*"]
