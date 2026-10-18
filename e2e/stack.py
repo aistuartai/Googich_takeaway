@@ -24,11 +24,27 @@ APP_USER = "10001:10001"
 URL = "http://127.0.0.1:8080"
 
 
+LATEST_PAGE = "https://github.com/aistuartai/Googich_takeaway/releases/latest"
+
+
 def published_version() -> str:
-    """The final release the example compose file runs: the one users install today."""
-    found = re.search(r"googich_takeaway:(\S+)", EXAMPLE.read_text())
-    assert found
-    return found[1]
+    """The final release users install today, as GitHub's latest release says.
+
+    Not the example compose file's version: on a release commit that names the release being
+    made, whose image does not exist until the release workflow has built it."""
+
+    class Stay(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args: object, **kwargs: object) -> None:
+            return None  # read where it points, without following it
+
+    opener = urllib.request.build_opener(Stay)
+    try:
+        opener.open(LATEST_PAGE, timeout=30)
+    except urllib.error.HTTPError as answer:
+        found = re.search(r"/releases/tag/v(\d+\.\d+\.\d+)$", answer.headers.get("location", ""))
+        if answer.code in (301, 302) and found:
+            return found[1]
+    raise AssertionError(f"{LATEST_PAGE} did not point at a release")
 
 
 def released_image(version: str) -> str:
