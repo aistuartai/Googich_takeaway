@@ -1,4 +1,5 @@
 import hashlib
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -89,6 +90,34 @@ def test_partial_from_a_previous_run_is_resumed(tmp_path: Path) -> None:
     second = s.downloader().fetch_new(s.source)
     assert len(second.downloaded) == 1
     assert (s.staging / "takeout-x-001.zip").read_bytes() == DATA
+
+
+def test_a_part_cut_off_after_its_last_byte_is_finished_without_asking_again(
+    tmp_path: Path,
+) -> None:
+    """Drive answers 416 to a range past the end: asking would leave the part stuck for good."""
+    drive = FakeDrive(drop_after={"a": [len(DATA)]})  # every byte arrives, then the line drops
+    s = Setup(tmp_path, drive)
+    s.drive.add("a", "takeout-x-001.zip", DATA)
+    result = s.downloader().fetch_new(s.source)
+    assert len(result.downloaded) == 1
+    assert (s.staging / "takeout-x-001.zip").read_bytes() == DATA
+    assert f"bytes={len(DATA)}-" not in drive.ranges
+
+
+def test_a_complete_part_left_by_an_earlier_run_is_finished(tmp_path: Path) -> None:
+    s = Setup(tmp_path)
+    s.drive.add("a", "takeout-x-001.zip", DATA)
+    [listed] = s.source.list_archives()
+    s.staging.mkdir(parents=True, exist_ok=True)
+    (s.staging / "takeout-x-001.zip.part").write_bytes(DATA)  # stopped just before the rename
+    (s.staging / "takeout-x-001.zip.part.json").write_text(
+        json.dumps({"file_id": "a", "fingerprint": listed.fingerprint})
+    )
+    result = s.downloader().fetch_new(s.source)
+    assert len(result.downloaded) == 1, result.failed
+    assert (s.staging / "takeout-x-001.zip").read_bytes() == DATA
+    assert s.drive.ranges == []  # nothing left to ask Drive for
 
 
 def test_partial_of_an_older_version_is_discarded(tmp_path: Path) -> None:

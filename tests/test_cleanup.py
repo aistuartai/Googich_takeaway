@@ -115,3 +115,22 @@ def test_date_mismatches_can_be_kept_so_cleanup_can_go_ahead(world: World) -> No
     copy = cleanup.staged_exports(staging(world), state)[0]
     assert copy.ready
     assert state.date_mismatches("immich", copy.export_id) == []
+
+
+def test_uploads_awaiting_immichs_date_check_block_deleting_the_archives(world: World) -> None:
+    world.immich.metadata_delay_reads = 1000  # Immich has not processed the uploads yet
+    world.pipeline().run()
+    copy = cleanup.staged_exports(staging(world), world.state)[0]
+    assert copy.completed_at is not None  # imported...
+    assert copy.awaiting_check  # ...but its dates are not checked yet
+    assert not copy.ready
+    assert "has not finished with" in copy.reason
+    with pytest.raises(cleanup.CleanupError):
+        cleanup.delete_staged_export(staging(world), world.state, copy.export_id, True)
+    assert len(list(staging(world).glob("*.zip"))) == 2  # nothing deleted
+
+    world.immich.metadata_delay_reads = 0  # Immich catches up; the next run checks them
+    world.pipeline().run()
+    copy = cleanup.staged_exports(staging(world), world.state)[0]
+    assert not copy.awaiting_check
+    assert copy.ready

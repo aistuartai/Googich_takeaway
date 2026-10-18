@@ -120,12 +120,19 @@ class LocalLocation:
         if not self.folder.is_dir():
             return []
         found = []
-        for path in self.folder.iterdir():
-            if path.is_file():
-                info = path.stat()
+        try:
+            for path in self.folder.iterdir():
+                try:
+                    if not path.is_file():
+                        continue
+                    info = path.stat()
+                except FileNotFoundError:
+                    continue  # removed while listing
                 found.append(
                     FileInfo(path.name, info.st_size, datetime.fromtimestamp(info.st_mtime, UTC))
                 )
+        except OSError as error:
+            raise LocationError(f"Cannot read {self.folder}: {error.strerror or error}.") from None
         return sorted(found, key=lambda f: f.name)
 
     def size(self, name: str) -> int | None:

@@ -5,7 +5,7 @@
   <h1>{{ 'Is this the same Immich library?' if changed else 'Start afresh with this Immich library?' }}</h1>
   {% if changed %}<p>The Immich address or API key changed. The app remembers the {{ '{:,}'.format(uploads) }} photos and videos it uploaded before, so it never uploads again one you deleted in Immich.</p>{% else %}<p>The app remembers the {{ '{:,}'.format(uploads) }} photos and videos it uploaded, so it never uploads again one you deleted in Immich.</p>{% endif %}
   <p>If this is a different library, on another server or for another Immich user, those records belong to the old one, and the photos they cover would be skipped here. Start afresh, and the next run imports everything this library does not have yet.</p>
-  <p class="muted">Starting afresh forgets which files were uploaded, which exports were imported, and the failed files waiting to be retried. Downloads, archives and what was read from them are kept. Until the next run has imported an export into this library, Cleanup does not offer to remove it.</p>
+  <p class="muted">Starting afresh forgets which files were uploaded, which exports were imported, and the failed files waiting to be retried. Archives still in the download folder, and what was read from them, are kept. Archives Cleanup already removed are downloaded again from Google Drive if they are still there; exports added by hand need adding again. Until the next run has imported an export into this library, Cleanup does not offer to remove it.</p>
   <div class="actions">
     <form method="post" action="/destinations/immich/forget" class="inline">
       <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">

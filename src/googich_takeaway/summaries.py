@@ -34,9 +34,17 @@ LIBRARY_READ_EVERY = 60.0
 """Seconds between readings of how much Immich holds."""
 
 
+REMOVED_SOURCE = "a removed source"
+
+
 def drive_labels(config: Config) -> dict[str, str]:
-    """Drive source names, by the source name downloads are recorded under."""
-    return {f"gdrive:{s.location}": s.name for s in config.sources() if s.kind == "gdrive"}
+    """Drive source names, by the source name downloads are recorded under. Archives downloaded
+    by a source since removed are still in Drive, using its storage, so they keep a label."""
+    labels = {f"gdrive:{s.location}": s.name for s in config.sources() if s.kind == "gdrive"}
+    for recorded in config.state.download_sources():
+        if recorded.startswith("gdrive:"):
+            labels.setdefault(recorded, REMOVED_SOURCE)
+    return labels
 
 
 def _library_key(url: str, key: str) -> str:

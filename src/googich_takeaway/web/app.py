@@ -102,6 +102,7 @@ def create_app(
         clock=clock,
         immich_factory=immich_factory,
         drive_factory=drive_factory,
+        github_transport=github_transport,
     )
 
     @asynccontextmanager

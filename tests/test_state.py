@@ -199,3 +199,21 @@ def test_media_read_counts_distinct_photos_in_parts_read_to_the_end(tmp_path: Pa
         state.save_scan_part("c.zip:1", [("z.jpg", media("3"))], False, at)  # still being read
         assert state.media_read(["a.zip:1", "b.zip:1", "c.zip:1", "d.zip:1"]) == (2, 2)
         assert state.media_read([]) == (0, 0)
+
+
+def test_a_migration_another_process_already_ran_is_not_run_again(tmp_path: Path) -> None:
+    """Two processes open an old database at once: the second must not migrate it again."""
+    path = tmp_path / "state.db"
+    with State(path):
+        pass  # the first process migrates it to the current schema
+
+    class SawOldVersion(State):
+        reads = 0
+
+        @property
+        def schema_version(self) -> int:  # the second read the version before the first won
+            SawOldVersion.reads += 1
+            return 1 if SawOldVersion.reads == 1 else super().schema_version
+
+    with SawOldVersion(path) as state:
+        assert state.schema_version == SCHEMA_VERSION

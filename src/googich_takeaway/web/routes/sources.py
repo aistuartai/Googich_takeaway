@@ -112,6 +112,13 @@ def register(app: FastAPI, web: Shared) -> None:
             return sources_page(request, config, error=str(error))
         return RedirectResponse("/sources", status_code=303)
 
+    @app.get("/sources/{source_id}/delete", response_class=HTMLResponse)
+    def confirm_delete_source(request: Request, config: ConfigDep, source_id: int) -> Response:
+        source = next((s for s in config.sources() if s.id == source_id), None)
+        if source is None:
+            return RedirectResponse("/sources", status_code=303)
+        return page(request, config, "source_confirm.html", source=source)
+
     @app.post("/sources/{source_id}/delete")
     def delete_source(config: ConfigDep, source_id: int) -> Response:
         config.delete_source(source_id)

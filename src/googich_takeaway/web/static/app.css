@@ -688,6 +688,8 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 .failed-box h3 { margin-top: 0; }
 .failed-files { margin: .5rem 0; padding-left: 1.2rem; }
 .failed-files li { margin: .25rem 0; overflow-wrap: anywhere; }
+.ignored-files { margin-top: .35rem; }
+.ignored-files summary { cursor: pointer; color: var(--muted); }
 .failed-files .hint { color: var(--warn); font-weight: 600; font-size: .875rem; }
 .state-dot.partial { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 22%, transparent); }
 .run-partial { color: var(--warn); }

@@ -107,8 +107,10 @@ with the reason, and offers:
   straight to them. Where Immich refused a file (for example "Unsupported file type"), the list
   says *Retrying won't help: Immich refused it.*
 - **Ignore them:** after asking, counts the export as done, so Cleanup can offer its archives. It
-  asks again before deleting, as these files are not in Immich. The files stay listed on the
-  Cleanup page, and **Re-import files missing from Immich** can bring them in later.
+  asks again before deleting, as these files are not in Immich. The files stay listed under
+  the export on the Cleanup page, and **Re-import files missing from Immich** can bring them in
+  later. An import that stopped early (Immich failing file after file) cannot be ignored, as
+  that would also give up on the files it never tried: retry it once Immich is working.
 
 Until you choose, the export counts as unfinished, and every run tries those files again.
 

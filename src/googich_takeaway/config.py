@@ -765,7 +765,12 @@ class Config:
         self._state.set_setting(f"source.{source_id}.folder_name", clean or None, self._clock())
 
     def delete_source(self, source_id: int) -> None:
+        from googich_takeaway.downloads import drive_listing_name, forget_listing
+
+        removed = next((s for s in self.sources() if s.id == source_id), None)
         self._state.delete_source(source_id)
+        if removed is not None and removed.kind == "gdrive":
+            forget_listing(self._state, drive_listing_name(removed.location), self._clock())
         self._state.set_sealed(_drive_key_name(source_id), None, self._clock())
         self._state.set_setting(f"source.{source_id}.folder_name", None, self._clock())
 

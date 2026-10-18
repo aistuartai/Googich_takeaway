@@ -141,3 +141,28 @@ def test_photos_imported_before_get_albums_with_reimport(world: World) -> None:
     replace(world.pipeline(), options=RunOptions(reimport=True)).run()
     assert len(world.immich.albums) == 1
     assert len(world.immich.stacks) == 3
+
+
+def test_a_photo_from_googles_bin_is_trashed_even_if_its_run_stopped_first(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The intent is kept: the next run moves it to Immich's trash, and only once."""
+    from googich_takeaway import pipeline
+    from googich_takeaway.progress import RunStopped
+
+    def stopped(*args: object, **kwargs: object) -> None:
+        raise RunStopped("pause")  # paused after uploading, before organising
+
+    monkeypatch.setattr(pipeline, "organise", stopped)
+    run = replace(world.pipeline(), options=RunOptions(include_trashed=True))
+    with pytest.raises(RunStopped):
+        run.run()
+    binned = next(a for a in world.immich.assets.values() if a.filename == "binned.jpg")
+    assert not binned.trashed
+    monkeypatch.undo()
+
+    replace(world.pipeline(), options=RunOptions(include_trashed=True)).run()
+    assert binned.trashed  # moved by the next run
+    binned.trashed = False  # restored in Immich by the user
+    replace(world.pipeline(), options=RunOptions(include_trashed=True, reimport=True)).run()
+    assert not binned.trashed  # not moved again

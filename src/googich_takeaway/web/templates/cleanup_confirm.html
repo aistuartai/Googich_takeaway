@@ -9,7 +9,7 @@
     {% for part in copy.parts %}<li><code>{{ part.name }}</code> <span class="muted">{{ part.size|size }}</span></li>{% endfor %}
   </ul>
   <p>Nothing changes in Immich or Google Drive. The app remembers these archives, so they are not downloaded again unless you choose <strong>Download archives again</strong>.</p>
-  {% if copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, or rejected by Immich). After deleting, they exist only in Google Photos{% if copy.sources %} and Google Drive{% endif %}.</p>{% endif %}
+  {% if copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, rejected by Immich, outside the date range, or failed and ignored). After deleting, they exist only in Google Photos{% if copy.sources %} and Google Drive{% endif %}.</p>{% if copy.ignored %}<details class="ignored-files"><summary>The {{ copy.ignored|length }} failed {{ 'file' if copy.ignored|length == 1 else 'files' }} you ignored</summary><ul class="failed-files">{% for name, reason in copy.ignored %}<li><strong>{{ name }}</strong> <span class="muted">{{ reason }}</span></li>{% endfor %}</ul></details>{% endif %}{% endif %}
   <form method="post" action="/cleanup/staged/{{ copy.export_id }}">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     {% if copy.needs_confirmation %}<label class="check"><input type="checkbox" name="confirm" value="1" required> Delete anyway</label>{% endif %}

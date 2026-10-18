@@ -18,6 +18,8 @@ from enum import StrEnum
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import httpx
+
 from googich_takeaway import changelog, logs, reminders, updates
 from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox
@@ -73,8 +75,10 @@ class Worker:
         sleep: Callable[[float], None] | None = None,
         immich_factory: ImmichFactory = ImmichClient,
         drive_factory: DriveFactory = GoogleDriveSource,
+        github_transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._state_path = state_path
+        self._github_transport = github_transport
         self._box = box
         self._clock = clock
         self._stop = threading.Event()
@@ -279,8 +283,8 @@ class Worker:
     def _check_updates(self) -> None:
         try:
             with State(self._state_path) as state:
-                updates.check_if_due(state, self._clock)
-                changelog.fetch_newer(state, self._clock())
+                updates.check_if_due(state, self._clock, self._github_transport)
+                changelog.fetch_newer(state, self._clock(), self._github_transport)
         except Exception:  # an update check must never stop the worker
             log.exception("Update check failed")
 

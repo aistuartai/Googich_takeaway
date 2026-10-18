@@ -42,6 +42,8 @@ NOTICES = {
     "resumed": "Resuming the paused run.",
     "discarded": "The paused run was set aside. The next run starts afresh, skipping what is done.",
     "ignored": "Failed files ignored: that export now counts as done, and Cleanup can offer it.",
+    "stopped-early": "That import stopped before trying every file, so it cannot be ignored. "
+    "Retry it once Immich is working again.",
     "schedule-paused": "Scheduled runs are paused. Run now still works.",
     "schedule-resumed": "Scheduled runs are on again.",
     "refreshed": "Figures read again just now.",

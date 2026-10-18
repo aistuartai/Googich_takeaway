@@ -282,6 +282,10 @@ class State:
         for version in range(current + 1, SCHEMA_VERSION + 1):
             self._db.execute("BEGIN IMMEDIATE")
             try:
+                # Read again under the lock: another process may have migrated meanwhile.
+                if self.schema_version >= version:
+                    self._db.execute("COMMIT")
+                    continue
                 for statement in _statements(_MIGRATIONS[version]):
                     self._db.execute(statement)
                 self._db.execute(f"PRAGMA user_version = {version}")
@@ -442,6 +446,23 @@ class State:
             "DELETE FROM downloads WHERE source = ? AND file_id = ?", (source, file_id)
         )
 
+    def forget_downloads_gone_from(self, kept: set[str], at: datetime) -> int:
+        """Forget the downloads whose archive is no longer here (``kept``: the file names in
+        the download folder), so a run downloads them again if their source still has them."""
+        rows = self._db.execute(
+            "SELECT source, file_id, fingerprint, local_path FROM downloads "
+            "WHERE forgotten_at IS NULL AND removed_at IS NULL"
+        ).fetchall()
+        gone = [r for r in rows if Path(str(r["local_path"])).name not in kept]
+        with self.transaction():
+            for row in gone:
+                self._db.execute(
+                    "UPDATE downloads SET forgotten_at = ? "
+                    "WHERE source = ? AND file_id = ? AND fingerprint = ?",
+                    (_to_text(at), row["source"], row["file_id"], row["fingerprint"]),
+                )
+        return len(gone)
+
     def record_download(self, record: DownloadRecord) -> None:
         self._db.execute(
             """
@@ -494,6 +515,11 @@ class State:
                 ((_to_text(at), source, file_id) for file_id in sorted(gone)),
             )
         return len(gone)
+
+    def download_sources(self) -> list[str]:
+        """Every source name downloads were recorded under, including removed sources."""
+        rows = self._db.execute("SELECT DISTINCT source FROM downloads ORDER BY 1")
+        return [str(row[0]) for row in rows]
 
     def download_times(self) -> list[datetime]:
         """When each archive was downloaded, oldest first."""

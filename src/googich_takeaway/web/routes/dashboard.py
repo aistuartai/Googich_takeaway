@@ -10,7 +10,7 @@ from googich_takeaway.config import (
     DASHBOARD_ITEMS,
     ConfigError,
 )
-from googich_takeaway.pipeline import RunOptions, ignore_failures, pending_failures
+from googich_takeaway.pipeline import RunOptions, StoppedEarly, ignore_failures, pending_failures
 from googich_takeaway.web import demo
 from googich_takeaway.web.common import (
     _zone,
@@ -192,7 +192,10 @@ def register(app: FastAPI, web: Shared) -> None:
     def ignore_failed_files(state: StateDep, export: Annotated[str, Form()] = "") -> Response:
         if worker.status_running():
             return RedirectResponse("/?notice=busy", status_code=303)
-        ignored = ignore_failures(state, export, clock())
+        try:
+            ignored = ignore_failures(state, export, clock())
+        except StoppedEarly:
+            return RedirectResponse("/?notice=stopped-early", status_code=303)
         return RedirectResponse(f"/?notice={'ignored' if ignored else 'idle'}", status_code=303)
 
     @app.post("/runs/discard")

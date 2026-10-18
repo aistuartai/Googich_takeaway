@@ -130,9 +130,16 @@ def test_trashed_files_are_left_alone(tmp_path: Path) -> None:
     server = FakeImmichServer()
     data = next(e.data for e in quirks_export().entries if e.path == f"{F}/IMG_0001.jpg")
     server.preload(data, trashed=True)
-    plan, result = Run(tmp_path, server).run()
+    existing = server.assets[next(iter(server.assets))]
+    r = Run(tmp_path, server)
+    plan, result = r.run()
     assert [p.item.name for p in plan.with_decision(Decision.IN_IMMICH_TRASH)] == ["IMG_0001.jpg"]
     assert "IMG_0001.jpg" not in [i.name for i in result.uploaded]
+
+    server.delete(existing.sha1)  # Immich empties its trash
+    plan, result = r.run()
+    assert [p.item.name for p in plan.with_decision(Decision.DELETED_IN_IMMICH)] == ["IMG_0001.jpg"]
+    assert "IMG_0001.jpg" not in [i.name for i in result.uploaded]  # deleted stays deleted
 
 
 def test_lost_response_is_recovered_on_the_next_run(tmp_path: Path) -> None:

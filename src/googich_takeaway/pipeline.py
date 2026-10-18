@@ -21,7 +21,12 @@ from zoneinfo import ZoneInfo
 from googich_takeaway.cleanup import export_key
 from googich_takeaway.config import Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError
-from googich_takeaway.downloads import Downloader, NotEnoughSpaceError
+from googich_takeaway.downloads import (
+    Downloader,
+    NotEnoughSpaceError,
+    drive_listing_name,
+    listed_parts,
+)
 from googich_takeaway.importer import (
     Decision,
     ImportPlan,
@@ -30,10 +35,10 @@ from googich_takeaway.importer import (
     run_import,
     verify_pending,
 )
-from googich_takeaway.locations import LocalLocation, LocationError, StoredFile
+from googich_takeaway.locations import FileInfo, LocalLocation, Location, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.notify import Message, Outcome
-from googich_takeaway.organise import OrganiseResult, organise
+from googich_takeaway.organise import OrganiseResult, organise, remember_trash_intent
 from googich_takeaway.progress import ItemState, Stage, Tracker
 from googich_takeaway.read_ahead import ReadAhead, StateScanCache
 from googich_takeaway.sources.base import RemoteFile, SourceError
@@ -371,13 +376,26 @@ class Pipeline:
             raise ConfigError(f"Download folder: {error}") from None
         for source in sources:
             if source.kind == "local":
-                found += list_archives(LocalLocation(Path(source.location)))
+                try:
+                    found += list_archives(LocalLocation(Path(source.location)))
+                except LocationError as error:  # one unreadable folder must not stop the others
+                    report.problems.append(f"{source.name}: {error}")
         # The download folder may also be a local source; never list an archive twice.
         archives = sorted({_identity(a): a for a in found}.values())
         # A part that failed to download is absent (only its .part file exists), so the export
         # would otherwise look complete without it. Block by export ID, from the failed names.
         blocked = set(group_exports([Path(name) for name in failed_names]))
         exports = group_exports(archives)
+        # Whatever this run could list: a part Drive held when last listed (even if Drive could
+        # not be reached now, or the source is switched off) that is not here, and a part still
+        # being downloaded (.part), keep their export waiting.
+        on_drive = listed_parts(
+            self.state,
+            [drive_listing_name(s.location) for s in self.config.sources() if s.kind == "gdrive"],
+        )
+        downloading = set(
+            group_exports([Path(f.name.removesuffix(".part")) for f in _partials(staging)])
+        )
         if self.tracker:
             pending = [
                 (export_id, sum(p.size for p in parts))
@@ -397,6 +415,11 @@ class Pipeline:
                 if export_id in newest and self.clock() - newest[export_id] < SETTLE_TIME:
                     report.waiting.append(export_id)
                     self._skip(export_id, "Takeout is still writing it")
+                    continue
+                waiting_for = self._missing_from_drive(export_id, parts, on_drive, downloading)
+                if waiting_for:
+                    report.incomplete.append((export_id, waiting_for))
+                    self._skip(export_id, waiting_for)
                     continue
                 unfinished = None if export_id in newest else self._unfinished(parts)
                 if unfinished:
@@ -428,6 +451,25 @@ class Pipeline:
             report.verified_later += checked.verified
             report.date_mismatches += len(checked.mismatched)
             report.unverified = checked.remaining
+
+    def _missing_from_drive(
+        self,
+        export_id: str,
+        parts: list[StoredFile],
+        on_drive: dict[str, set[str]],
+        downloading: set[str],
+    ) -> str | None:
+        """Why an export from Google Drive is not all here yet, if it is not."""
+        if self.state.export_id_completed(export_id) and not self.options.reimport:
+            return None  # imported already: its archives may have been cleaned up since
+        if export_id in downloading:
+            return "a part has not finished downloading; the next run resumes it"
+        missing = sorted(on_drive.get(export_id, set()) - {p.name for p in parts})
+        if not missing:
+            return None
+        more = f" and {len(missing) - 3} more" if len(missing) > 3 else ""
+        named = ", ".join(missing[:3]) + more
+        return f"{named} on Google Drive {'is' if len(missing) == 1 else 'are'} not downloaded yet"
 
     def _unfinished(self, parts: list[StoredFile]) -> str | None:
         """Why an export saved by hand looks unfinished, if it does: a part missing between
@@ -493,6 +535,7 @@ class Pipeline:
         )
         # The dashboard's figures update now, while uploading, not only when it is all done.
         self._remember_export(export_id, scan, plan, ImportResult(), pending=True)
+        remember_trash_intent(plan, self.state, self.destination, self.clock)
         result = run_import(
             plan,
             client,
@@ -562,10 +605,17 @@ class Pipeline:
         result: ImportResult,
     ) -> None:
         """Files of this export that failed, for the dashboard's Retry and Ignore; gone once the
-        export has none."""
+        export has none. An import that stopped early also records how many files it never
+        tried: those cannot be ignored, only retried."""
         stored = self.state.get_json(FAILURES_SETTING)
         if result.failed:
+            handled = {item.path for item in result.uploaded + result.adopted}
+            handled.update(item.path for item, _ in result.failed)
+            planned = plan.with_decision(Decision.UPLOAD)
+            not_tried = sum(1 for p in planned if p.item.path not in handled)
             stored[export_id] = {
+                "aborted": result.aborted,
+                "not_tried": not_tried if result.aborted else 0,
                 "export_key": export_key,
                 "parts": sorted(p.name for p in parts),
                 "uploaded": len(result.uploaded),
@@ -649,23 +699,43 @@ class Pipeline:
             self.tracker.end(Stage.SCAN, export_id, ItemState.SKIPPED, why)
 
 
-def forget_library(state: State, destination: str, at: datetime) -> int:
+def forget_library(
+    state: State, destination: str, at: datetime, staging: Location | None = None
+) -> int:
     """Start afresh with a different Immich library: forget what was uploaded to the old one,
-    which exports were imported, and the failed files to retry. Archives, downloads and what
-    was read from them are kept. The next run imports whatever the new library lacks."""
+    which exports were imported, and the failed files to retry. Archives still in the download
+    folder, and what was read from them, are kept; archives Cleanup already removed are
+    downloaded again from Drive if still there. The next run imports whatever the new library
+    lacks."""
+    if staging is not None:
+        try:
+            here = {f.name for f in staging.list()}
+        except LocationError:
+            here = None  # cannot tell what is gone: keep the download history as it is
+        if here is not None:
+            state.forget_downloads_gone_from(here, at)
     forgotten = state.forget_destination(destination)
     state.set_json(FAILURES_SETTING, None, at)
     state.set_json(LATEST_EXPORT_SETTING, None, at)
     return forgotten
 
 
+class StoppedEarly(ValueError):
+    """The import stopped before trying every file, so its failures cannot be ignored."""
+
+
 def ignore_failures(state: State, export_id: str, at: datetime) -> int:
     """Accept that an export's failed files will not be imported: mark it complete, so Cleanup
-    offers it (asking first, as for undated files). Returns how many files were ignored."""
+    offers it (asking first, as for undated files). Returns how many files were ignored.
+
+    Raises StoppedEarly for an import that stopped before trying every file: ignoring its
+    failures would also give up on files never sent, so it can only be retried."""
     stored = state.get_json(FAILURES_SETTING)
     record = stored.get(export_id)
     if not isinstance(record, dict):
         return 0
+    if record.get("aborted"):
+        raise StoppedEarly(f"export {export_id} stopped early: {record['aborted']}")
     files = [f for f in record.get("files", []) if isinstance(f, dict)]
     summary = {
         "uploaded": record.get("uploaded", 0),
@@ -687,6 +757,13 @@ def pending_failures(state: State) -> list[dict[str, object]]:
     stored = state.get_json(FAILURES_SETTING)
     found = [{"export_id": k, **v} for k, v in stored.items() if isinstance(v, dict)]
     return sorted(found, key=lambda r: str(r["export_id"]), reverse=True)
+
+
+def _partials(staging: Location) -> list[FileInfo]:
+    try:
+        return [f for f in staging.list() if f.name.endswith(".part")]
+    except LocationError:
+        return []
 
 
 def _identity(archive: StoredFile) -> str:

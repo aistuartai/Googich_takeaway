@@ -119,7 +119,13 @@
 <section class="settings-group" id="upcoming">
   <header><h2>Coming up</h2><p>When the saved schedule runs next.</p></header>
   <div class="card">
-  {% if paused %}<p class="error">The schedule is paused after failed runs. Resume it on the dashboard.</p>{% endif %}
+  {% if paused %}
+  <p class="error">{% if paused_by_user %}You paused the schedule: none of these runs happen until you resume it.{% else %}The schedule is paused after failed runs: none of these runs happen until you resume it. Check the latest run on the dashboard first.{% endif %}</p>
+  <form method="post" action="/schedule/resume" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <button type="submit" class="secondary">Resume schedule</button>
+  </form>
+  {% endif %}
   {% if following %}<p><strong>{{ takeout_status }}</strong></p>{% endif %}
   {% if upcoming %}
   <ol class="upcoming">

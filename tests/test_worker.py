@@ -13,6 +13,7 @@ from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 from googich_takeaway.worker import Trigger, Worker
 from tests.fake_drive import FOLDER, FakeDrive
+from tests.fake_github import FakeGitHub
 from tests.fake_immich import KEY, FakeImmichServer
 from tests.fixtures.takeout import quirks_export
 from tests.test_config import key_file
@@ -27,6 +28,7 @@ class World:
         self.path = tmp_path / "state.db"
         self.immich = FakeImmichServer()
         self.drive = FakeDrive()
+        self.github = FakeGitHub()
         self.sent: list[Message] = []
 
         def capture(notifier: Notifier, message: Message, force: bool = False) -> bool:
@@ -43,6 +45,7 @@ class World:
             drive_factory=lambda folder, info: GoogleDriveSource(
                 FOLDER, info, self.drive.transport()
             ),
+            github_transport=self.github.transport(),
         )
 
     def config(self) -> Config:

@@ -123,18 +123,34 @@ def organise(
                 done,
             ),
         )
-    to_trash = [
-        assets[p.item.sha1]
-        for p in plan.with_decision(Decision.UPLOAD)
-        if p.to_trash and p.item.sha1 in uploaded and p.item.sha1 in assets
-    ]
+    # Photos uploaded from Google's bin, by this run or by one stopped before getting here,
+    # and not moved yet. Once moved, never again: a photo restored in Immich stays restored.
+    sha1s = [i.sha1 for i in present]
+    wanted = state.organised(destination, TRASH_PENDING, sha1s)
+    moved = state.organised(destination, TRASH_DONE, sha1s)
+    to_trash = [i.sha1 for i in present if ("", i.sha1) in wanted and ("", i.sha1) not in moved]
     if to_trash:
         step(
             "trash",
             "Moving photos from Google's bin to Immich's trash.",
-            partial(_trash, to_trash, client, done),
+            partial(_trash, to_trash, assets, client, state, destination, clock, done),
         )
     return done
+
+
+TRASH_PENDING = "trash-pending"
+"""Photos from Google's bin, to go to Immich's trash once uploaded (recorded before uploading,
+so a run that stops before this step still leaves the intent for the next one)."""
+TRASH_DONE = "trash"
+
+
+def remember_trash_intent(
+    plan: ImportPlan, state: State, destination: str, clock: Callable[[], datetime]
+) -> None:
+    """Before uploading: which of the files to upload go to Immich's trash afterwards."""
+    pairs = [("", p.item.sha1) for p in plan.with_decision(Decision.UPLOAD) if p.to_trash]
+    if pairs:
+        state.mark_organised(destination, TRASH_PENDING, pairs, clock())
 
 
 def _batches(ids: list[str]) -> Iterable[list[str]]:
@@ -243,7 +259,16 @@ def _tags(
     done.tagged += len(tagged)
 
 
-def _trash(ids: list[str], client: ImmichClient, done: OrganiseResult) -> None:
-    for batch in _batches(ids):
-        client.trash(batch)
+def _trash(
+    sha1s: list[str],
+    assets: dict[str, str],
+    client: ImmichClient,
+    state: State,
+    destination: str,
+    clock: Callable[[], datetime],
+    done: OrganiseResult,
+) -> None:
+    for batch in _batches(sha1s):
+        client.trash([assets[s] for s in batch])
+        state.mark_organised(destination, TRASH_DONE, [("", s) for s in batch], clock())
         done.trashed += len(batch)

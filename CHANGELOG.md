@@ -7,6 +7,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ignore** is no longer offered for an import that stopped early (Immich failing file after
+  file): it would also have given up on the files never tried, and Cleanup could then have
+  offered their archives. Retry it once Immich works again.
+- An export from Google Drive is no longer imported while one of its parts is missing here:
+  when Drive could not be listed, or a part was still downloading. Photos whose details were in
+  the missing part would have been imported with fallback dates.
+- Photos from Google's bin now reach Immich's trash even when the run that uploaded them was
+  paused or stopped first; one restored in Immich stays restored.
+- Photos already in Immich's trash are remembered, so they are not imported again after Immich
+  empties its trash.
+- **Start afresh** with a different Immich library downloads again the archives Cleanup already
+  removed, if they are still in Google Drive, instead of importing nothing.
+- A download that stopped after its last byte no longer stays stuck: it is finished without
+  asking Google Drive for more.
+- An unreadable download folder or local source no longer breaks the dashboard, Cleanup or a
+  run; the other sources still import.
+- Cleanup lists the failed files you chose to ignore, as the guide says, and the reasons a
+  file was not imported now include photos outside the date range.
+- A schedule you paused shows as paused, with **Resume schedule**, wherever the schedule is
+  shown, also with the dashboard's Schedule card switched off.
+- Removing a source asks first, and the archives it downloaded stay listed under Cleanup →
+  Google Drive.
+- On phones, the Updates page, the settings pages and the guide no longer scroll sideways
+  (also in 0.6.0, not listed then).
+- Two processes opening the state database right after an upgrade can no longer both try to
+  upgrade it.
+
+### Changed
+
+- Update helper version 5: it refuses to go back to a release older than the one running (the
+  host can allow it), and puts the old version back if the update is stopped part way. The
+  Updates page offers the one-command upgrade.
+
 ## [0.6.0] - 2026-10-18
 
 ### Added

@@ -20,19 +20,27 @@ class LocalSource:
         if not self.folder.is_dir():
             raise SourceError(f"{self.folder} is not a folder")
         files = []
-        for path in sorted(self.folder.iterdir()):
-            if path.is_file() and path.name.lower().endswith(ARCHIVE_SUFFIXES):
+        try:
+            paths = sorted(self.folder.iterdir())
+        except OSError as error:
+            raise SourceError(f"cannot read {self.folder}: {error.strerror or error}") from None
+        for path in paths:
+            try:
+                if not (path.is_file() and path.name.lower().endswith(ARCHIVE_SUFFIXES)):
+                    continue
                 info = path.stat()
-                files.append(
-                    RemoteFile(
-                        file_id=path.name,
-                        name=path.name,
-                        size=info.st_size,
-                        modified=datetime.fromtimestamp(info.st_mtime, tz=UTC),
-                        sha256=None,
-                        md5=None,
-                    )
+            except OSError:
+                continue  # removed while listing, or unreadable: not an archive to import
+            files.append(
+                RemoteFile(
+                    file_id=path.name,
+                    name=path.name,
+                    size=info.st_size,
+                    modified=datetime.fromtimestamp(info.st_mtime, tz=UTC),
+                    sha256=None,
+                    md5=None,
                 )
+            )
         return files
 
     def path(self, file: RemoteFile) -> Path:

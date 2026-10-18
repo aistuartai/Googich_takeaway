@@ -36,10 +36,7 @@
             </form>
           </details>
           {% endif %}
-          <form method="post" action="/sources/{{ source.id }}/delete" class="inline">
-            <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-            <button type="submit" class="danger">Remove</button>
-          </form>
+          <a class="button danger" href="/sources/{{ source.id }}/delete">Remove</a>
         </td>
       </tr>
     {% endfor %}

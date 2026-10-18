@@ -106,7 +106,7 @@ def register(app: FastAPI, web: Shared) -> None:
         if web.worker.run_pending_or_going():
             note = "A run is going: start afresh once it has finished."
             return RedirectResponse(f"/destinations?error={quote(note)}#immich", status_code=303)
-        forgotten = forget_library(state, "immich", web.clock())
+        forgotten = forget_library(state, "immich", web.clock(), config.staging_location())
         log.warning(
             "Started afresh with a different Immich library: forgot %d uploads and every "
             "imported export",

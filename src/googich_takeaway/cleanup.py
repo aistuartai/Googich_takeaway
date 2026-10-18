@@ -46,7 +46,10 @@ class ExportCopy:
     parts: list[Part]
     completed_at: datetime | None = None
     not_imported: int = 0
-    """Files never uploaded (no date, or rejected by Immich) that only this archive holds."""
+    """Files never uploaded (no date, rejected by Immich, outside the date range, or failed and
+    ignored) that only this archive holds."""
+    ignored: list[tuple[str, str]] = field(default_factory=list)
+    """The failed files ignored, by name, with the reason each failed."""
     reason: str = ""
     sources: list[str] = field(default_factory=list)
 
@@ -113,6 +116,9 @@ def _describe(copy: ExportCopy, state: State, destination: str = "immich") -> Ex
         )
     summary = state.export_summary(key) or {}
     ignored = summary.get("ignored")
+    if isinstance(ignored, list):
+        files = [f for f in ignored if isinstance(f, dict)]
+        copy.ignored = [(str(f.get("name", "")), str(f.get("reason", ""))) for f in files]
     copy.not_imported = (
         _count(summary.get("no_date"))
         + _count(summary.get("unsupported"))

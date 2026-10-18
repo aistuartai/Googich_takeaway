@@ -165,6 +165,32 @@ def test_failed_part_blocks_its_export(world: World) -> None:
     assert retry.uploaded == 13
 
 
+def test_a_missing_part_keeps_waiting_when_drive_cannot_be_listed(world: World) -> None:
+    """Without the listing, the parts here look complete: the last listing still says not."""
+    world.configure()
+    world.drive.drop_after = {"takeout-20261001T010203Z-002.zip": [10] * 6}
+    world.pipeline().run()  # part 002 (the last) fails to download
+    world.drive.drop_after.clear()
+    world.drive.shared = False  # the next run cannot list Drive at all
+    report = world.pipeline().run()
+    assert not world.immich.assets  # still nothing imported from the incomplete export
+    reasons = [why for _, why in report.incomplete]
+    assert any("has not finished downloading" in why for why in reasons), reasons
+
+    staging = world.config.staging_location()
+    assert staging is not None
+    for leftover in [f.name for f in staging.list() if ".part" in f.name]:
+        staging.delete(leftover)  # the partial download is gone too: only the listing knows
+    report = world.pipeline().run()
+    assert not world.immich.assets
+    reasons = [why for _, why in report.incomplete]
+    assert any("-002.zip on Google Drive is not downloaded yet" in why for why in reasons)
+
+    world.drive.shared = True
+    retry = world.pipeline().run()  # Drive is back: the part downloads, then the export imports
+    assert retry.uploaded == 13
+
+
 def test_immich_down_fails_the_run(world: World) -> None:
     world.configure()
 
@@ -605,3 +631,70 @@ def test_failed_files_wait_for_retry_or_ignore(world: World) -> None:
     copy = cleanup.staged_exports(staging, world.config.state)[0]
     assert copy.ready
     assert copy.needs_confirmation  # Cleanup still asks: those files are not in Immich
+    assert [name for name, _ in copy.ignored] == ["IMG_0001.jpg"]  # listed by name
+
+
+def test_an_import_that_stopped_early_cannot_be_ignored(world: World) -> None:
+    """Ignoring its failures would also give up on the files it never tried."""
+    from googich_takeaway.pipeline import StoppedEarly, ignore_failures, pending_failures
+
+    world.configure()
+    world.config.save_parallel_uploads("1")
+    world.immich.fail_uploads = 10_000  # every upload fails: the import stops after a few
+    world.immich.store_failed_uploads = False
+    report = world.pipeline().run()
+    assert any("stopped after" in p for p in report.problems)
+    record = pending_failures(world.config.state)[0]
+    assert record["aborted"]
+    assert isinstance(record["not_tried"], int)
+    assert record["not_tried"] > 0
+    with pytest.raises(StoppedEarly):
+        ignore_failures(world.config.state, str(record["export_id"]), NOW)
+    assert pending_failures(world.config.state) != []  # still waiting for Retry
+    assert not world.config.state.export_id_completed(str(record["export_id"]))  # not complete
+
+    world.immich.fail_uploads = 0
+    report = world.pipeline().run()  # Retry, once Immich works again
+    assert pending_failures(world.config.state) == []
+    assert len(world.immich.assets) == 13  # every file, as in a run that never failed
+
+
+def test_an_unreadable_local_source_is_reported_and_the_others_still_import(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world.configure()
+    folder = world.tmp / "locked"
+    folder.mkdir()
+    world.config.add_local_source("Locked", str(folder))
+    real = Path.iterdir
+
+    def iterdir(self: Path):  # type: ignore[no-untyped-def]
+        if self == folder:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    report = world.pipeline().run()
+    assert any(f"Locked: Cannot read {folder}: Permission denied" in p for p in report.problems)
+    assert report.uploaded == 13
+
+
+def test_starting_afresh_downloads_again_what_cleanup_removed(world: World) -> None:
+    from googich_takeaway import cleanup
+    from googich_takeaway.pipeline import forget_library
+
+    world.configure()
+    world.pipeline().run()
+    staging = world.config.staging_location()
+    assert staging is not None
+    copy = cleanup.staged_exports(staging, world.config.state)[0]
+    cleanup.delete_staged_export(
+        staging, world.config.state, copy.export_id, confirmed_not_imported=True
+    )
+    assert cleanup.staged_exports(staging, world.config.state) == []  # archives gone from here
+
+    world.immich = FakeImmichServer()  # another library, empty
+    forget_library(world.state, "immich", NOW, staging)
+    fresh = world.pipeline().run()
+    assert fresh.downloaded == 2  # fetched from Drive again
+    assert fresh.uploaded == 13

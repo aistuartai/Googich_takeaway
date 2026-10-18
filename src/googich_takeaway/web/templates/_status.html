@@ -20,7 +20,13 @@
         {% if last_run %}<p class="status-line last-run">Last run {{ last_run.started_at.astimezone(zone).strftime('%a %d %b at %H:%M') }}: <span class="run-{{ last_run.status or 'running' }}">{{ last_run.title or 'Running' }}</span></p>
         {% else %}<p class="status-line">No runs yet. Press <strong>Run now</strong> to fetch new exports and add them to Immich.</p>{% endif %}
         {% if 'schedule' not in items %}
-        <p class="muted">Schedule: {{ schedule.describe() }}{% if status.next_run and not status.paused %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
+        <p class="muted">Schedule: {{ schedule.describe() }}{% if status.paused %}. <strong class="warn-text">Paused{% if status.paused_by_user %} by you{% endif %}</strong>: scheduled runs wait until you resume{% elif status.next_run %}. Next run {{ status.next_run.astimezone(zone).strftime('%A %d %B at %H:%M') }}{% endif %}.</p>
+        {% if status.paused and status.paused_by_user %}
+        <form method="post" action="/schedule/resume" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+          <button type="submit" class="secondary">Resume schedule</button>
+        </form>
+        {% endif %}
         {% endif %}
         {% endif %}
       </div>
@@ -81,15 +87,21 @@
         {% for f in record.files[:10] %}<li><strong>{{ f.name }}</strong> <span class="muted">{{ f.reason }}</span>{% if f.refused %} <span class="hint">Retrying won't help: Immich refused it.</span>{% endif %}</li>{% endfor %}
         {% if record.files|length > 10 %}<li class="muted">…and {{ record.files|length - 10 }} more{% if last_run %}, in <a href="/logs?run={{ last_run.id }}&level=WARNING">the run's log</a>{% endif %}.</li>{% endif %}
       </ul>
+      {% if record.aborted %}
+      <p class="muted">The import stopped early ({{ record.aborted }}){% if record.not_tried %}, so {{ record.not_tried }} more {{ 'file was' if record.not_tried == 1 else 'files were' }} never tried{% endif %}. Retry once Immich is working again; it cannot be ignored, which would give up on those files too.</p>
+      {% else %}
       <p class="muted">Until you choose, the export counts as unfinished: runs try these files again, and Cleanup waits.</p>
+      {% endif %}
       <div class="actions">
-        {% if refused < record.files|length %}
+        {% if record.aborted or refused < record.files|length %}
         <form method="post" action="/runs" class="inline">
           <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
           <button type="submit" class="secondary">Retry these files</button>
         </form>
         {% endif %}
+        {% if not record.aborted %}
         <a class="button secondary" href="/runs/failures/ignore?export={{ record.export_id|urlencode }}">Ignore them</a>
+        {% endif %}
       </div>
     </div>
     {% endfor %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Remove {{ source.name }}? | Googich Takeaway{% endblock %}
+{% block content %}
+<section class="card narrow-wide">
+  <h1>Remove {{ source.name }}?</h1>
+  {% if source.kind == 'gdrive' %}
+  <p>Runs stop fetching exports from this Google Drive folder, and its service account key is deleted from this app. Nothing in Google Drive changes.</p>
+  <p class="muted">Archives it already downloaded stay listed under Cleanup → Google Drive, as from a removed source, until you remove them from Drive. To add the folder again later, you need the key file again.</p>
+  {% else %}
+  <p>Runs stop reading exports from <code>{{ source.location }}</code>. Nothing in the folder changes, and what was imported from it stays in Immich.</p>
+  {% endif %}
+  <div class="actions">
+    <form method="post" action="/sources/{{ source.id }}/delete" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+      <button type="submit" class="danger">Remove it</button>
+    </form>
+    <a class="button secondary" href="/sources">Keep it</a>
+  </div>
+</section>
+{% endblock %}

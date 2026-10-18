@@ -173,6 +173,9 @@ class FakeDrive:
         if header:
             start = int(re.fullmatch(r"bytes=(\d+)-", header)[1])  # type: ignore[index]
             status = 206
+            if start >= len(file.data):  # as Drive answers (RFC 9110): nothing left to send
+                headers = {"content-range": f"bytes */{len(file.data)}"}
+                return httpx.Response(416, headers=headers)
         data = file.data[start:]
         cuts = self.drop_after.get(file_id)
         if cuts:

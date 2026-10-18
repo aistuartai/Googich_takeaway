@@ -183,6 +183,7 @@ def register(app: FastAPI, web: Shared) -> None:
             upcoming=upcoming_runs(schedule, clock(), zone, last),
             takeout_status=schedule.takeout_status(today),
             paused=config.schedule_paused(),
+            paused_by_user=config.schedule_paused_by_user(),
             zone=zone,
             today=today,
             takeout_frequencies=TAKEOUT_FREQUENCIES,

@@ -12,7 +12,7 @@ from googich_takeaway.config import Config
 from googich_takeaway.credentials import SecretBox, load_master_key
 from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.sources.gdrive import GoogleDriveSource
-from googich_takeaway.state import State
+from googich_takeaway.state import DownloadRecord, State
 from googich_takeaway.web.app import WebSettings, create_app
 from tests.fake_drive import ACCOUNT, FOLDER, FOLDER_NAME, FakeDrive, service_account_info
 from tests.fake_github import CHANGELOG, FakeGitHub
@@ -146,8 +146,20 @@ def test_add_drive_source_test_it_and_remove_it(world: World) -> None:
     assert source_id
     tested = world.htmx(f"/sources/{source_id[1]}/test")
     assert f"Connected to the folder “{FOLDER_NAME}”. 1 archives in the folder" in tested
+    assert f'href="/sources/{source_id[1]}/delete"' in page  # asks first, on its own page
+    confirm = world.client.get(f"/sources/{source_id[1]}/delete").text
+    assert "Remove Takeout?" in confirm
+    assert "service account key is deleted" in confirm
+    with State(world.tmp / "state.db") as state:  # it had downloaded an archive
+        state.record_download(
+            DownloadRecord(
+                f"gdrive:{FOLDER_ID}", "a", "fp", "takeout-20261001T010203Z-001.zip", 1000,
+                None, "takeout-20261001T010203Z-001.zip", datetime.now(UTC), None, None,
+            )
+        )  # fmt: skip
     world.post(f"/sources/{source_id[1]}/delete")
     assert "No sources yet." in world.client.get("/sources").text
+    assert "a removed source" in world.client.get("/cleanup").text  # still in Drive, still listed
 
 
 def test_bad_key_file_is_rejected(world: World) -> None:
@@ -1489,3 +1501,37 @@ def test_a_candidate_is_requested_as_one(world: World) -> None:
         "version": "10.0.0-rc1",
         "candidates": True,
     }
+
+
+def test_an_unreadable_download_folder_is_explained_not_a_server_error(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    staging = world.tmp / "s"
+    world.post("/destinations/downloads", data={"staging": str(staging), "timezone": "UTC"})
+    real = Path.iterdir
+
+    def iterdir(self: Path):  # type: ignore[no-untyped-def]
+        if self == staging:
+            raise PermissionError(13, "Permission denied")
+        return real(self)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    for page in ("/", "/cleanup"):
+        response = world.client.get(page)
+        assert response.status_code == 200, page
+
+
+def test_a_paused_schedule_can_be_resumed_with_the_schedule_card_off(world: World) -> None:
+    _ready(world)
+    world.post("/dashboard/items", data={"items": ["journey", "runs"]})
+    world.post("/schedule/pause")
+    page = world.client.get("/").text
+    assert 'id="sum-schedule"' not in page
+    assert "Paused by you</strong>" in page
+    assert "Next run" not in page
+    assert ">Resume schedule</button>" in page
+    schedule = world.client.get("/schedule").text
+    assert "You paused the schedule" in schedule
+    assert ">Resume schedule</button>" in schedule
+    world.post("/schedule/resume")
+    assert "Paused by you" not in world.client.get("/").text

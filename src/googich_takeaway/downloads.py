@@ -32,6 +32,7 @@ from googich_takeaway.sources.base import (
     TransientSourceError,
 )
 from googich_takeaway.state import DownloadRecord, State
+from googich_takeaway.takeout.archives import group_exports
 
 ATTEMPTS = 6
 BACKOFF_START = 2.0
@@ -170,6 +171,9 @@ class Downloader:
         hashed = have
         delay = BACKOFF_START
         for attempt in range(1, ATTEMPTS + 1):
+            if have == file.size:
+                break  # every byte is here already (it stopped just before the rename): Drive
+                # would refuse a request for the bytes after the end
             try:
                 with location.open_append(part) as handle:
                     for chunk in source.read(file, start=have):
@@ -278,17 +282,42 @@ def _gb(value: int) -> str:
 
 
 LISTING_SETTING = "sources.listing"
-"""What each source held when a run last listed it, for the dashboard."""
+"""What each source held when a run last listed it: totals for the dashboard, and each export's
+part names, so an export is never imported while a part Drive has is missing here."""
 
 
 def record_listing(state: State, source: str, files: list[RemoteFile], at: datetime) -> None:
     stored = state.get_json(LISTING_SETTING)
+    exports = group_exports([Path(f.name) for f in files])
     stored[source] = {
         "count": len(files),
         "bytes": sum(f.size for f in files),
         "at": at.isoformat(),
+        "parts": {export_id: sorted(p.name for p in parts) for export_id, parts in exports.items()},
     }
     state.set_json(LISTING_SETTING, stored, at)
+
+
+def drive_listing_name(folder_id: str) -> str:
+    """The name a Drive folder's listing is kept under (the Drive source's name)."""
+    return f"gdrive:{folder_id}"
+
+
+def forget_listing(state: State, source: str, at: datetime) -> None:
+    stored = state.get_json(LISTING_SETTING)
+    if stored.pop(source, None) is not None:
+        state.set_json(LISTING_SETTING, stored or None, at)
+
+
+def listed_parts(state: State, sources: list[str]) -> dict[str, set[str]]:
+    """The part names of each export, as these sources held them when last listed."""
+    found: dict[str, set[str]] = {}
+    for name, listing in state.get_json(LISTING_SETTING).items():
+        parts = listing.get("parts") if name in sources and isinstance(listing, dict) else None
+        if isinstance(parts, dict):
+            for export_id, names in parts.items():
+                found.setdefault(export_id, set()).update(str(n) for n in names)
+    return found
 
 
 def listings(state: State) -> dict[str, dict[str, object]]:

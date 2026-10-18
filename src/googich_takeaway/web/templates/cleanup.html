@@ -26,7 +26,7 @@
         <td class="num">{% if copy.parts_read %}{{ '{:,}'.format(copy.media) }}{% if copy.parts_read < copy.parts|length %} <span class="muted">({{ copy.parts_read }} of {{ copy.parts|length }} read)</span>{% endif %}{% else %}<span class="muted">not read yet</span>{% endif %}</td>
         <td>
           {% if copy.ready %}Imported {{ copy.completed_at.astimezone(zone).strftime('%d %b %H:%M') }}
-            {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% endif %}
+            {% if copy.needs_confirmation %}<br><span class="error">{{ copy.not_imported }} files were not imported (no date, rejected by Immich, outside the date range, or failed and ignored) and exist only in this archive and in Google Photos.</span>{% if copy.ignored %}<details class="ignored-files"><summary>The {{ copy.ignored|length }} failed {{ 'file' if copy.ignored|length == 1 else 'files' }} you ignored</summary><ul class="failed-files">{% for name, reason in copy.ignored %}<li><strong>{{ name }}</strong> <span class="muted">{{ reason }}</span></li>{% endfor %}</ul></details>{% endif %}{% endif %}
           {% else %}<span class="muted">{{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% elif copy.awaiting_check %} <a href="/cleanup/pending/{{ copy.export_id }}">Check now</a>{% endif %}{% endif %}
         </td>
         <td>
@@ -75,7 +75,7 @@
         {% else %}<span class="muted">Not ready: {{ copy.reason }}</span>{% if copy.mismatched %} <a href="/cleanup/dates/{{ copy.export_id }}">Review dates</a>{% elif copy.awaiting_check %} <a href="/cleanup/pending/{{ copy.export_id }}">Check now</a>{% endif %}{% endif %}
       </span>
     </div>
-    {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, rejected by Immich, or failed and ignored). Removing the archive leaves them only in Google Photos.</p>{% endif %}
+    {% if copy.ready and copy.needs_confirmation %}<p class="error">{{ copy.not_imported }} files from this export were not imported (no date, rejected by Immich, outside the date range, or failed and ignored). Removing the archive leaves them only in Google Photos.</p>{% if copy.ignored %}<details class="ignored-files"><summary>The {{ copy.ignored|length }} failed {{ 'file' if copy.ignored|length == 1 else 'files' }} you ignored</summary><ul class="failed-files">{% for name, reason in copy.ignored %}<li><strong>{{ name }}</strong> <span class="muted">{{ reason }}</span></li>{% endfor %}</ul></details>{% endif %}{% endif %}
     <ul class="parts">
       {% for part in copy.parts %}
       <li>{% if part.removed_at %}<s>{{ part.name }}</s> <span class="muted">removed from Drive {{ part.removed_at.astimezone(zone).strftime('%d %b') }}</span>

@@ -250,10 +250,15 @@ def _mismatch_detail(expected: str, dates: AssetDates) -> str:
 def _record_known(
     plan: ImportPlan, state: State, destination: str, clock: Callable[[], datetime]
 ) -> None:
-    """Files Immich already has become known, so deleting them later is respected.
+    """Files Immich already has become known, so deleting them later is respected; also those
+    in Immich's trash, so they are not imported again once Immich empties its trash.
 
     One lookup for the lot and one commit: a re-scanned export can hold tens of thousands."""
-    known = [p for p in plan.with_decision(Decision.IN_IMMICH) if p.existing_asset]
+    known = [
+        p
+        for p in plan.items
+        if p.decision in (Decision.IN_IMMICH, Decision.IN_IMMICH_TRASH) and p.existing_asset
+    ]
     recorded = state.uploaded_hashes(destination, (p.item.sha1 for p in known))
     now = clock()
     with state.transaction():
