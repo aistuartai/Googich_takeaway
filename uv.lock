@@ -473,7 +473,7 @@ wheels = [
 
 [[package]]
 name = "googich-takeaway"
-version = "0.6.1rc2"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "apprise" },
