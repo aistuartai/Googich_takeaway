@@ -68,9 +68,13 @@ container, then:
 1. accepts nothing but a plain version number such as `0.3.8`,
 2. checks it is a published release of this project, on GitHub's releases pages, that has its
    helper files attached (so it installs 0.3.5 or later),
-3. sets that version in `compose.yaml`, keeping a copy of the old file,
-4. pulls the image, restarts the container, and waits for it to report the new version,
-5. restores the previous version automatically if anything fails.
+3. refuses a release older than the one running, so nothing can take the app back to a
+   version with bugs fixed since (helper version 5 and later; to go back on purpose, set
+   `Environment=GOOGICH_ALLOW_DOWNGRADE=1` in the `googich-updater.service` unit),
+4. sets that version in `compose.yaml`, keeping a copy of the old file,
+5. pulls the image, restarts the container, and waits for it to report the new version,
+6. restores the previous version automatically if anything fails, or if the update is stopped
+   part way (by a shutdown, say).
 
 If a run is going when you press Update, the app pauses it first, at the next safe point, and
 only then asks the helper to install. Once the new version starts, the paused run resumes by

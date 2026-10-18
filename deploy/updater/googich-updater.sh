@@ -9,7 +9,10 @@
 #   2. checks it is a published GitHub release of this project, from its releases pages
 #   3. sets that tag on the image line in compose.yaml (a backup is kept)
 #   4. pulls and restarts the container, then waits for /healthz to report the new version
-#   5. on any failure, restores the previous compose.yaml and restarts the old version
+#   5. on any failure, or if it is stopped part way, restores the previous compose.yaml and
+#      restarts the old version
+# It never goes back to an older release than the one running (the container could ask for
+# one with known bugs), unless the host sets GOOGICH_ALLOW_DOWNGRADE=1 in the service.
 # Progress and the result go to <data>/updater/status.json, which the web interface shows.
 #
 # The container can write to <data>, so nothing there is trusted. The script works inside
@@ -24,7 +27,7 @@ IMAGE="${GOOGICH_IMAGE:-ghcr.io/aistuartai/googich_takeaway}"
 REPOSITORY="${GOOGICH_REPOSITORY:-aistuartai/Googich_takeaway}"
 SERVICE="${GOOGICH_SERVICE:-googich}"
 HEALTH_URL="${GOOGICH_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-HELPER_VERSION="4"
+HELPER_VERSION="5"
 OWNER_UID="${GOOGICH_UPDATER_OWNER:-0}"   # tests run as an ordinary user
 RUNTIME="${GOOGICH_RUNTIME_DIR:-${RUNTIME_DIRECTORY:-/run/googich-updater}}"
 
@@ -148,23 +151,42 @@ if [ -z "$current" ]; then
   exit 1
 fi
 
+order() {  # version -> a key sort -V orders as releases go: 1.2.3-rc1 < 1.2.3-rc2 < 1.2.3
+  case "$1" in
+    *-rc*) printf '%s.%s\n' "${1%%-rc*}" "${1##*-rc}" ;;
+    *) printf '%s.99999\n' "$1" ;;
+  esac
+}
+if [[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] && [ "${GOOGICH_ALLOW_DOWNGRADE:-}" != 1 ] \
+   && [ "$version" != "$current" ] \
+   && [ "$(printf '%s\n%s\n' "$(order "$version")" "$(order "$current")" | sort -V | tail -1)" = "$(order "$current")" ]; then
+  status failed "Refused: $version is older than $current, which is running. Going back needs GOOGICH_ALLOW_DOWNGRADE=1 on the host." "$version"
+  exit 1
+fi
+
 cp -p "$COMPOSE" "$COMPOSE.before-$version"
 sed -i -E "s|^([[:space:]]*image:[[:space:]]*\"?)$IMAGE:[^\"[:space:]]+|\\1$IMAGE:$version|" "$COMPOSE"
 
 rollback() {
+  trap - TERM INT HUP
   cp -p "$COMPOSE.before-$version" "$COMPOSE"
-  (cd "$COMPOSE_DIR" && docker compose up -d "$SERVICE") >/dev/null 2>&1 || true
+  (cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || true
   status failed "$1 Rolled back to $current." "$version"
   exit 1
 }
+# Stopped part way (systemd's time limit, a shutdown): put the old version back, never leave
+# compose.yaml naming a release that is not running.
+trap 'rollback "The update was stopped part way."' TERM INT HUP
 
+# Each step has its own time limit, inside the service's, so the rollback has time to run.
 status updating "Downloading $version." "$version"
-(cd "$COMPOSE_DIR" && docker compose pull "$SERVICE") >/dev/null 2>&1 || rollback "Could not download $version."
+(cd "$COMPOSE_DIR" && timeout 6m docker compose pull "$SERVICE") >/dev/null 2>&1 || rollback "Could not download $version."
 status updating "Restarting with $version." "$version"
-(cd "$COMPOSE_DIR" && docker compose up -d "$SERVICE") >/dev/null 2>&1 || rollback "Could not start $version."
+(cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || rollback "Could not start $version."
 
 for _ in $(seq 1 60); do
   if curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null | grep -q "\"version\":\"$version\""; then
+    trap - TERM INT HUP
     status done "Updated from $current to $version." "$version"
     exit 0
   fi

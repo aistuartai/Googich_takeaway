@@ -1,6 +1,7 @@
 """Runs the real host update helper (deploy/updater/googich-updater.sh) with stand-in docker
 and curl commands, so its refusals and rollback are checked on every change."""
 
+import contextlib
 import json
 import os
 import shutil
@@ -13,6 +14,9 @@ SCRIPT = Path(__file__).parent.parent / "deploy" / "updater" / "googich-updater.
 
 DOCKER = """#!/bin/bash
 echo "docker $*" >> "$STUB_LOG"
+if [ "$1 $2" = "compose pull" ] && [ -n "$STUB_HANG" ]; then
+  touch "$STUB_HANG"; exec /bin/sleep 30  # a slow download, stopped part way by the test
+fi
 if [ "$1 $2" = "compose up" ]; then
   grep -oE 'googich_takeaway:[^" ]+' "$GOOGICH_COMPOSE_DIR/compose.yaml" \\
     | cut -d: -f2 > "$STUB_RUNNING"
@@ -42,7 +46,7 @@ case "$url" in
       *redirect_url*) printf 'https://github.com/aistuartai/Googich_takeaway/releases/tag/v0.1.2' ;;
       *) printf '302' ;;
     esac ;;
-  *releases/download/v0.1.2/SHA256SUMS) printf '302' ;;
+  *releases/download/v0.1.2/SHA256SUMS|*releases/download/v0.1.1/SHA256SUMS) printf '302' ;;
   *releases/download/v0.2.0-rc1/SHA256SUMS|*releases/download/v0.1.2-rc1/SHA256SUMS)
     printf '302' ;;  # release candidates: pre-releases with their files
   *releases/download/*) printf '404' ;;
@@ -61,6 +65,8 @@ def run(
     broken: str = "none",
     rate_limited: bool = False,
     link_request_to: Path | None = None,
+    start: str = "0.1.1",
+    extra_env: dict[str, str] | None = None,
 ) -> tuple[dict[str, str], str, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -72,9 +78,9 @@ def run(
     updater.mkdir(parents=True, exist_ok=True)
     updater.chmod(0o1770)  # as installed: owned by root (here, the test user) and sticky
     (compose_dir / "compose.yaml").write_text(
-        'services:\n  googich:\n    image: "ghcr.io/aistuartai/googich_takeaway:0.1.1"\n'
+        f'services:\n  googich:\n    image: "ghcr.io/aistuartai/googich_takeaway:{start}"\n'
     )
-    (tmp_path / "running").write_text("0.1.1\n")
+    (tmp_path / "running").write_text(f"{start}\n")
     if link_request_to is not None:
         (updater / "request.json").symlink_to(link_request_to)
     else:
@@ -88,6 +94,7 @@ def run(
         "STUB_RATE_LIMITED": "1" if rate_limited else "",
         "GOOGICH_UPDATER_OWNER": str(os.getuid()),
         "GOOGICH_RUNTIME_DIR": str(tmp_path / "run"),
+        **(extra_env or {}),
     }
     subprocess.run(["bash", str(SCRIPT)], env=env, check=False, timeout=60)  # noqa: S603, S607
     status = json.loads((updater / "status.json").read_text())
@@ -134,6 +141,83 @@ def test_updates_to_a_release_candidate_when_asked_for_one(tmp_path: Path) -> No
     assert status["message"] == "Updated from 0.1.1 to 0.2.0-rc1."
     assert 'image: "ghcr.io/aistuartai/googich_takeaway:0.2.0-rc1"' in compose
     assert running.strip() == "0.2.0-rc1"
+
+
+@pytest.mark.parametrize(
+    ("start", "request_body"),
+    [
+        ("0.1.2", '{"version": "0.1.1"}'),  # an older final release
+        ("0.2.0-rc1", '{"version": "0.1.2"}'),  # older than the candidate running
+    ],
+)
+def test_never_goes_back_to_an_older_release(tmp_path: Path, start: str, request_body: str) -> None:
+    status, compose, running = run(tmp_path, request_body, start=start)
+    assert status["state"] == "failed"
+    assert f"is older than {start}, which is running" in status["message"]
+    assert f"googich_takeaway:{start}" in compose
+    assert running.strip() == start
+
+
+def test_the_host_can_allow_going_back(tmp_path: Path) -> None:
+    allow = {"GOOGICH_ALLOW_DOWNGRADE": "1"}
+    status, _, running = run(tmp_path, '{"version": "0.1.1"}', start="0.1.2", extra_env=allow)
+    assert status["state"] == "done", status
+    assert running.strip() == "0.1.1"
+
+
+def test_the_same_release_can_be_pulled_again(tmp_path: Path) -> None:
+    status, _, _ = run(tmp_path, '{"version": "0.1.2"}', start="0.1.2")
+    assert status["state"] == "done", status
+
+
+def test_stopped_part_way_it_puts_the_old_version_back(tmp_path: Path) -> None:
+    """As systemd does at its time limit or a shutdown: SIGTERM to every process of the unit."""
+    import signal
+    import time
+
+    if not Path("/proc/self/stat").exists():
+        pytest.skip("needs /proc to find every process of the update")
+
+    hang = tmp_path / "pulling"
+    run(tmp_path, '{"version": "0.1.0"}')  # sets up the stubs and folders; refused, no change
+    updater = tmp_path / "opt" / "data" / "updater"
+    (updater / "request.json").write_text('{"version": "0.1.2"}')
+    env = {
+        "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+        "STUB_LOG": str(tmp_path / "log"),
+        "STUB_RUNNING": str(tmp_path / "running"),
+        "STUB_BROKEN": "none",
+        "STUB_RATE_LIMITED": "",
+        "STUB_HANG": str(hang),
+        "GOOGICH_COMPOSE_DIR": str(tmp_path / "opt"),
+        "GOOGICH_UPDATER_OWNER": str(os.getuid()),
+        "GOOGICH_RUNTIME_DIR": str(tmp_path / "run"),
+    }
+    helper = subprocess.Popen(["bash", str(SCRIPT)], env=env, start_new_session=True)  # noqa: S603, S607
+    deadline = time.monotonic() + 30
+    while not hang.exists():
+        assert time.monotonic() < deadline, "the download never started"
+        time.sleep(0.05)
+    for pid in _session(helper.pid):  # every process of the unit, as systemd's cgroup holds
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM)
+    helper.wait(timeout=30)
+    status = json.loads((updater / "status.json").read_text())
+    assert status["state"] == "failed"
+    assert "stopped part way. Rolled back to 0.1.1" in status["message"]
+    assert "googich_takeaway:0.1.1" in (tmp_path / "opt" / "compose.yaml").read_text()
+
+
+def _session(sid: int) -> list[int]:
+    """Processes in session ``sid`` (``timeout`` moves its child to a process group of its own,
+    so signalling the group would miss it)."""
+    found = []
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        with contextlib.suppress(OSError):
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+            if int(fields[3]) == sid:  # fields after the name: state, ppid, pgrp, session
+                found.append(int(stat.parent.name))
+    return found
 
 
 def test_rolls_back_when_the_new_version_is_unhealthy(tmp_path: Path) -> None:
