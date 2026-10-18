@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-18
+
 ### Added
 
 - **What's new** under Help → Updates: when a new release is out, what it brings, shown before
@@ -631,7 +633,8 @@ Images: `ghcr.io/aistuartai/googich_takeaway:0.1.0` (also `0.1` and `latest`), f
   URLs from every line before it is written. htmx is configured never to evaluate code.
   Settings for the schedule and notifications, with a test notification button.
 
-[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/aistuartai/Googich_takeaway/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/aistuartai/Googich_takeaway/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/aistuartai/Googich_takeaway/compare/v0.4.2...v0.5.0

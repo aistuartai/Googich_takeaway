@@ -84,7 +84,7 @@ Copy the command from **Help → Updates**: it is made for the version you run, 
 checks the installer first. For this release it is the same as:
 
 ```bash
-curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.5.2/install-updater.sh
+curl -fsSLO https://github.com/aistuartai/Googich_takeaway/releases/download/v0.6.0/install-updater.sh
 sudo bash install-updater.sh /opt/googich
 ```
 
