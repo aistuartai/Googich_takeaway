@@ -9,6 +9,11 @@
 # README, the example compose file and the guide keep pointing at the last final release, and
 # what it brings stays under Unreleased in CHANGELOG.md, which is where its notes are read from.
 #
+# A final release needs its last release candidate rehearsed first (rehearsal/README.md): the
+# record of a passed update rehearsal to that candidate in .rehearsals/X.Y.Z-rcN.json, and nothing
+# but version numbers changed since the candidate. RELEASE_WITHOUT_REHEARSAL=1 skips this, for an
+# urgent fix only.
+#
 # Stops at the first problem, leaving the working tree for you to inspect (git diff).
 set -euo pipefail
 
@@ -44,6 +49,42 @@ grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no Unrelea
 if [ -z "$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{exit} f && NF' CHANGELOG.md)" ]; then
   echo "the CHANGELOG's Unreleased section is empty: say what changed first" >&2
   exit 1
+fi
+if [ "$candidate" = no ]; then
+  if [ -n "${RELEASE_WITHOUT_REHEARSAL:-}" ]; then
+    echo "WARNING: releasing $new without a rehearsal (RELEASE_WITHOUT_REHEARSAL is set)" >&2
+  else
+    rc=$(git tag -l "v$new-rc*" | sort -V | tail -1)
+    [ -n "$rc" ] || { echo "no release candidate for $new: release $new-rc1 and rehearse it first" >&2; exit 1; }
+    record=".rehearsals/${rc#v}.json"
+    [ -f "$record" ] || { echo "no rehearsal of ${rc#v}: copy its result.json from the node to $record" >&2; exit 1; }
+    python3 - "$record" "${rc#v}" "$(git rev-list -n 1 "$rc")" <<'CHECK' || exit 1
+import json, sys
+path, candidate, commit = sys.argv[1:]
+try:
+    result = json.load(open(path))
+except (OSError, ValueError) as error:
+    sys.exit(f"{path} cannot be read: {error}")
+problems = []
+if result.get("to") != candidate:
+    problems.append(f"it rehearsed {result.get('to')}, not {candidate}")
+if result.get("from") in (None, "", candidate):
+    problems.append("it was a fresh install only: rehearse an update to it (--from)")
+if result.get("commit") != commit:
+    problems.append(f"it tested commit {result.get('commit')}, but {candidate} is {commit}")
+if result.get("passed") is not True:
+    problems.append("it did not pass")
+if problems:
+    sys.exit(f"the rehearsal in {path} does not clear {candidate}: " + "; ".join(problems))
+CHECK
+    changed=$(git diff --name-only "$rc" HEAD -- . ':!pyproject.toml' ':!uv.lock')
+    if [ -n "$changed" ]; then
+      echo "changed since ${rc#v}, so not rehearsed: release another candidate first:" >&2
+      echo "$changed" >&2
+      exit 1
+    fi
+    echo "Rehearsal of ${rc#v} passed: $(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r["from"], "to", r["to"], "on", r["at"])' "$record")"
+  fi
 fi
 if [ "$candidate" = yes ]; then
   echo "Releasing candidate $new (was $old; last final release $stable)"

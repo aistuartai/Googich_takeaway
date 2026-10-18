@@ -40,6 +40,20 @@ It takes about ten minutes. The last line says PASSED or FAILED, and where the r
 `result.json` (versions, the commit tested, passed or not), `junit.xml`, screenshots of every
 step, and the app's, helper's and browser's logs.
 
+## The release gate
+
+`scripts/release.sh X.Y.Z` refuses a final release until its last release candidate passed an
+update rehearsal (one with `--from`). Copy that run's `result.json` into this checkout:
+
+```sh
+mkdir -p .rehearsals
+scp root@<node>:/root/googich-rehearsals/<run folder>/result.json .rehearsals/X.Y.Z-rcN.json
+```
+
+It holds only the versions, the commit tested, whether it passed and when. The release also
+refuses if anything but version numbers changed since that candidate: release another candidate
+and rehearse it instead. For an urgent fix, `RELEASE_WITHOUT_REHEARSAL=1` skips the gate.
+
 ## What it checks
 
 - The earlier release installs from its own example compose file and sets up from the token in

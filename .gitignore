@@ -51,5 +51,6 @@ takeout-*.tgz
 .DS_Store
 Thumbs.db
 
-# End-to-end test output
+# End-to-end test output, and release rehearsal records (scripts/release.sh reads them)
 /e2e-artifacts/
+/.rehearsals/
