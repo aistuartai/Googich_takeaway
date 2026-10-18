@@ -32,9 +32,17 @@ date and time zone, and adds to Immich only what it does not have yet, on a sche
   photos you delete in Immich stay deleted. Move to another Immich library and it starts afresh.
 - **Quick and resumable.** Each archive is read while the next one downloads, and several photos
   upload at once. Pause, resume or cancel at any time, even across an update.
-- **Clear at a glance.** Live progress with time estimates, history, logs, a built-in guide with
-  search, and notifications through [Apprise](https://github.com/caronc/apprise).
-- **Tidy.** Tells you which archives are fully in Immich and safe to delete, here and in Drive.
+- **Clear at a glance.** Live progress with time estimates, history, logs, and a built-in guide
+  with search.
+- **A dashboard your way.** Choose what it shows: where your photos are, the schedule, sources,
+  destinations, cleanup and history.
+- **Notifications.** Each run's news to ntfy, email, Home Assistant, Discord, Telegram or any
+  other service [Apprise](https://github.com/caronc/apprise) supports, each with its own test
+  button. Choose what to hear about: new photos, files that failed, failed runs, a paused
+  schedule, or a Takeout schedule that needs attention.
+- **Cleanup.** Once an export is fully in Immich, its dates checked and nothing left failing,
+  its archives are only copies. Delete them from the download folder in one press, and follow
+  the links to remove them from Drive.
 - **Careful with secrets.** Credentials encrypted at rest (AES-256-GCM), password login, strict
   browser security, and an unprivileged user on a read-only container.
 
