@@ -80,6 +80,22 @@ class Visitor:
         assert response.ok, f"{path} answered {response.status}"
         return self.page
 
+    def sticking_out(self) -> list[str]:
+        """What makes the page wider than the window, if anything: the outermost elements
+        that reach past its right edge."""
+        return list(
+            self.page.evaluate(
+                """() => {
+                  if (document.documentElement.scrollWidth <= window.innerWidth) return [];
+                  const over = [...document.querySelectorAll("body *")].filter(
+                    e => e.getBoundingClientRect().right > window.innerWidth + 1);
+                  return over.filter(e => !over.includes(e.parentElement)).slice(0, 5).map(e =>
+                    e.tagName.toLowerCase() + (e.className ? "." + [...e.classList].join(".") : "")
+                    + " " + Math.round(e.getBoundingClientRect().width) + "px");
+                }"""
+            )
+        )
+
     def snap(self, name: str) -> None:
         self.page.screenshot(path=self.artifacts / f"{name}.png", full_page=True)
 

@@ -68,11 +68,10 @@ def test_fresh_install_set_up_and_every_page_works(
         viewport={"width": 390, "height": 844}, storage_state=visitor.page.context.storage_state()
     )
     small = Visitor(phone.new_page(), visitor.artifacts)
-    for name in ("dashboard", "updates", "changelog"):
-        small.open(PAGES[name])
+    for name, path in PAGES.items():
+        small.open(path)
         small.snap(f"phone-{name}")
-        wide = small.page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
-        assert not wide, f"{name} scrolls sideways on a phone"
+        assert small.sticking_out() == [], f"{name} scrolls sideways on a phone"
     phone.close()
     assert small.complaints == []
 

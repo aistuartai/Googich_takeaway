@@ -292,7 +292,7 @@ table.queue td.num { text-align: right; white-space: nowrap; color: var(--muted)
 /* ---- forms ------------------------------------------------------------------------------- */
 
 .settings-group {
-  display: grid; grid-template-columns: minmax(12rem, 18rem) 1fr; gap: 1rem 3rem;
+  display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1rem 3rem;
   padding: 2rem 0; border-top: 1px solid var(--line);
 }
 .settings-group:first-of-type { border-top: 0; padding-top: .5rem; }
@@ -394,7 +394,7 @@ ul.parts { margin: .5rem 0 .75rem; padding-left: 1.25rem; }
   .leg::before { left: 0; right: 0; top: 0; bottom: 0; height: auto; background: linear-gradient(180deg, var(--from), var(--to)); }
   .leg .pulse { left: -4px; top: 0; }
   .leg-label { display: none; }
-  .settings-group { grid-template-columns: 1fr; gap: .5rem; padding: 1.5rem 0; }
+  .settings-group { grid-template-columns: minmax(0, 1fr); gap: .5rem; padding: 1.5rem 0; }
   .run-controls { align-items: stretch; max-width: none; width: 100%; }
   .capsules { gap: 3px; }
   .capsule { height: 20px; }
