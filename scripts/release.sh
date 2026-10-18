@@ -10,9 +10,9 @@
 # what it brings stays under Unreleased in CHANGELOG.md, which is where its notes are read from.
 #
 # A final release needs its last release candidate rehearsed first (rehearsal/README.md): the
-# record of a passed update rehearsal to that candidate in .rehearsals/X.Y.Z-rcN.json, and nothing
-# but version numbers changed since the candidate. RELEASE_WITHOUT_REHEARSAL=1 skips this, for an
-# urgent fix only.
+# record of a passed rehearsal of the update from the last final release to that candidate, in
+# .rehearsals/X.Y.Z-rcN.json, and nothing but version numbers changed since the candidate
+# (dependency changes count). RELEASE_WITHOUT_REHEARSAL=1 skips this, for an urgent fix only.
 #
 # Stops at the first problem, leaving the working tree for you to inspect (git diff).
 set -euo pipefail
@@ -58,9 +58,9 @@ if [ "$candidate" = no ]; then
     [ -n "$rc" ] || { echo "no release candidate for $new: release $new-rc1 and rehearse it first" >&2; exit 1; }
     record=".rehearsals/${rc#v}.json"
     [ -f "$record" ] || { echo "no rehearsal of ${rc#v}: copy its result.json from the node to $record" >&2; exit 1; }
-    python3 - "$record" "${rc#v}" "$(git rev-list -n 1 "$rc")" <<'CHECK' || exit 1
+    python3 - "$record" "${rc#v}" "$(git rev-list -n 1 "$rc")" "$stable" <<'CHECK' || exit 1
 import json, sys
-path, candidate, commit = sys.argv[1:]
+path, candidate, commit, stable = sys.argv[1:]
 try:
     result = json.load(open(path))
 except (OSError, ValueError) as error:
@@ -69,7 +69,11 @@ problems = []
 if result.get("to") != candidate:
     problems.append(f"it rehearsed {result.get('to')}, not {candidate}")
 if result.get("from") in (None, "", candidate):
-    problems.append("it was a fresh install only: rehearse an update to it (--from)")
+    problems.append(f"it was a fresh install only: rehearse the update --from {stable}")
+elif result.get("from") != stable:
+    problems.append(
+        f"it updated from {result.get('from')}: rehearse the update users make, --from {stable}"
+    )
 if result.get("commit") != commit:
     problems.append(f"it tested commit {result.get('commit')}, but {candidate} is {commit}")
 if result.get("passed") is not True:
@@ -78,6 +82,26 @@ if problems:
     sys.exit(f"the rehearsal in {path} does not clear {candidate}: " + "; ".join(problems))
 CHECK
     changed=$(git diff --name-only "$rc" HEAD -- . ':!pyproject.toml' ':!uv.lock')
+    # The version lines may differ; anything else in these two (dependencies, build) may not.
+    # shellcheck disable=SC2016
+    strip='import re, sys
+text = sys.stdin.read()
+if sys.argv[1] == "uv.lock":
+    text = re.sub(r"(\nname = \"googich-takeaway\"\n)version = \"[^\"]*\"\n", r"\1", text)
+else:
+    text = re.sub(r"(?m)^version = \"[^\"]*\"\n", "", text, count=1)
+sys.stdout.write(text)'
+    unversioned() { python3 -c "$strip" "$1"; }  # stdin: the file's text without our version
+    compare=$(mktemp -d)
+    for file in pyproject.toml uv.lock; do
+      git show "$rc:$file" | unversioned "$file" > "$compare/then"
+      unversioned "$file" < "$file" > "$compare/now"
+      if ! cmp -s "$compare/then" "$compare/now"; then
+        changed="$changed${changed:+
+}$file (more than its version)"
+      fi
+    done
+    rm -rf "$compare"
     if [ -n "$changed" ]; then
       echo "changed since ${rc#v}, so not rehearsed: release another candidate first:" >&2
       echo "$changed" >&2
@@ -107,9 +131,10 @@ fi
 
 uv lock -q
 echo "Checking on Python 3.13"
-uv run ruff check -q src tests
-uv run ruff format --check -q src tests
-uv run mypy src tests >/dev/null
+uv sync -q --locked --group e2e   # the same checks as CI: e2e/ is linted and type-checked too
+uv run ruff check -q
+uv run ruff format --check -q
+uv run mypy >/dev/null
 uv run pytest -q -p no:warnings | tail -1
 echo "Checking on Python 3.14"
 env314=$(mktemp -d)
@@ -123,5 +148,7 @@ git add -A
 git commit -q -m "Googich Takeaway $new"
 git tag -a "v$new" -m "Googich Takeaway $new"
 echo
-echo "Committed and tagged v$new. To publish:"
-echo "  git push origin main && git push origin v$new"
+echo "Committed and tagged v$new. To publish, push the tag first and main once its Release run"
+echo "is green (main's README and compose file name v$new, so they wait until it exists):"
+echo "  git push origin v$new"
+echo "  git push origin main"

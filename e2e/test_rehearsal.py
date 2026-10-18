@@ -79,15 +79,18 @@ def _helper_reports(state: str, at_least_after: str, seconds: float = 300) -> di
 
 
 def _ask_helper(request: dict[str, object]) -> dict[str, str]:
-    """Write a request as the container could, and wait for the helper's answer."""
-    before = _helper().get("at", "")
+    """Write a request as the container could, and wait for the helper's answer. The answer is
+    told apart by the status file being replaced (the helper renames a new one into place):
+    its time is only to the second, and a refusal can come back within the same second."""
+    before = STATUS.stat().st_ino if STATUS.exists() else None
     REQUEST.write_text(json.dumps(request))
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         status = _helper()
-        if status.get("at", "") > before and status.get("state") in ("done", "failed"):
+        replaced = STATUS.exists() and STATUS.stat().st_ino != before
+        if replaced and status.get("state") in ("done", "failed"):
             return status
-        time.sleep(2)
+        time.sleep(0.5)
     raise AssertionError(f"no answer from the helper; last: {_helper()}")
 
 
@@ -206,20 +209,16 @@ def test_the_helper_refuses_what_it_should(site: Install, visitor: Visitor) -> N
         _install_helper_as_the_page_says(visitor)
     running = _running()
     base = to.split("-rc")[0]
-    refused = {
-        f"{base}-rc99": "not switched on",  # a candidate, not asked for as one
-        f"{base}-rc98 candidates": "is not a published release",
-        "99.0.0": "newer than the newest published release",
-        "0.6.0; reboot": "not a plain version number",
-    }
-    for asked, reason in refused.items():
-        version, _, flag = asked.partition(" ")
-        request: dict[str, object] = {"version": version}
-        if flag:
-            request["candidates"] = True
+    refused: list[tuple[dict[str, object], str]] = [
+        ({"version": f"{base}-rc99"}, "not switched on"),  # a candidate, not asked for as one
+        ({"version": f"{base}-rc98", "candidates": True}, "is not a published release"),
+        ({"version": "99.0.0"}, "newer than the newest published release"),
+        ({"version": "0.6.0; reboot"}, "not a plain version number"),
+    ]
+    for request, reason in refused:
         status = _ask_helper(request)
-        assert status["state"] == "failed", (asked, status)
-        assert reason in status["message"], (asked, status)
+        assert status["state"] == "failed", (request, status)
+        assert reason in status["message"], (request, status)
     assert (health() or {}).get("version") == running  # nothing changed
 
 

@@ -29,7 +29,7 @@ RESULTS=/root/googich-rehearsals    # where results are kept
 Copy this folder to the node (or clone the repository there), then as root:
 
 ```sh
-bash rehearsal/proxmox.sh --from 0.6.0-rc1 --to 0.6.0-rc2
+bash rehearsal/proxmox.sh --from 0.6.0 --to 0.6.1-rc1
 ```
 
 `--from` is the published release installed first and `--to` the one updated to; both must be
@@ -42,8 +42,9 @@ step, and the app's, helper's and browser's logs.
 
 ## The release gate
 
-`scripts/release.sh X.Y.Z` refuses a final release until its last release candidate passed an
-update rehearsal (one with `--from`). Copy that run's `result.json` into this checkout:
+`scripts/release.sh X.Y.Z` refuses a final release until its last release candidate passed a
+rehearsal of the update users make: `--from` the last final release, the one
+`docker/compose.yaml` names. Copy that run's `result.json` into this checkout:
 
 ```sh
 mkdir -p .rehearsals
@@ -51,7 +52,8 @@ scp root@<node>:/root/googich-rehearsals/<run folder>/result.json .rehearsals/X.
 ```
 
 It holds only the versions, the commit tested, whether it passed and when. The release also
-refuses if anything but version numbers changed since that candidate: release another candidate
+refuses if anything but version numbers changed since that candidate, dependency changes in
+`pyproject.toml` or `uv.lock` included: release another candidate
 and rehearse it instead. For an urgent fix, `RELEASE_WITHOUT_REHEARSAL=1` skips the gate.
 
 ## What it checks
