@@ -51,6 +51,15 @@ def _example(version: str) -> str:
         return str(answer.read().decode())
 
 
+def _running(seconds: float = 180) -> str:
+    """The version answering, once one does."""
+    deadline = time.monotonic() + seconds
+    while (answer := health()) is None:
+        assert time.monotonic() < deadline, "the app is not answering"
+        time.sleep(2)
+    return str(answer["version"])
+
+
 def _helper() -> dict[str, str]:
     try:
         return dict(json.loads(STATUS.read_text()))
@@ -133,9 +142,10 @@ def _offer(visitor: Visitor, to: str) -> None:
 
 
 def _press_update_now(visitor: Visitor, to: str) -> str:
+    """The page's own button (the banner has an Update now of its own)."""
     before = _helper().get("at", "")
     page = visitor.open("/updates")
-    page.locator("form[action='/updates/apply'] button[type=submit]").click()
+    page.get_by_role("button", name=f"Update to {to}").click()
     page.wait_for_load_state()
     assert to in page.content()
     return before
@@ -194,7 +204,7 @@ def test_the_helper_refuses_what_it_should(site: Install, visitor: Visitor) -> N
         site.up()
         visitor.set_up(site.setup_token())
         _install_helper_as_the_page_says(visitor)
-    wait_for_version(to)
+    running = _running()
     base = to.split("-rc")[0]
     refused = {
         f"{base}-rc99": "not switched on",  # a candidate, not asked for as one
@@ -210,7 +220,7 @@ def test_the_helper_refuses_what_it_should(site: Install, visitor: Visitor) -> N
         status = _ask_helper(request)
         assert status["state"] == "failed", (asked, status)
         assert reason in status["message"], (asked, status)
-    assert (health() or {}).get("version") == to  # nothing changed
+    assert (health() or {}).get("version") == running  # nothing changed
 
 
 def test_every_page_works_on_the_release(site: Install, visitor: Visitor) -> None:
@@ -219,8 +229,8 @@ def test_every_page_works_on_the_release(site: Install, visitor: Visitor) -> Non
         site.prepare(released_image(to), _example(to))
         site.up()
         visitor.set_up(site.setup_token())
-    else:
-        wait_for_version(to)
+    else:  # whichever version the update test left: an earlier failure is reported there
+        _running()
         visitor.log_in()
     for path in ("/", "/updates", "/updates/changelog", "/help/updates", "/about", "/settings"):
         visitor.open(path)
