@@ -19,9 +19,9 @@
 </div>
 {%- elif kind == 'available' -%}
 <div id="update-banner" class="update-banner" role="status">
-  Version {{ banner['update'].latest }} is available; you have {{ version }}.
+  {% if banner['update'].candidate %}Release candidate {{ banner['update'].latest }} is available for testing{% else %}Version {{ banner['update'].latest }} is available{% endif %}; you have {{ version }}.
   <a href="/updates#whats-new">What's new</a>
-  {% if banner['helper'] and request.state.csrf is defined %}
+  {% if banner['helper'] and request.state.csrf is defined and (banner['helper'].installs_candidates or not banner['update'].candidate) %}
   <form method="post" action="/updates/apply" class="inline">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <button type="submit" class="link">Update now</button>

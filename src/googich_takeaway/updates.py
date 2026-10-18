@@ -4,8 +4,12 @@ Once a day while the update check is switched on, and whenever the user presses 
 app asks GitHub for the latest release of this project and compares it with its own version. A
 newer release shows a banner leading to what it brings (``changelog``) and how to update. Nothing
 is ever downloaded or installed automatically: an app holding Google and Immich credentials
-should not replace its own code. Pre-releases are ignored. The request is anonymous and sends
-nothing but a User-Agent naming the app version.
+should not replace its own code. The request is anonymous and sends nothing but a User-Agent
+naming the app version.
+
+Release candidates (``X.Y.Z-rcN``, published on GitHub as pre-releases) are offered only to those
+who switch them on: they are test builds of the next release. With them on, the check reads the
+releases feed, which lists pre-releases too, instead of the latest release, which never is one.
 """
 
 import json
@@ -27,10 +31,18 @@ LATEST_PAGE = f"https://github.com/{REPOSITORY}/releases/latest"
 """Redirects to the newest published release (never a draft or pre-release). Not part of
 GitHub's API, so not subject to its 60 anonymous requests an hour per network address, which
 everything on the network shares."""
+RELEASES_FEED = f"https://github.com/{REPOSITORY}/releases.atom"
+"""Every published release, pre-releases included, newest first. Also not part of the API."""
 _TAG_PAGE = re.compile(rf"^https://github\.com/{re.escape(REPOSITORY)}/releases/tag/(v[^/?#]+)$")
+_FEED_TAG = re.compile(
+    rf'href="https://github\.com/{re.escape(REPOSITORY)}/releases/tag/(v[^"/?#]+)"'
+)
+FEED_LIMIT = 1_000_000
 CHECK_EVERY = timedelta(hours=24)
 MANUAL_GAP = timedelta(minutes=1)
-_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-?rc(\d+))?$")
+_FINAL = 1 << 30
+"""Where a final release sorts against its own release candidates: after all of them."""
 
 
 @dataclass(frozen=True)
@@ -43,25 +55,38 @@ class UpdateInfo:
     def newer(self) -> bool:
         return is_newer(self.latest, __version__)
 
+    @property
+    def candidate(self) -> bool:
+        return is_candidate(self.latest)
 
-def parse_version(value: str) -> tuple[int, int, int] | None:
-    """``1.2.3`` or ``v1.2.3``; development and pre-release versions return None."""
+
+def parse_version(value: str) -> tuple[int, int, int, int] | None:
+    """``1.2.3``, ``v1.2.3`` or a release candidate ``1.2.3-rc1`` (``1.2.3rc1`` as Python writes
+    it), as a key that sorts releases in order; development versions return None."""
     match = _VERSION.match(value.strip())
-    return (int(match[1]), int(match[2]), int(match[3])) if match else None
+    if match is None:
+        return None
+    rc = int(match[4]) if match[4] is not None else _FINAL
+    return (int(match[1]), int(match[2]), int(match[3]), rc)
+
+
+def is_candidate(version: str) -> bool:
+    key = parse_version(version)
+    return key is not None and key[3] != _FINAL
 
 
 def is_newer(latest: str, current: str) -> bool:
     new = parse_version(latest)
     if new is None:
         return False
-    base = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", current)
-    if base is None:
-        return True
-    have = (int(base[1]), int(base[2]), int(base[3]))
-    if new != have:
-        return new > have
-    # Same numbers: a development build of X.Y.Z is older than the X.Y.Z release.
-    return parse_version(current) is None
+    have = parse_version(current)
+    if have is None:
+        base = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", current)
+        if base is None:
+            return True
+        # A development build of X.Y.Z is older than X.Y.Z and its release candidates.
+        have = (int(base[1]), int(base[2]), int(base[3]), -1)
+    return new > have
 
 
 def enabled(state: State) -> bool:
@@ -72,12 +97,31 @@ def set_enabled(state: State, on: bool, at: datetime) -> None:
     state.set_setting("updates.enabled", None if on else "0", at)
 
 
+def candidates(state: State) -> bool:
+    """Whether release candidates are offered as updates."""
+    return state.get_setting("updates.candidates") == "1"
+
+
+def set_candidates(state: State, on: bool, at: datetime) -> None:
+    """Switch release candidates on or off. The last reading is dropped and the one-a-minute
+    limits reset, so the next check answers for the new choice straight away rather than
+    offering what the old one found."""
+    if on == candidates(state):
+        return
+    state.set_setting("updates.candidates", "1" if on else None, at)
+    for key in ("updates.latest", "updates.view_attempted", "updates.manual"):
+        state.set_setting(key, None, at)
+
+
 def cached(state: State) -> UpdateInfo | None:
     stored = state.get_setting("updates.latest")
     if not stored:
         return None
     data = json.loads(stored)
-    return UpdateInfo(data["latest"], data["url"], datetime.fromisoformat(data["checked_at"]))
+    info = UpdateInfo(data["latest"], data["url"], datetime.fromisoformat(data["checked_at"]))
+    if info.candidate and info.newer and not candidates(state):
+        return None  # found while release candidates were on: not offered now
+    return info
 
 
 def check_if_due(
@@ -162,9 +206,17 @@ def _fetch(
 ) -> UpdateInfo | None:
     """The latest release, saved for the banner; None if GitHub could not say.
 
-    Asks the releases page first, and the API only if that gives no answer."""
+    With release candidates on, reads the releases feed first. Then asks the releases page, and
+    the API only if that gives no answer."""
     try:
         with httpx.Client(timeout=timeout, transport=transport) as client:
+            if candidates(state):
+                newest = _newest_in_feed(client)
+                if newest is not None:
+                    tag = f"v{newest}"
+                    return _save(
+                        state, now, newest, f"https://github.com/{REPOSITORY}/releases/tag/{tag}"
+                    )
             page = client.get(
                 LATEST_PAGE, headers={"User-Agent": f"googich-takeaway/{__version__}"}
             )
@@ -209,6 +261,33 @@ def _fetch(
     return _save(state, now, str(data["tag_name"]).lstrip("v"), url)
 
 
+def _newest_in_feed(client: httpx.Client) -> str | None:
+    """The newest release or release candidate the releases feed lists; None if it cannot say."""
+    try:
+        response = client.get(
+            RELEASES_FEED, headers={"User-Agent": f"googich-takeaway/{__version__}"}
+        )
+        if response.status_code != 200 or len(response.content) > FEED_LIMIT:
+            return None
+        text = response.text
+    except httpx.HTTPError:
+        return None
+    versions = [tag for tag in _FEED_TAG.findall(text) if parse_version(tag)]
+    if not versions:
+        return None
+    newest = max(versions, key=lambda tag: parse_version(tag) or (0, 0, 0, 0))
+    return display(newest)
+
+
+def display(version: str) -> str:
+    """A version as tags and images write it: ``1.2.3`` or ``1.2.3-rc1``, never ``v`` first."""
+    key = parse_version(version)
+    if key is None:
+        return version
+    numbers = f"{key[0]}.{key[1]}.{key[2]}"
+    return numbers if key[3] == _FINAL else f"{numbers}-rc{key[3]}"
+
+
 def _failed(state: State, now: datetime, why: str) -> None:
     state.set_setting("updates.error", why, now)
 
@@ -239,8 +318,10 @@ def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
 # banner with the manual command.
 
 
-HELPER_VERSION = 3
+HELPER_VERSION = 4
 """The update helper this release ships (``HELPER_VERSION`` in googich-updater.sh)."""
+CANDIDATE_HELPER = 4
+"""The first helper version that installs release candidates."""
 
 
 @dataclass(frozen=True)
@@ -256,6 +337,10 @@ class HelperStatus:
     @property
     def outdated(self) -> bool:
         return self.helper < HELPER_VERSION
+
+    @property
+    def installs_candidates(self) -> bool:
+        return self.helper >= CANDIDATE_HELPER
 
 
 def helper_status(data_dir: Path) -> HelperStatus | None:
@@ -299,13 +384,19 @@ def installer_sha256() -> str | None:
 
 
 def request_update(data_dir: Path, version: str) -> None:
-    """Ask the host helper to install ``version``. Raises ValueError if it cannot be asked."""
+    """Ask the host helper to install ``version``. Raises ValueError if it cannot be asked.
+
+    A release candidate is marked as one, so the helper knows it was meant: it refuses
+    candidates otherwise."""
     if parse_version(version) is None:
         raise ValueError("not a release version")
     folder = data_dir / "updater"
     if not (folder / "status.json").exists():
         raise ValueError("the update helper is not installed")
+    request: dict[str, object] = {"version": display(version)}
+    if is_candidate(version):
+        request["candidates"] = True
     temporary = folder / ".request.json.tmp"
-    temporary.write_text(json.dumps({"version": version}))
+    temporary.write_text(json.dumps(request))
     temporary.chmod(0o644)
     temporary.replace(folder / "request.json")  # one atomic write for the helper to see

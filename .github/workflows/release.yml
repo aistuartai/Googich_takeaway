@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+    # Final releases, and release candidates (vX.Y.Z-rcN), which are published as pre-releases.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"]
 
 permissions:
   contents: read
@@ -20,7 +21,9 @@ jobs:
       - name: Version in pyproject.toml must match the tag
         run: |
           version=$(uv version --short)
-          test "v${version}" = "${GITHUB_REF_NAME}" || { echo "pyproject has ${version}, tag is ${GITHUB_REF_NAME}"; exit 1; }
+          expected="${GITHUB_REF_NAME#v}"
+          expected="${expected/-rc/rc}"  # Python writes release candidate 1.2.3-rc1 as 1.2.3rc1
+          test "${version}" = "${expected}" || { echo "pyproject has ${version}, tag is ${GITHUB_REF_NAME}"; exit 1; }
       - run: uv sync --locked
       - run: uv run ruff check
       - run: uv run mypy
@@ -54,7 +57,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -86,13 +89,18 @@ jobs:
       - name: Release notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v v="$version" '
+          section="$version"
+          case "$version" in *-rc*) section="Unreleased" ;; esac  # a candidate brings what is unreleased
+          awk -v v="$section" '
             $0 ~ "^## \\[" v "\\]" { keep = 1; next }
             keep && /^## \[/ { exit }
             keep && /^\[[^]]+\]: / { next }
             keep { print }
           ' CHANGELOG.md > notes.md
-          test -s notes.md || { echo "CHANGELOG.md has no section for ${version}"; exit 1; }
+          test -s notes.md || { echo "CHANGELOG.md has no section for ${section}"; exit 1; }
+          case "$version" in
+            *-rc*) { printf '%s\n\n' "**Release candidate, for testing.** Offered only to installs that switch release candidates on (Help → Updates)."; cat notes.md; } > notes.tmp && mv notes.tmp notes.md ;;
+          esac
           {
             echo
             echo "Image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/googich_takeaway:${version}\`"
@@ -113,5 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          prerelease=()
+          case "${GITHUB_REF_NAME}" in *-rc*) prerelease=(--prerelease) ;; esac
           gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" \
-            --notes-file notes.md --verify-tag helper/*
+            --notes-file notes.md --verify-tag "${prerelease[@]}" helper/*

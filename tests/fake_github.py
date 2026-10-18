@@ -1,8 +1,9 @@
 """An in-memory stand-in for the parts of GitHub the update check and the change log use.
 
 The releases page answers with a redirect to the latest release's tag, the API with that
-release as JSON, and raw.githubusercontent.com with the release's CHANGELOG.md. Release lookups
-and change log fetches are counted apart.
+release as JSON, the releases feed with every release (pre-releases too), and
+raw.githubusercontent.com with the release's CHANGELOG.md. Release lookups, feed reads and
+change log fetches are counted apart.
 """
 
 import httpx
@@ -45,6 +46,9 @@ class FakeGitHub:
         self.changelog: str | None = CHANGELOG
         """CHANGELOG.md as raw.githubusercontent.com serves it; None: not found."""
         self.changelog_calls = 0
+        self.feed: list[str] | None = ["v9.9.9", "v0.0.1"]
+        """The tags the releases feed lists, newest first; None: the feed is not found."""
+        self.feed_calls = 0
 
     def transport(self) -> httpx.MockTransport:
         def handle(request: httpx.Request) -> httpx.Response:
@@ -55,6 +59,11 @@ class FakeGitHub:
                 if self.changelog is None:
                     return httpx.Response(404)
                 return httpx.Response(200, text=self.changelog)
+            if request.url.path.endswith("/releases.atom"):
+                self.feed_calls += 1
+                if self.feed is None:
+                    return httpx.Response(404)
+                return httpx.Response(200, text=feed(self.feed))
             self.calls += 1
             if request.url.host == "github.com" and not self.page:
                 return httpx.Response(404)
@@ -67,3 +76,21 @@ class FakeGitHub:
             return httpx.Response(self.status, json=self.body)
 
         return httpx.MockTransport(handle)
+
+
+def feed(tags: list[str]) -> str:
+    """The releases feed as GitHub writes it, cut down to what the app reads."""
+    entries = "".join(
+        f"""
+  <entry>
+    <id>tag:github.com,2008:Repository/1/{tag}</id>
+    <link rel="alternate" type="text/html" href="https://github.com/aistuartai/Googich_takeaway/releases/tag/{tag}"/>
+    <title>{tag}</title>
+  </entry>"""
+        for tag in tags
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en-US">
+  <link type="text/html" rel="alternate" href="https://github.com/aistuartai/Googich_takeaway/releases"/>{entries}
+</feed>
+"""

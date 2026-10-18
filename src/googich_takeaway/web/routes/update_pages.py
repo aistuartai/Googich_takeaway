@@ -52,6 +52,7 @@ def register(app: FastAPI, web: Shared) -> None:
             "updates.html",
             latest_shown=latest,
             updates_enabled=updates.enabled(config.state),
+            candidates=updates.candidates(config.state),
             update_known=known,
             update_available=newer,
             whats_new=[r for r in changelog.releases(config.state) if r.newer],
@@ -87,8 +88,11 @@ def register(app: FastAPI, web: Shared) -> None:
         known = updates.cached(config.state)
         if known is None or not known.newer:
             return RedirectResponse("/updates?saved=no-update", status_code=303)
-        if updates.helper_status(data_dir) is None:
+        helper = updates.helper_status(data_dir)
+        if helper is None:
             return RedirectResponse("/updates?saved=no-helper", status_code=303)
+        if known.candidate and not helper.installs_candidates:
+            return RedirectResponse("/updates?saved=helper-too-old", status_code=303)
         version = known.latest  # never a version from the browser
         config.state.set_setting("updates.requested", version, clock())
 
@@ -129,6 +133,16 @@ def register(app: FastAPI, web: Shared) -> None:
         if found is updates.CheckResult.NEWER:  # what it brings, before the page shows it
             changelog.fetch_newer(state, clock(), github_transport, retry_after=None)
         return RedirectResponse(f"/updates?saved=check-{found.value}", status_code=303)
+
+    @app.post("/updates/candidates")
+    def save_candidates(state: StateDep, on: Annotated[str, Form()] = "") -> Response:
+        """Switch release candidates on or off, then check straight away for the new choice."""
+        updates.set_candidates(state, bool(on), clock())
+        if updates.check_now(state, clock, github_transport) is updates.CheckResult.NEWER:
+            changelog.fetch_newer(state, clock(), github_transport, retry_after=None)
+        return RedirectResponse(
+            f"/updates?saved=candidates-{'on' if on else 'off'}", status_code=303
+        )
 
     @app.post("/updates/daily")
     def save_updates(state: StateDep, check: Annotated[str, Form()] = "") -> Response:

@@ -15,6 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the one running marked and earlier releases folded away. The app carries its own change log,
   so it reads without a network; a newer release's notes are fetched from GitHub once, with the
   update check, and only the releases newer than the one running are taken from it.
+- **Release candidates**: test builds of the next release (such as `0.6.0-rc1`), published as
+  GitHub pre-releases. Offered only to installs that switch them on under Help → Updates, with a
+  warning that they are for testing. The update helper (now version 4) installs them only when
+  asked to, and only while their final release is not out.
 
 ## [0.5.2] - 2026-10-17
 

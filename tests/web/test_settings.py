@@ -1426,3 +1426,66 @@ def test_update_found_on_opening_the_page_fetches_its_notes_in_the_background(
     world.github.changelog = CHANGELOG
     world.client.get("/updates")
     _wait_for(lambda: "Time travel" in world.client.get("/updates").text)
+
+
+CANDIDATE_CHANGELOG = CHANGELOG.replace(
+    "## [Unreleased]\n", "## [Unreleased]\n\n### Added\n\n- **Rehearsals**: tried before release.\n"
+)
+
+
+def _candidate_out(world: World) -> None:
+    world.github.feed = ["v10.0.0-rc1", "v9.9.9"]
+    world.github.changelog = CANDIDATE_CHANGELOG
+
+
+def test_release_candidates_are_off_until_switched_on_with_a_warning(world: World) -> None:
+    _candidate_out(world)
+    page = world.client.get("/updates").text
+    assert 'name="on" value="1" >' in page  # not checked
+    assert "For testing only." in page
+    assert "10.0.0-rc1" not in page
+    assert world.github.feed_calls == 0
+
+
+def test_switching_release_candidates_on_offers_the_newest(world: World) -> None:
+    _candidate_out(world)
+    response = world.post("/updates/candidates", {"on": "1"})
+    assert response.headers["location"] == "/updates?saved=candidates-on"
+    page = world.client.get("/updates?saved=candidates-on").text
+    assert "Release candidate 10.0.0-rc1 is available." in page
+    assert 'name="on" value="1" checked>' in page
+    assert "<h4>10.0.0-rc1</h4>" in page
+    assert '<span class="release-tag candidate">Release candidate</span>' in page
+    assert "<strong>Rehearsals</strong>" in page  # the candidate's Unreleased notes
+    assert "Release candidate 10.0.0-rc1 is available for testing" in world.client.get("/").text
+    world.post("/updates/candidates", {})
+    home = world.client.get("/").text
+    assert "10.0.0-rc1" not in home
+    assert "Version 9.9.9 is available" in home  # the final release is offered again
+
+
+def test_an_old_helper_is_not_asked_to_install_a_candidate(world: World) -> None:
+    _candidate_out(world)
+    world.post("/updates/candidates", {"on": "1"})
+    folder = _helper(world)  # helper version 1
+    assert "Update now" not in world.client.get("/").text
+    page = world.client.get("/updates").text
+    assert "too old to install release candidates" in page
+    response = world.post("/updates/apply")
+    assert response.headers["location"].endswith("/updates?saved=helper-too-old")
+    assert not (folder / "request.json").exists()
+
+
+def test_a_candidate_is_requested_as_one(world: World) -> None:
+    _candidate_out(world)
+    world.post("/updates/candidates", {"on": "1"})
+    folder = _helper(world)
+    status = json.loads((folder / "status.json").read_text())
+    (folder / "status.json").write_text(json.dumps({**status, "helper": "4"}))
+    assert "Update now" in world.client.get("/").text
+    assert "Update to 10.0.0-rc1 (release candidate)" in world.client.get("/updates").text
+    world.post("/updates/apply")
+    assert json.loads((folder / "request.json").read_text()) == {
+        "version": "10.0.0-rc1",
+        "candidates": True,
+    }

@@ -5,6 +5,7 @@
 
 {%- macro release_tags(release) -%}
 {%- if release.newer %}<span class="release-tag new">New</span>{% elif release.running %}<span class="release-tag running">Running</span>{% endif -%}
+{%- if release.candidate %}<span class="release-tag candidate">Release candidate</span>{% endif -%}
 {%- endmacro -%}
 
 {#- The version is a heading at ``level``; Added, Changed and the like sit one level below it. -#}

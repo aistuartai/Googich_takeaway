@@ -4,7 +4,8 @@
 # The web interface cannot touch Docker. When you press "Update now" it only writes
 #   <data>/updater/request.json   {"version": "X.Y.Z"}
 # and this script, started by googich-updater.path, does the update:
-#   1. accepts nothing but a plain X.Y.Z version from that file
+#   1. accepts nothing but a plain X.Y.Z version from that file, or a release candidate
+#      X.Y.Z-rcN when the request also says "candidates": true (the user switched them on)
 #   2. checks it is a published GitHub release of this project, from its releases pages
 #   3. sets that tag on the image line in compose.yaml (a backup is kept)
 #   4. pulls and restarts the container, then waits for /healthz to report the new version
@@ -23,7 +24,7 @@ IMAGE="${GOOGICH_IMAGE:-ghcr.io/aistuartai/googich_takeaway}"
 REPOSITORY="${GOOGICH_REPOSITORY:-aistuartai/Googich_takeaway}"
 SERVICE="${GOOGICH_SERVICE:-googich}"
 HEALTH_URL="${GOOGICH_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-HELPER_VERSION="3"
+HELPER_VERSION="4"
 OWNER_UID="${GOOGICH_UPDATER_OWNER:-0}"   # tests run as an ordinary user
 RUNTIME="${GOOGICH_RUNTIME_DIR:-${RUNTIME_DIRECTORY:-/run/googich-updater}}"
 
@@ -79,12 +80,20 @@ if [ ! -f "$REQUEST" ]; then
   exit 0
 fi
 # The request belongs to the container: read at most 256 bytes, and never through a link.
-version=$(dd if="$REQUEST" iflag=nofollow,nonblock bs=256 count=1 status=none 2>/dev/null \
-  | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
+body=$(dd if="$REQUEST" iflag=nofollow,nonblock bs=256 count=1 status=none 2>/dev/null \
+  | tr -d '\000' || true)
+version=$(printf '%s' "$body" | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
   | head -1 | sed -E 's/.*"([^"]*)"$/\1/' || true)
+candidates=no
+printf '%s' "$body" | grep -qE '"candidates"[[:space:]]*:[[:space:]]*true' && candidates=yes
 rm -f "$REQUEST"
-if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]]; then
+if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-rc[0-9]{1,3})?$ ]]; then
   status failed "Refused: the requested version was not a plain version number."
+  exit 1
+fi
+base="${version%%-rc*}"
+if [ "$base" != "$version" ] && [ "$candidates" != yes ]; then
+  status failed "Refused: $version is a release candidate, and release candidates are not switched on." "$version"
   exit 1
 fi
 
@@ -93,7 +102,8 @@ status updating "Checking that $version is a published release." "$version"
 # address, shared by everything on the network, and refused updates when others had used them.
 # A version counts as published when GitHub's newest release is at least that version (the
 # newest is never a draft or pre-release), and the release has its helper files attached
-# (drafts' files cannot be downloaded).
+# (drafts' files cannot be downloaded). A release candidate is a pre-release, so it is never the
+# newest: it counts when its files are attached and its final release is not out yet.
 ask() {  # url format -> prints the answer; retried, since GitHub or the network may stumble
   local out="" attempt
   for attempt in 1 2 3; do
@@ -112,7 +122,13 @@ if [ -z "$newest" ]; then
   status failed "Could not ask GitHub to confirm $version (offline, or a GitHub problem). Nothing was changed; try again later." "$version"
   exit 1
 fi
-if [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+if [ "$base" != "$version" ]; then
+  if [ "$(printf '%s\n%s\n' "$base" "$newest" | sort -V | tail -1)" != "$base" ] \
+     || [ "$base" = "$newest" ]; then
+    status failed "Refused: $base is already released, so $version is out of date." "$version"
+    exit 1
+  fi
+elif [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -1)" != "$newest" ]; then
   status failed "Refused: $version is newer than the newest published release ($newest)." "$version"
   exit 1
 fi

@@ -30,7 +30,7 @@ def test_the_app_carries_its_own_change_log_with_the_version_running() -> None:
     releases = changelog.bundled()
     assert [r.version for r in releases if r.running] == [__version__]
     assert releases[-1].version == "0.1.0"
-    dates = [r.released for r in releases]
+    dates = [r.released for r in releases if not r.candidate]  # a candidate is not dated
     assert all(d is not None for d in dates)
     assert dates == sorted(dates, reverse=True)  # type: ignore[type-var]
 
@@ -167,3 +167,33 @@ def test_notes_fetched_for_an_older_reading_are_not_used(state: State) -> None:
     _found(state, "v9.9.10")  # a newer release since: its notes are not fetched yet
     assert changelog.releases(state) == changelog.bundled()
     assert not changelog.has_notes_for(state, "9.9.10")
+
+
+CANDIDATE = CHANGELOG.replace(
+    "## [Unreleased]\n", "## [Unreleased]\n\n### Fixed\n\n- **Rehearsed** before release.\n"
+)
+
+
+def test_a_release_candidate_brings_what_its_change_log_has_not_released_yet() -> None:
+    plain = changelog.parse(CANDIDATE)
+    assert [r.version for r in plain] == ["9.9.9", "0.0.1"]
+    releases = changelog.parse(CANDIDATE, unreleased_as="10.0.0-rc1")
+    assert [r.version for r in releases] == ["10.0.0-rc1", "9.9.9", "0.0.1"]
+    assert releases[0].candidate
+    assert not releases[1].candidate
+    assert releases[0].released is None
+    assert releases[0].kinds == ("Fixed",)
+    assert "<strong>Rehearsed</strong>" in releases[0].notes()
+
+
+def test_a_candidates_notes_are_fetched_from_its_tag(state: State) -> None:
+    updates.set_candidates(state, True, NOW)
+    github = _found(state)
+    github.feed = ["v10.0.0-rc1", "v9.9.9"]
+    github.changelog = CANDIDATE
+    state.set_setting("updates.manual", None, NOW)
+    updates.check_now(state, lambda: NOW, github.transport())
+    assert changelog.fetch_newer(state, NOW, github.transport())
+    shown = changelog.releases(state)
+    assert [r.version for r in shown[:2]] == ["10.0.0-rc1", "9.9.9"]
+    assert changelog.remote_url("10.0.0-rc1").endswith("/v10.0.0-rc1/CHANGELOG.md")

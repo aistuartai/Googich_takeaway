@@ -3,38 +3,66 @@
 # runs every check, then commits and tags. It does not push; it prints the commands to do that.
 #
 #   scripts/release.sh 0.4.0
+#   scripts/release.sh 0.4.0-rc1   # a release candidate, published as a GitHub pre-release
+#
+# A release candidate changes only the version in pyproject.toml (Python writes it 0.4.0rc1): the
+# README, the example compose file and the guide keep pointing at the last final release, and
+# what it brings stays under Unreleased in CHANGELOG.md, which is where its notes are read from.
 #
 # Stops at the first problem, leaving the working tree for you to inspect (git diff).
 set -euo pipefail
 
 new="${1:-}"
-[[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: scripts/release.sh X.Y.Z" >&2; exit 2; }
+if [[ "$new" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc([0-9]+)$ ]]; then
+  candidate=yes
+  python_version="${BASH_REMATCH[1]}rc${BASH_REMATCH[2]}"
+elif [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  candidate=no
+  python_version="$new"
+else
+  echo "usage: scripts/release.sh X.Y.Z or X.Y.Z-rcN" >&2
+  exit 2
+fi
+base="${new%%-rc*}"
 cd "$(git rev-parse --show-toplevel)"
 
 [ -z "$(git status --porcelain)" ] || { echo "commit or stash your changes first" >&2; exit 1; }
 [ "$(git branch --show-current)" = main ] || { echo "release from main" >&2; exit 1; }
 git rev-parse -q --verify "refs/tags/v$new" >/dev/null && { echo "v$new already exists" >&2; exit 1; }
 
-old=$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' pyproject.toml)
+old=$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?)"$/\1/p' pyproject.toml)
 [ -n "$old" ] || { echo "no version in pyproject.toml" >&2; exit 1; }
-[ "$old" != "$new" ] || { echo "already at $new" >&2; exit 1; }
+[ "$old" != "$python_version" ] || { echo "already at $new" >&2; exit 1; }
+# The last final release: what the example compose file runs. Every link and image tag names it.
+stable=$(sed -nE 's|^[[:space:]]*image:[[:space:]]*ghcr\.io/aistuartai/googich_takeaway:([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$|\1|p' docker/compose.yaml | head -1)
+[ -n "$stable" ] || { echo "no final release version in docker/compose.yaml" >&2; exit 1; }
+if [ "$base" = "$stable" ] || [ "$(printf '%s\n%s\n' "$base" "$stable" | sort -V | tail -1)" != "$base" ]; then
+  echo "$new must be newer than the last final release, $stable" >&2
+  exit 1
+fi
 grep -q '^## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no Unreleased section" >&2; exit 1; }
 if [ -z "$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{exit} f && NF' CHANGELOG.md)" ]; then
   echo "the CHANGELOG's Unreleased section is empty: say what changed first" >&2
   exit 1
 fi
-echo "Releasing $new (was $old)"
+if [ "$candidate" = yes ]; then
+  echo "Releasing candidate $new (was $old; last final release $stable)"
+else
+  echo "Releasing $new (was $old; last final release $stable)"
+fi
 
 # Every place a version is written, from the same list the release tests check.
-sed -i -E "s/^version = \"$old\"$/version = \"$new\"/" pyproject.toml
-sed -i -E "s|(ghcr\.io/aistuartai/googich_takeaway:)$old|\1$new|" docker/compose.yaml
-sed -i -E "s|(Googich_takeaway/)v$old/|\1v$new/|g" README.md
-sed -i -E "s|(releases/download/)v$old/|\1v$new/|g" src/googich_takeaway/docs/updates.md
+sed -i -E "s/^version = \"$old\"$/version = \"$python_version\"/" pyproject.toml
+if [ "$candidate" = no ]; then
+  sed -i -E "s|(ghcr\.io/aistuartai/googich_takeaway:)$stable|\1$new|" docker/compose.yaml
+  sed -i -E "s|(Googich_takeaway/)v$stable/|\1v$new/|g" README.md
+  sed -i -E "s|(releases/download/)v$stable/|\1v$new/|g" src/googich_takeaway/docs/updates.md
 
-# CHANGELOG: the Unreleased notes become this release's section; links updated.
-today=$(date +%Y-%m-%d)
-sed -i "0,/^## \[Unreleased\]$/s//## [Unreleased]\n\n## [$new] - $today/" CHANGELOG.md
-sed -i -E "s|^\[Unreleased\]: (.*)/compare/v$old\.\.\.HEAD$|[Unreleased]: \1/compare/v$new...HEAD\n[$new]: \1/compare/v$old...v$new|" CHANGELOG.md
+  # CHANGELOG: the Unreleased notes become this release's section; links updated.
+  today=$(date +%Y-%m-%d)
+  sed -i "0,/^## \[Unreleased\]$/s//## [Unreleased]\n\n## [$new] - $today/" CHANGELOG.md
+  sed -i -E "s|^\[Unreleased\]: (.*)/compare/v$stable\.\.\.HEAD$|[Unreleased]: \1/compare/v$new...HEAD\n[$new]: \1/compare/v$stable...v$new|" CHANGELOG.md
+fi
 
 uv lock -q
 echo "Checking on Python 3.13"

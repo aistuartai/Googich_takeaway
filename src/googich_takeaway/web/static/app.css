@@ -766,6 +766,10 @@ button.small { font-size: .8125rem; padding: .3rem .75rem; }
 }
 .release-tag.new { color: var(--sky); background: color-mix(in srgb, var(--sky) 10%, var(--raised)); border-color: color-mix(in srgb, var(--sky) 40%, var(--line)); }
 .release-tag.running { color: var(--green); background: color-mix(in srgb, var(--green) 9%, var(--raised)); border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.release-tag.candidate { color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--raised)); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.candidate-warning { margin: .5rem 0 0; padding: .65rem .85rem; border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-left-width: 4px; border-radius: 6px; background: color-mix(in srgb, var(--warn) 7%, var(--raised)); }
+.candidate-warning p { margin: 0; }
+.candidate-warning p + p { margin-top: .35rem; }
 .release-card.is-new { border-top: 4px solid var(--sky); }
 .release-card.is-running { border-top: 4px solid var(--green); }
 .release-body { max-width: none; }

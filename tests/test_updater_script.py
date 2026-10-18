@@ -43,6 +43,8 @@ case "$url" in
       *) printf '302' ;;
     esac ;;
   *releases/download/v0.1.2/SHA256SUMS) printf '302' ;;
+  *releases/download/v0.2.0-rc1/SHA256SUMS|*releases/download/v0.1.2-rc1/SHA256SUMS)
+    printf '302' ;;  # release candidates: pre-releases with their files
   *releases/download/*) printf '404' ;;
   *healthz) running=$(cat "$STUB_RUNNING"); [ "$running" = "$STUB_BROKEN" ] && exit 7
             printf '{"status":"ok","version":"%s"}' "$running" ;;
@@ -110,6 +112,12 @@ def test_updates_to_a_published_release(tmp_path: Path) -> None:
         ('{"version": "0.1.2; rm -rf /"}', "not a plain version number"),
         ('{"version": "$(reboot)"}', "not a plain version number"),
         ("not json", "not a plain version number"),
+        ('{"version": "0.2.0-rc1"}', "release candidates are not switched on"),
+        ('{"version": "0.2.0-rc1", "candidates": false}', "are not switched on"),
+        ('{"version": "0.1.2-rc1", "candidates": true}', "0.1.2 is already released"),
+        ('{"version": "0.2.0-rc9", "candidates": true}', "is not a published release"),
+        ('{"version": "0.2.0-beta1", "candidates": true}', "not a plain version number"),
+        ('{"version": "0.2.0-rc1; reboot", "candidates": true}', "not a plain version number"),
     ],
 )
 def test_refuses_anything_else(tmp_path: Path, request_body: str, message: str) -> None:
@@ -118,6 +126,14 @@ def test_refuses_anything_else(tmp_path: Path, request_body: str, message: str) 
     assert message in status["message"]
     assert "googich_takeaway:0.1.1" in compose
     assert running.strip() == "0.1.1"
+
+
+def test_updates_to_a_release_candidate_when_asked_for_one(tmp_path: Path) -> None:
+    status, compose, running = run(tmp_path, '{"version": "0.2.0-rc1", "candidates": true}')
+    assert status["state"] == "done"
+    assert status["message"] == "Updated from 0.1.1 to 0.2.0-rc1."
+    assert 'image: "ghcr.io/aistuartai/googich_takeaway:0.2.0-rc1"' in compose
+    assert running.strip() == "0.2.0-rc1"
 
 
 def test_rolls_back_when_the_new_version_is_unhealthy(tmp_path: Path) -> None:
@@ -230,8 +246,14 @@ def test_installer_refuses_files_that_do_not_match_their_checksums(tmp_path: Pat
     assert not (tmp_path / "lib" / "googich-updater.sh").exists()  # nothing installed
 
 
+def test_installer_works_on_a_release_candidate(tmp_path: Path) -> None:
+    result, _, calls = _install(tmp_path, running="0.4.0-rc2")
+    assert result.returncode == 0, result.stderr
+    assert "releases/download/v0.4.0-rc2/googich-updater.sh" in calls
+
+
 def _install(
-    tmp_path: Path, tamper: str = ""
+    tmp_path: Path, tamper: str = "", running: str = "0.3.4"
 ) -> tuple[subprocess.CompletedProcess[str], Path, str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -263,7 +285,7 @@ exec /usr/bin/install "${args[@]}"
     (site / "data" / "updater" / ".lock").write_text("")  # left by helper version 1
     # A trailing comment must not change the version read (it once became 0.3.46).
     (site / "compose.yaml").write_text(
-        "    image: ghcr.io/aistuartai/googich_takeaway:0.3.4  # pinned 6 Oct\n"
+        f"    image: ghcr.io/aistuartai/googich_takeaway:{running}  # pinned 6 Oct\n"
     )
     env = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",

@@ -24,6 +24,26 @@ the daily check, when you press **Check now**, or in the background when Help â†
 Until then, What's new links to the release notes on GitHub instead. From the fetched change log
 the app uses only the releases newer than the one running.
 
+## Release candidates
+
+A release candidate is a test build of the next release, such as `0.6.0-rc1`, published as a
+pre-release on GitHub so it can be tried before everyone gets it. They are off unless you switch
+them on: tick **Offer release candidates** under Help â†’ Updates and press **Save**. The app then
+checks GitHub's list of releases, which includes pre-releases, and offers the newest one: a
+release candidate, or a final release when that is newer. Untick it to be offered only final
+releases again.
+
+Release candidates are for testing. They can have bugs, including ones that stop an import part
+way. Your settings and history are kept when you update. Switching release candidates off does
+not take you back to the last final release: you stay on the candidate until a newer final
+release replaces it.
+
+What a release candidate brings is shown under What's new as usual, marked **Release
+candidate**. One-click updates install release candidates with update helper version 4 or later;
+an older helper offers the one-command upgrade first. The helper installs a candidate only when
+the app says release candidates are switched on, only if it is a published pre-release of this
+project, and only until its final release is out.
+
 ## Updating by hand
 
 On the Docker host, in the folder holding `compose.yaml`:

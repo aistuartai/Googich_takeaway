@@ -5,6 +5,8 @@
 <div class="page-head"><h1>Updates</h1><a class="help-link" href="/help/updates">Guide: Updates</a></div>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if saved == 'updates' %}<p class="result ok" role="status">Saved.</p>{% endif %}
+{% if saved == 'candidates-on' %}<p class="result ok" role="status">Release candidates are on. {% if update_available and update_available.candidate %}Release candidate {{ update_available.latest }} is available.{% else %}None newer than this version is out now; the check offers the next one.{% endif %}</p>{% endif %}
+{% if saved == 'candidates-off' %}<p class="result ok" role="status">Release candidates are off. Only final releases are offered from now on.</p>{% endif %}
 
 <section class="settings-group" id="updates">
   <header><h2>Updates</h2><p>A notice when a new release is out. Nothing installs itself.</p></header>
@@ -18,6 +20,7 @@
     {% if saved == 'update-requested' %}<p class="result ok" role="status">Update requested. The update helper on the host installs it now; this page shows the result.</p>{% endif %}
     {% if saved == 'update-after-pause' %}<p class="result ok" role="status">Update requested. The run going now pauses at its next safe point, then the update installs, and the run resumes by itself once the app is back.</p>{% endif %}
     {% if saved == 'no-helper' %}<p class="error" role="alert">The update helper is not installed on this host, so updates must be installed by hand.</p>{% endif %}
+    {% if saved == 'helper-too-old' %}<p class="error" role="alert">The update helper on this host is too old to install release candidates. Upgrade it with the command below, or install the candidate by hand.</p>{% endif %}
     {% if update_available %}
     <section class="whats-new" id="whats-new" aria-labelledby="whats-new-title">
       <h3 class="whats-new-label" id="whats-new-title">What's new</h3>
@@ -35,14 +38,17 @@
       </form>
       <a class="button secondary" href="/updates/changelog">Change log</a>
       {% if update_available %}
-      {% if helper and helper.state != 'updating' %}
+      {% if helper and helper.state != 'updating' and (helper.installs_candidates or not update_available.candidate) %}
       <form method="post" action="/updates/apply" class="inline">
         <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-        <button type="submit">Update to {{ update_available.latest }}</button>
+        <button type="submit">Update to {{ update_available.latest }}{% if update_available.candidate %} (release candidate){% endif %}</button>
       </form>
       {% endif %}
       {% endif %}
     </div>
+    {% if update_available and update_available.candidate and helper and not helper.installs_candidates %}
+    <small>The update helper on this host is too old to install release candidates: upgrade it with the command below, or install it by hand.</small>
+    {% endif %}
     {% if update_available and not helper %}
     <small>To install it, change the version in <code>compose.yaml</code> to <code>{{ update_available.latest }}</code>, then run <code>docker compose pull &amp;&amp; docker compose up -d</code>.</small>
     {% endif %}
@@ -63,6 +69,15 @@
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label class="check"><input type="checkbox" name="check" value="1" {{ 'checked' if updates_enabled }}> Check GitHub once a day for a new release</label>
     <small>The daily check only shows a notice. With the update helper, the update button installs a release when you press it; nothing installs on its own. Checks ask GitHub anonymously for the latest release of this project.</small>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  <form method="post" action="/updates/candidates" id="candidates">
+    <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
+    <label class="check"><input type="checkbox" name="on" value="1" {{ 'checked' if candidates }}> Offer release candidates</label>
+    <div class="candidate-warning" role="note">
+      <p><strong>For testing only.</strong> A release candidate is a test build of the next release, published so it can be tried before everyone gets it. It can have bugs, including ones that stop an import part way.</p>
+      <p>Your settings and history are kept when you update. Switching this off again does not take you back to the last final release: you stay on the candidate until a newer final release replaces it.</p>
+    </div>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>

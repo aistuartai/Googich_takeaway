@@ -27,7 +27,7 @@ compose="$dir/compose.yaml"
 case "$dir" in *[!A-Za-z0-9/._-]*) die "the folder path may only hold letters, digits and / . _ -" ;; esac
 
 line=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$compose" | head -1 || true)
-if [[ "$line" =~ $IMAGE:([0-9]+\.[0-9]+\.[0-9]+)([\"[:space:]]|$) ]]; then
+if [[ "$line" =~ $IMAGE:([0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?)([\"[:space:]]|$) ]]; then
   version="${BASH_REMATCH[1]}"
 else
   die "compose.yaml should name a fixed version, such as $IMAGE:0.3.4"

@@ -7,6 +7,9 @@ it. The fetched text is treated as untrusted: it is used only for the releases n
 running, raw HTML is shown as text, images are dropped, and only web links and links within the
 page are kept. The request is anonymous, like the update check, and sends nothing but a
 User-Agent naming the app version.
+
+A release candidate has no section of its own: what it brings is the Unreleased section of the
+change log it was tagged with, so its notes are read from there.
 """
 
 import json
@@ -66,6 +69,10 @@ class Release:
     def running(self) -> bool:
         return self.version == __version__
 
+    @property
+    def candidate(self) -> bool:
+        return updates.is_candidate(self.version)
+
     def notes(self, level: int = 3) -> Markup:
         """The notes as HTML, their Added, Changed and Fixed headings at ``level``."""
         return _render(self.body, level)
@@ -122,10 +129,12 @@ def _render(body: str, level: int) -> Markup:
     return Markup(converter.convert(body))  # noqa: S704 - raw HTML removed, links checked
 
 
-def parse(text: str) -> list[Release]:
-    """Each release in a Keep a Changelog file, newest first; Unreleased is left out."""
+def parse(text: str, unreleased_as: str | None = None) -> list[Release]:
+    """Each release in a Keep a Changelog file, newest first. Unreleased is left out, or read as
+    release candidate ``unreleased_as``: the change log a candidate is tagged with."""
     releases = []
-    for version, day, body in split_at(_RELEASE, text)[1]:
+    for heading, day, body in split_at(_RELEASE, text)[1]:
+        version = unreleased_as if heading == "Unreleased" and unreleased_as else heading
         if updates.parse_version(version) is None:
             continue
         try:
@@ -148,10 +157,14 @@ def _bundled_text() -> str:
     return ""
 
 
+def _candidate_or_none(version: str) -> str | None:
+    return version if updates.is_candidate(version) else None
+
+
 @cache
 def bundled() -> list[Release]:
     """The releases this version's own change log lists."""
-    return parse(_bundled_text())
+    return parse(_bundled_text(), _candidate_or_none(__version__))
 
 
 @dataclass(frozen=True)
@@ -174,8 +187,8 @@ class _Kept:
 
 
 @lru_cache(maxsize=2)
-def _parse_kept(text: str) -> list[Release]:
-    return parse(text)
+def _parse_kept(text: str, version: str) -> list[Release]:
+    return parse(text, _candidate_or_none(version))
 
 
 def releases(state: State) -> list[Release]:
@@ -186,7 +199,7 @@ def releases(state: State) -> list[Release]:
     kept = _Kept.load(state)
     if known is None or not known.newer or kept is None or kept.version != known.latest:
         return own
-    newer = [r for r in _parse_kept(kept.text) if r.newer]
+    newer = [r for r in _parse_kept(kept.text, kept.version) if r.newer]
     return newer + [r for r in own if r.version not in {n.version for n in newer}]
 
 
@@ -247,7 +260,7 @@ def fetch(
         text = content.decode("utf-8")
     except (httpx.HTTPError, UnicodeDecodeError):
         return False
-    if not any(r.version == version for r in parse(text)):
+    if not any(r.version == version for r in parse(text, _candidate_or_none(version))):
         return False
     _Kept(version, text).save(state, now)
     return True
