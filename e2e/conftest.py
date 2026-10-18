@@ -82,13 +82,14 @@ class Visitor:
 
     def sticking_out(self) -> list[str]:
         """What makes the page wider than the window, if anything: the outermost elements
-        that reach past its right edge."""
+        shown that reach past its right edge (a closed menu's panel is not shown)."""
         return list(
             self.page.evaluate(
                 """() => {
                   if (document.documentElement.scrollWidth <= window.innerWidth) return [];
                   const over = [...document.querySelectorAll("body *")].filter(
-                    e => e.getBoundingClientRect().right > window.innerWidth + 1);
+                    e => e.checkVisibility({visibilityProperty: true})
+                      && e.getBoundingClientRect().right > window.innerWidth + 1);
                   return over.filter(e => !over.includes(e.parentElement)).slice(0, 5).map(e =>
                     e.tagName.toLowerCase() + (e.className ? "." + [...e.classList].join(".") : "")
                     + " " + Math.round(e.getBoundingClientRect().width) + "px");
