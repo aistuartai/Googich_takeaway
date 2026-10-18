@@ -149,6 +149,10 @@ git commit -q -m "Googich Takeaway $new"
 git tag -a "v$new" -m "Googich Takeaway $new"
 echo
 echo "Committed and tagged v$new. To publish, push the tag first and main once its Release run"
-echo "is green (main's README and compose file name v$new, so they wait until it exists):"
+if [ "$candidate" = yes ]; then
+  echo "is green (main's CI then finds the candidate's image):"
+else
+  echo "is green (main's README and compose file name v$new, so they wait until it exists):"
+fi
 echo "  git push origin v$new"
 echo "  git push origin main"

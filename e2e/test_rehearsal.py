@@ -78,17 +78,28 @@ def _helper_reports(state: str, at_least_after: str, seconds: float = 300) -> di
     raise AssertionError(f"the helper never reported {state}; last: {_helper()}")
 
 
+def _status_file() -> tuple[int, int, str] | None:
+    """What identifies one writing of the status file: its inode, its time to the nanosecond
+    and its text. The inode alone is not enough: the helper may write twice for one request
+    ("Checking…", then the answer), and the second file can reuse the first one's inode."""
+    try:
+        info = STATUS.stat()
+        return info.st_ino, info.st_mtime_ns, STATUS.read_text()
+    except OSError:
+        return None
+
+
 def _ask_helper(request: dict[str, object]) -> dict[str, str]:
-    """Write a request as the container could, and wait for the helper's answer. The answer is
-    told apart by the status file being replaced (the helper renames a new one into place):
-    its time is only to the second, and a refusal can come back within the same second."""
-    before = STATUS.stat().st_ino if STATUS.exists() else None
+    """Write a request as the container could, and wait for the helper's answer: a status file
+    written after the request (its own time is only to the second, and a refusal can come back
+    within the same second)."""
+    before = _status_file()
     REQUEST.write_text(json.dumps(request))
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
+        now = _status_file()
         status = _helper()
-        replaced = STATUS.exists() and STATUS.stat().st_ino != before
-        if replaced and status.get("state") in ("done", "failed"):
+        if now is not None and now != before and status.get("state") in ("done", "failed"):
             return status
         time.sleep(0.5)
     raise AssertionError(f"no answer from the helper; last: {_helper()}")
