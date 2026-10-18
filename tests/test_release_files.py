@@ -63,3 +63,16 @@ def test_helper_version_matches_the_app() -> None:
 
     script = (ROOT / "deploy" / "updater" / "googich-updater.sh").read_text()
     assert f'HELPER_VERSION="{HELPER_VERSION}"' in script
+
+
+def test_workflows_that_type_check_install_the_e2e_group() -> None:
+    """mypy checks e2e/, which needs Playwright: a type check without it fails the release."""
+    import tomllib
+
+    files = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["mypy"]["files"]
+    assert "e2e" in files
+    for name in ("ci.yml", "release.yml"):
+        workflow = (ROOT / ".github" / "workflows" / name).read_text()
+        assert "uv run mypy" in workflow
+        syncs = re.findall(r"uv sync --locked[^\n]*", workflow)
+        assert any("--group e2e" in sync for sync in syncs), f"{name} type-checks without e2e"

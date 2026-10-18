@@ -189,7 +189,7 @@ def test_update_from_one_published_release_to_the_next(site: Install, visitor: V
 
 def test_the_helper_refuses_what_it_should(site: Install, visitor: Visitor) -> None:
     to = _version("E2E_TO")
-    if not REQUEST.parent.exists():  # on its own: install the release and helper first
+    if not site.installed:  # on its own: install the release and helper first
         site.prepare(released_image(to), _example(to))
         site.up()
         visitor.set_up(site.setup_token())
@@ -215,11 +215,12 @@ def test_the_helper_refuses_what_it_should(site: Install, visitor: Visitor) -> N
 
 def test_every_page_works_on_the_release(site: Install, visitor: Visitor) -> None:
     to = _version("E2E_TO")
-    if (health() or {}).get("version") != to:
+    if not site.installed:
         site.prepare(released_image(to), _example(to))
         site.up()
         visitor.set_up(site.setup_token())
     else:
+        wait_for_version(to)
         visitor.log_in()
     for path in ("/", "/updates", "/updates/changelog", "/help/updates", "/about", "/settings"):
         visitor.open(path)

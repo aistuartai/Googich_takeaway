@@ -48,6 +48,10 @@ class Install:
         self.data = self.folder / "data"
         self.compose = self.folder / "compose.yaml"
 
+    @property
+    def installed(self) -> bool:
+        return self.compose.exists()
+
     def prepare(self, image: str, example: str | None = None) -> None:
         """Step 1 of the example compose file: the data folder and the master key.
 
@@ -74,13 +78,20 @@ class Install:
         self.compose.write_text(text)
 
     def compose_cmd(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603
+        """docker compose in this folder; a failure says what compose said."""
+        done = subprocess.run(  # noqa: S603
             ["docker", "compose", "--project-directory", str(self.folder), *args],  # noqa: S607
-            check=check,
+            check=False,
             capture_output=True,
             text=True,
             timeout=600,
         )
+        if check and done.returncode != 0:
+            raise AssertionError(
+                f"docker compose {' '.join(args)} failed ({done.returncode}):\n"
+                f"{done.stderr.strip() or done.stdout.strip()}"
+            )
+        return done
 
     def up(self) -> None:
         """Step 2, then wait until the app answers (its own health check runs only once a

@@ -46,6 +46,14 @@ apt-get update -q
 apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
 docker compose version
 
+say "Checking $from and $to are published"
+for version in $(printf '%s\n' "$from" "$to" | sort -u); do
+  docker manifest inspect "ghcr.io/aistuartai/googich_takeaway:$version" >/dev/null 2>&1 \
+    || die "no image ghcr.io/aistuartai/googich_takeaway:$version: did its Release run finish?"
+  curl -fsSL -o /dev/null "https://github.com/$REPOSITORY/releases/download/v$version/SHA256SUMS" \
+    || die "release v$version has no helper files: did its Release run finish?"
+done
+
 say "Fetching the tests from v$to"
 rm -rf /root/googich-src
 git clone -q --depth 1 --branch "v$to" "https://github.com/$REPOSITORY.git" /root/googich-src
