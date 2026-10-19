@@ -65,7 +65,7 @@ for one Takeout export.
 
 ```bash
 mkdir googich && cd googich
-curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.6.2/docker/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v0.6.3/docker/compose.yaml
 less compose.yaml                  # read what you are about to run
 
 mkdir -p data secrets && chmod 700 data secrets
