@@ -47,10 +47,21 @@ date and time zone, and adds to Immich only what it does not have yet, on a sche
 - **Careful with secrets.** Credentials encrypted at rest (AES-256-GCM), password login, strict
   browser security, and an unprivileged user on a read-only container.
 
+## Requirements
+
+- **Immich 2.7.5 or later.** Tested with 2.7.5 (the oldest supported) and 3.3.3 (the newest
+  checked). Each day, CI checks the newest Immich release's API against what this app uses;
+  **Test connection** says if your Immich is older than supported, or newer than checked.
+- **Docker Engine with the Compose plugin**, on 64-bit Linux (x86-64 or ARM64).
+- **Room for one Takeout export**, on this machine or an SMB share. Takeout splits exports into
+  parts of 1 to 50 GB.
+- **A Google account with Google Photos**, and either Google Drive (for scheduled exports) or a
+  browser to download the exports yourself.
+
 ## Quick start
 
-You need Docker with Compose, an Immich server, and room for one Takeout export (on this machine
-or an SMB share).
+You need the [requirements](#requirements) above: Docker with Compose, an Immich server, and room
+for one Takeout export.
 
 ```bash
 mkdir googich && cd googich

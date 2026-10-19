@@ -47,7 +47,11 @@ class FakeImmichServer:
     )
     assets: dict[str, Asset] = field(default_factory=dict)
     albums: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
-    """Album id: (name, asset ids)."""
+    """Album id: (name, asset ids), owned by the key's user."""
+    shared_with_me: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
+    """Albums another user shared with the key's user: listed as Immich of this version does."""
+    version: tuple[int, int, int] = (2, 7, 5)
+    """Which Immich this answers like: 3.x lists shared-with-me albums unless asked isOwned."""
     stacks: list[list[str]] = field(default_factory=list)
     tags: dict[str, tuple[str, set[str]]] = field(default_factory=dict)
     """Tag id: (value, asset ids)."""
@@ -83,7 +87,8 @@ class FakeImmichServer:
             return httpx.Response(401, json={"message": "Invalid API key"})
         path = request.url.path
         if path == "/api/server/version":
-            return httpx.Response(200, json={"major": 2, "minor": 7, "patch": 5})
+            major, minor, patch = self.version
+            return httpx.Response(200, json={"major": major, "minor": minor, "patch": patch})
         if path == "/api/api-keys/me":
             return httpx.Response(200, json={"name": "test", "permissions": self.permissions})
         if path == "/api/assets/statistics":
@@ -128,6 +133,10 @@ class FakeImmichServer:
                 return httpx.Response(403, json={"message": f"Missing permission: {permission}"})
             if path == "/api/albums" and method == "GET":
                 listed = [{"id": k, "albumName": v[0]} for k, v in self.albums.items()]
+                # 2.x lists owned albums only; 3.x lists every album unless isOwned=true.
+                owned_only = self.version < (3, 0, 0) or request.url.params.get("isOwned") == "true"
+                if not owned_only:
+                    listed += [{"id": k, "albumName": v[0]} for k, v in self.shared_with_me.items()]
                 return httpx.Response(200, json=listed)
             if path == "/api/albums":
                 album_id = str(uuid.uuid4())

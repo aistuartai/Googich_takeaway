@@ -21,6 +21,39 @@ from googich_takeaway.takeout.archives import Readable
 CHECK_BATCH = 1000
 TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 DEVICE_ID = "googich-takeaway"
+IMMICH_MINIMUM = (2, 7, 5)
+"""The oldest Immich this app supports. Kept until a needed change makes it impossible."""
+IMMICH_TESTED = (3, 3, 3)
+"""The newest Immich this release was checked against (its API, and scripts/immich_api.py)."""
+
+
+def _version_text(version: tuple[int, int, int]) -> str:
+    return ".".join(str(n) for n in version)
+
+
+def support_note(version: str) -> tuple[bool, str]:
+    """Whether this Immich version is supported, and what to tell the user about it, if
+    anything: too old (not supported), or newer than this release was checked against."""
+    try:
+        found = tuple(int(n) for n in version.split(".")[:3])
+    except ValueError:
+        return True, ""
+    if len(found) != 3:
+        return True, ""
+    if found < IMMICH_MINIMUM:
+        return False, (
+            f" Immich {version} is older than {_version_text(IMMICH_MINIMUM)}, the oldest this "
+            "app supports: upgrade Immich first."
+        )
+    if found[:2] > IMMICH_TESTED[:2]:
+        return True, (
+            f" Immich {version} is newer than this release was checked against "
+            f"({_version_text(IMMICH_TESTED)}). It most likely works; if something goes wrong, "
+            "see Troubleshooting, and look for an app update."
+        )
+    return True, ""
+
+
 UPLOAD_CHUNK = 1024 * 1024
 
 
@@ -96,6 +129,7 @@ class ImmichClient:
             timeout=TIMEOUT,
             transport=transport,
         )
+        self._version: tuple[int, int, int] | None = None
 
     def __enter__(self) -> "ImmichClient":
         return self
@@ -105,7 +139,13 @@ class ImmichClient:
 
     def server_version(self) -> str:
         data = self._request("GET", "/server/version")
+        self._version = (int(data["major"]), int(data["minor"]), int(data["patch"]))
         return f"{data['major']}.{data['minor']}.{data['patch']}"
+
+    def _server_major(self) -> int:
+        if self._version is None:
+            self.server_version()
+        return self._version[0] if self._version else 0
 
     def key_permissions(self) -> list[str]:
         """Permissions of the API key in use. Works with any key, whatever its permissions."""
@@ -208,9 +248,13 @@ class ImmichClient:
     # --- organising: albums, stacks, tags, trash -------------------------------------------------
 
     def albums(self) -> dict[str, str]:
-        """The albums the key's user can see: id by name (the first, if names repeat)."""
+        """The albums the key's user owns: id by name (the first, if names repeat).
+
+        Never one shared by someone else: photos added there would show to its other users.
+        Immich 2.x lists owned albums only; 3.x lists every album unless asked ``isOwned``."""
         found: dict[str, str] = {}
-        for album in self._request_any("GET", "/albums") or []:
+        params = {"isOwned": "true"} if self._server_major() >= 3 else None
+        for album in self._request_any("GET", "/albums", params=params) or []:
             if isinstance(album, dict) and isinstance(album.get("albumName"), str):
                 found.setdefault(album["albumName"], str(album["id"]))
         return found

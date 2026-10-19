@@ -1621,3 +1621,20 @@ def test_the_sources_card_counts_what_is_in_a_folder(world: World) -> None:
     assert "2 <span>archives in the folder" in page
     assert "Archives you save into the download folder" in page
     assert "download-folder</code>" not in page  # not the internal name
+
+
+@pytest.mark.parametrize(
+    ("version", "says"),
+    [
+        ((2, 7, 4), "older than 2.7.5, the oldest this app supports"),
+        ((3, 4, 0), "newer than this release was checked against (3.3.3)"),
+        ((3, 3, 3), "The API key is fine."),
+    ],
+)
+def test_test_connection_says_whether_this_immich_is_supported(
+    world: World, version: tuple[int, int, int], says: str
+) -> None:
+    world.immich.version = version
+    world.immich.permissions = ["all"]
+    world.post("/destinations/immich", data={"url": "http://immich.test", "api_key": KEY})
+    assert says in world.htmx("/destinations/immich/test")

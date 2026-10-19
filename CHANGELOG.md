@@ -15,6 +15,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Immich 3:** photos are never added to an album someone else shared with you. Immich 3 lists
+  shared-with-me albums too unless asked for owned ones, so one with the same name as a Google
+  Photos album could receive your photos; the app now asks for owned albums only.
 - **Check Immich now** under Cleanup → Google Drive no longer keeps an export that included
   photos from Google's bin: those are in Immich's trash on purpose, as are photos the app found
   in the trash when importing. A photo deleted in Immich since still keeps the archive.
@@ -34,6 +37,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The manual update command in the README works when `compose.yaml` names a release candidate.
 
 ### Changed
+
+- **Supported Immich versions:** 2.7.5 or later, tested with 2.7.5 and 3.3.3, stated in the
+  README and the guide. **Test connection** says if Immich is older than supported, or newer
+  than checked. A daily CI job checks the newest Immich release's API against everything the
+  app uses (`scripts/immich_api.py`).
 
 - Help → Updates and Help → About say whether upgrading the update helper is **required** (this
   release, or release candidates, need a newer one) or **optional** (a newer one is available

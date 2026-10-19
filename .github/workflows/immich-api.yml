@@ -1,0 +1,28 @@
+name: Immich API
+
+# Daily: does the newest Immich release still offer everything this app uses? Also checks the
+# oldest supported and newest tested versions named in the Immich client. A failure lists what
+# changed, before anyone upgrades Immich into it. Runs only scripts/immich_api.py (no install).
+on:
+  schedule:
+    - cron: "37 18 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/immich_api.py
+      - src/googich_takeaway/destinations/immich.py
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Newest Immich release, and the range this release supports
+        run: python3 scripts/immich_api.py latest minimum tested

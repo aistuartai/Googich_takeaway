@@ -203,3 +203,18 @@ def test_ignoring_failed_files_keeps_the_photos_outside_the_date_range_counted(
     assert ignore_failures(world.state, str(record["export_id"]), NOW) == 1
     [copy] = cleanup.staged_exports(world.tmp / "manual", world.state)
     assert copy.not_imported == 2  # the ignored file, and old.jpg outside the date range
+
+
+@pytest.mark.parametrize("version", [(2, 7, 5), (3, 3, 3)])
+def test_photos_never_go_into_an_album_someone_else_shared(
+    world: World, version: tuple[int, int, int]
+) -> None:
+    """Immich 3 lists albums shared with you unless asked for owned ones: one with the same name
+    as a Google Photos album must not receive this library's photos."""
+    world.immich.version = version
+    world.immich.shared_with_me["theirs"] = ("Trip", set())
+    world.pipeline().run()
+    assert world.immich.shared_with_me["theirs"][1] == set()  # nothing added to theirs
+    [(_, (name, members))] = world.immich.albums.items()
+    assert name == "Trip"  # our own album was made instead
+    assert members

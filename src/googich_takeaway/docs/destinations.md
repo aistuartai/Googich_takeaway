@@ -27,7 +27,10 @@ whose library should receive the photos. Give it these permissions:
 See [What gets imported](what-gets-imported.md) for the choices these serve. A key without one
 still uploads; the run's summary says what was skipped.
 
-**Test connection** shows the Immich version and any missing permission. The key is encrypted
+**Test connection** shows the Immich version and any missing permission. It also says if the
+version is older than 2.7.5, which this app does not support (upgrade Immich first), or newer
+than this release was checked against (it most likely works; look for an app update if
+something does not). The key is encrypted
 before it is stored, and never shown again; leave the field empty to keep the saved key. If
 you change the server (host or port) in the Immich address, enter the key again: a saved key is
 only ever sent to the server it was entered for. The same goes for the SMB password when the server or user

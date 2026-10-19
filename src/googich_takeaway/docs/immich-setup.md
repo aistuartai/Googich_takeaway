@@ -6,6 +6,10 @@ this page and it differ.
 
 ## What you need
 
+- **Immich 2.7.5 or later.** Googich Takeaway is tested with Immich 2.7.5, the oldest it
+  supports, and 3.3.3, the newest checked so far. 2.7.5 stays supported until a change Immich
+  makes means it cannot be. **Test connection** (Configuration → Destinations) says if your
+  Immich is older than supported, or newer than this release was checked against.
 - A 64-bit Linux machine (Ubuntu, Debian and similar) with **Docker Engine** and the
   **Docker Compose plugin** (`docker compose`, not the old `docker-compose`). Install Docker from
   Docker's own repository, not your distribution's packages.

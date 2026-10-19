@@ -11,7 +11,7 @@ from googich_takeaway.config import (
     Config,
     ConfigError,
 )
-from googich_takeaway.destinations.immich import ImmichError
+from googich_takeaway.destinations.immich import ImmichError, support_note
 from googich_takeaway.locations import (
     LocationError,
 )
@@ -126,6 +126,9 @@ def register(app: FastAPI, web: Shared) -> None:
                 granted = set(client.key_permissions())
         except ImmichError as error:
             return result(request, False, str(error))
+        supported, version_note = support_note(version)
+        if not supported:
+            return result(request, False, f"Connected to Immich {version}.{version_note}")
 
         def lacking(wanted: Iterable[str]) -> list[str]:
             return [p for p in wanted if p not in granted and "all" not in granted]
@@ -135,7 +138,8 @@ def register(app: FastAPI, web: Shared) -> None:
             return result(
                 request,
                 False,
-                f"Connected to Immich {version}, but the API key lacks: {', '.join(missing)}.",
+                f"Connected to Immich {version}, but the API key lacks: {', '.join(missing)}."
+                + version_note,
             )
         chosen = config.import_settings().permissions()
         features: dict[str, list[str]] = {}
@@ -147,12 +151,13 @@ def register(app: FastAPI, web: Shared) -> None:
                 request,
                 False,
                 f"Connected to Immich {version}. Uploading works, but what is ticked under "
-                f"Settings → What to import needs more permissions ({listed}).",
+                f"Settings → What to import needs more permissions ({listed})." + version_note,
             )
         note = "".join(
             f" Optional, for {OPTIONAL_PERMISSIONS[p]}: {p}." for p in lacking(OPTIONAL_PERMISSIONS)
         )
-        return result(request, True, f"Connected to Immich {version}. The API key is fine.{note}")
+        fine = f"Connected to Immich {version}. The API key is fine."
+        return result(request, True, fine + note + version_note)
 
     @app.post("/destinations/downloads")
     def save_general(

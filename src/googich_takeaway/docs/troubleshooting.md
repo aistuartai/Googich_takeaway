@@ -113,6 +113,12 @@ Immich failed file after file, so the run stopped before trying the rest. Fix Im
 press **Retry these files**. Ignore is not offered: it would also give up on the files never
 tried.
 
+**Test connection: "Immich … is older than 2.7.5" or "is newer than this release was checked
+against"**
+Older than 2.7.5: upgrade Immich; the app relies on what 2.7.5 added. Newer than checked: it
+most likely works, as CI checks each new Immich release's API every day; if something goes
+wrong, look for an app update and report it on GitHub with the Immich version.
+
 ## The web interface
 
 **"Cross-site request refused"**
