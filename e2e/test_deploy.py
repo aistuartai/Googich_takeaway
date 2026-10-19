@@ -12,7 +12,14 @@ import pytest
 from playwright.sync_api import Browser
 
 from e2e.conftest import Visitor
-from e2e.stack import Install, health, published_version, released_image
+from e2e.stack import (
+    Install,
+    candidate_version,
+    example_of,
+    health,
+    published_version,
+    released_image,
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("E2E_REHEARSAL") == "1", reason="CI's tests of the image just built"
@@ -80,15 +87,17 @@ def test_upgrade_from_the_published_release_keeps_everything(
     install: Install, candidate: str, visitor: Visitor
 ) -> None:
     published = published_version()
-    install.prepare(released_image(published))
+    theirs = example_of(published)  # the compose file users of that release have
+    install.prepare(released_image(published), theirs)
     install.up()
     assert (health() or {}).get("version") == published
     visitor.set_up(install.setup_token())
     visitor.choose_timezone("Pacific/Auckland")
     visitor.snap("before-upgrade")
 
-    install.use(candidate)  # the version line changed, as by hand or by the update helper
+    install.use(candidate, theirs)  # only the version line changed, by hand or by the helper
     install.up()
+    assert (health() or {}).get("version") == candidate_version()  # the new one answers
     visitor.page.context.clear_cookies()
     visitor.log_in()  # the password set on the old version
     assert visitor.timezone() == "Pacific/Auckland"

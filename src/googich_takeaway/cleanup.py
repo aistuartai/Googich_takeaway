@@ -155,13 +155,18 @@ def staged_exports(
 
 
 def partial_downloads(staging: Location | Path | None) -> list[Partial]:
+    """This app's interrupted downloads, which the next run resumes: a ``.part`` file with the
+    app's ``.part.json`` beside it. A browser saving into the folder also writes ``.part``
+    files (Firefox does); those are not the app's to resume or delete."""
     location = _staging(staging)
     if location is None:
         return []
+    files = location.list()
+    names = {f.name for f in files}
     return [
         Partial(f.name.removesuffix(".part"), f.size, f.modified)
-        for f in location.list()
-        if f.name.endswith(".part")
+        for f in files
+        if f.name.endswith(".part") and f.name + ".json" in names
     ]
 
 
@@ -283,8 +288,8 @@ def delete_partial(staging: Location | Path, name: str) -> int:
         raise CleanupError("No download folder is set.")
     try:
         size = location.size(name + ".part")
-        if size is None:
-            raise CleanupError("No such partial download.")
+        if size is None or location.size(name + ".part.json") is None:
+            raise CleanupError("No such partial download.")  # a browser's is not ours to delete
         location.delete(name + ".part")
         location.delete(name + ".part.json")
     except LocationError:

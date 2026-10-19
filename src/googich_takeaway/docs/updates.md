@@ -52,7 +52,7 @@ On the Docker host, in the folder holding `compose.yaml`:
 # The newest release, from where GitHub's "latest release" page points:
 V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
   https://github.com/aistuartai/Googich_takeaway/releases/latest | grep -oE '[0-9.]+$')
-[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
+[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?|\1$V|" compose.yaml \
   && docker compose pull && docker compose up -d
 ```
 
@@ -107,7 +107,7 @@ downloads against the release's published checksums, and installs nothing if one
 match.
 
 **The same command upgrades it.** Help → Updates and Help → About show the installed helper's
-version (5 at present). When a release brings a newer one, Help → Updates says *The update helper
+version (6 at present). When a release brings a newer one, Help → Updates says *The update helper
 can be upgraded*, and the *Update complete* banner links to it (*Upgrade the update helper*);
 run the command again.
 

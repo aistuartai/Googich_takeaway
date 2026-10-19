@@ -155,8 +155,12 @@ def run_import(
     tracker: Tracker | None = None,
     verify_attempts: int = VERIFY_ATTEMPTS,
     parallel: int = PARALLEL_UPLOADS,
+    tried_before: frozenset[str] = frozenset(),
 ) -> ImportResult:
     """Upload, then check what Immich has processed so far.
+
+    ``tried_before``: paths an earlier run tried to upload and recorded as failed. Found in
+    Immich now, they are most likely that upload, its reply lost: checked like an upload.
 
     Immich reads metadata in the background, and after a large import that can take hours, so
     files it has not processed yet stay ``uploaded`` and are checked by ``verify_pending`` on
@@ -165,7 +169,7 @@ def run_import(
     processed the rest yet, and asking about each one would only slow the run down.
     """
     result = ImportResult()
-    _record_known(plan, state, destination, clock)
+    _record_known(plan, state, destination, clock, tried_before)
     _upload(plan, client, state, destination, clock, result, progress, tracker, parallel)
     now = result.uploaded[:VERIFY_NOW_LIMIT]
     _verify(now, client, state, destination, clock, sleep, result, verify_attempts)
@@ -248,7 +252,11 @@ def _mismatch_detail(expected: str, dates: AssetDates) -> str:
 
 
 def _record_known(
-    plan: ImportPlan, state: State, destination: str, clock: Callable[[], datetime]
+    plan: ImportPlan,
+    state: State,
+    destination: str,
+    clock: Callable[[], datetime],
+    tried_before: frozenset[str] = frozenset(),
 ) -> None:
     """Files Immich already has become known, so deleting them later is respected; also those
     in Immich's trash, so they are not imported again once Immich empties its trash.
@@ -266,8 +274,9 @@ def _record_known(
             if planned.item.sha1 in recorded or planned.existing_asset is None:
                 continue
             asset = planned.existing_asset
-            record = _record(destination, plan, planned.item, asset, UploadStatus.ADOPTED, now)
-            state.record_upload(record)
+            ours = planned.item.path in tried_before and planned.decision is Decision.IN_IMMICH
+            status = UploadStatus.UPLOADED if ours else UploadStatus.ADOPTED
+            state.record_upload(_record(destination, plan, planned.item, asset, status, now))
     found_trashed = [("", p.item.sha1) for p in known if p.decision is Decision.IN_IMMICH_TRASH]
     if found_trashed:  # in Immich's trash before this app saw it: not a deletion to report
         state.mark_organised(destination, TRASH_DONE, found_trashed, now)
@@ -332,7 +341,9 @@ def _upload(
         failures_in_a_row[0] = 0
         if tracker:
             tracker.end(Stage.UPLOAD, item.path)
-        status = UploadStatus.ADOPTED if sent.duplicate else UploadStatus.UPLOADED
+        # A duplicate while uploading is this upload sent before (Immich stored it, the reply
+        # was lost, the client tried again): its date is checked like any other upload's.
+        status = UploadStatus.UPLOADED
         state.record_upload(_record(destination, plan, item, sent.asset_id, status, clock()))
         (result.adopted if sent.duplicate else result.uploaded).append(item)
         return True

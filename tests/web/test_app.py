@@ -288,6 +288,22 @@ def test_untrusted_proxy_gets_a_hint_in_the_log(
     assert "GOOGICH_TRUSTED_PROXIES=192.0.2.10" in caplog.text  # the hint names the proxy
 
 
+def test_no_hint_once_the_proxy_is_trusted(
+    tmp_path: Path, clock: Clock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With the proxy trusted, the request's address is the visitor's: never suggest it."""
+    client = proxied(tmp_path, clock, ("192.0.2.10",))
+    token = client.app.state.setup_token  # type: ignore[attr-defined]
+    with caplog.at_level(logging.INFO, logger="googich.web"):
+        client.post(
+            "/setup",
+            data={"token": token, "password": PASSWORD, "confirm": PASSWORD},
+            headers=HTTPS_PROXY,
+        )
+    assert "GOOGICH_TRUSTED_PROXIES" not in caplog.text
+    assert "192.0.2.50" not in caplog.text
+
+
 @pytest.mark.parametrize(
     ("origin", "host", "allowed"),
     [

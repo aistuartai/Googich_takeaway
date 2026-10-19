@@ -247,3 +247,46 @@ def test_a_candidate_request_says_it_is_one(tmp_path: Path) -> None:
     status = updates.helper_status(tmp_path)
     assert status is not None
     assert status.installs_candidates
+
+
+class _Endless(httpx.SyncByteStream):
+    """An answer that never ends: read only up to the limit, then dropped."""
+
+    def __init__(self) -> None:
+        self.sent = 0
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        while True:
+            self.sent += 65536
+            yield b"x" * 65536
+
+
+def test_an_endless_api_answer_is_cut_off(state: State) -> None:
+    endless = _Endless()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "github.com":
+            return httpx.Response(404)  # no redirect: falls back to the API
+        return httpx.Response(200, stream=endless)
+
+    assert updates.check_now(state, lambda: NOW, httpx.MockTransport(handle)) is (
+        updates.CheckResult.FAILED
+    )
+    assert endless.sent <= updates.API_LIMIT + 65536
+    assert updates.last_error(state) == "GitHub sent an answer that could not be read"
+
+
+def test_an_endless_feed_is_cut_off_and_the_latest_release_used(state: State) -> None:
+    updates.set_candidates(state, True, NOW)
+    endless = _Endless()
+    github = FakeGitHub()
+    plain = github.transport()
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/releases.atom"):
+            return httpx.Response(200, stream=endless)
+        return plain.handle_request(request)
+
+    found = updates.check_now(state, lambda: NOW, httpx.MockTransport(handle))
+    assert found is updates.CheckResult.NEWER
+    assert endless.sent <= updates.FEED_LIMIT + 65536

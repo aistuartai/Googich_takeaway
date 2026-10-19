@@ -13,13 +13,13 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 from googich_takeaway import cleanup, downloads
-from googich_takeaway.config import Config, ConfigError
+from googich_takeaway.config import DOWNLOAD_FOLDER_KIND, Config, ConfigError
 from googich_takeaway.destinations.immich import ImmichError
 from googich_takeaway.importer import verify_pending
-from googich_takeaway.locations import Location, LocationError, StoredFile
+from googich_takeaway.locations import LocalLocation, Location, LocationError, StoredFile
 from googich_takeaway.locations import archives as list_archives
 from googich_takeaway.pipeline import LATEST_EXPORT_SETTING, DriveFactory, ImmichFactory
 from googich_takeaway.progress import Stage
@@ -282,8 +282,28 @@ class Summaries:
         return value
 
     def source_summaries(self, config: Config, state: State) -> list[dict[str, object]]:
+        """Each source's archives: those downloaded from Drive, or those in a folder now (a
+        folder's archives are read where they are, never downloaded). ``archives`` is None
+        when the folder cannot be read right now."""
         found: list[dict[str, object]] = []
         for source in config.sources():
+            if source.kind != "gdrive":
+                location: Location | None = (
+                    config.staging_location()
+                    if source.kind == DOWNLOAD_FOLDER_KIND
+                    else LocalLocation(Path(source.location))
+                )
+                listed = self.folder_listing(location) if location is not None else None
+                found.append(
+                    {
+                        "source": source,
+                        "folder": location.describe() if location is not None else None,
+                        "archives": len(listed) if listed is not None else None,
+                        "bytes": sum(a.size for a in listed or []),
+                        "last": max((a.modified for a in listed or [] if a.modified), default=None),
+                    }
+                )
+                continue
             latest: dict[str, tuple[int, datetime]] = {}
             for record in state.downloads(f"{source.kind}:{source.location}"):
                 latest[record.file_id] = (record.size, record.downloaded_at)

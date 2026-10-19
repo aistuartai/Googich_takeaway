@@ -1,5 +1,5 @@
 {%- from "_meters.html" import meter -%}
-<div id="status"{% if status.running %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<div id="status"{% if status.running or status.starting %} hx-get="/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   {#- Inside the polled block: a notice such as "Resuming the paused run" goes as soon as the
       progress below takes over, and stays only when nothing is running. -#}
   {% if notice %}<p class="result ok notice" role="status">{{ notice }}</p>{% endif %}
@@ -9,11 +9,13 @@
   <section class="card run-card{{ ' is-running' if status.running }}{{ ' is-ready' if not status.running and not status.run_paused }}">
     <div class="status-head">
       <div>
-        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running else ('paused' if status.run_paused else ('partial' if failed_exports else 'ready')) }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.run_paused %}Run paused{% elif failed_exports %}{{ 'Run failed' if last_run and last_run.status == 'failed' else 'Completed with errors' }}{% else %}Ready{% endif %}</h2>
+        <h2 class="run-state"><span class="state-dot {{ 'busy' if status.running or status.starting else ('paused' if status.run_paused else ('partial' if failed_exports else 'ready')) }}" aria-hidden="true"></span>{% if status.stopping == 'pause' %}Pausing{% elif status.stopping == 'cancel' %}Cancelling{% elif status.running %}Working{% elif status.starting %}Starting{% elif status.run_paused %}Run paused{% elif failed_exports %}{{ 'Run failed' if last_run and last_run.status == 'failed' else 'Completed with errors' }}{% else %}Ready{% endif %}</h2>
         {% if status.stopping %}
         <p class="status-line">Stopping at the next safe point, between or inside file transfers. Nothing done so far is lost.</p>
         {% elif status.running %}
         <p class="status-line">Started at {{ status.run_started.astimezone(zone).strftime('%H:%M:%S') }}. This page updates by itself.</p>
+        {% elif status.starting %}
+        <p class="status-line">The run starts in a moment. This page updates by itself.</p>
         {% elif status.run_paused %}
         <p class="status-line">Press <strong>Resume</strong> to carry on from where it stopped, or <strong>Discard</strong> to leave it; the next run then skips what is already done.</p>
         {% else %}
@@ -31,7 +33,9 @@
         {% endif %}
       </div>
       <div class="run-controls">
-        {% if status.running %}
+        {% if status.starting %}
+        <div class="stop-controls"></div>
+        {% elif status.running %}
         <div class="stop-controls">
           {% if not status.stopping %}
           <a class="button secondary" href="/runs/stop?kind=pause">Pause</a>

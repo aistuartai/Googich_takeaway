@@ -47,6 +47,20 @@ def published_version() -> str:
     raise AssertionError(f"{LATEST_PAGE} did not point at a release")
 
 
+def example_of(version: str) -> str:
+    """The example compose file as that release shipped it: what its users have."""
+    url = f"https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v{version}/docker/compose.yaml"
+    with urllib.request.urlopen(url, timeout=30) as answer:
+        return str(answer.read().decode())
+
+
+def candidate_version() -> str:
+    """The version the image built from this checkout reports (``1.2.3-rc1`` for a candidate)."""
+    found = re.search(r'^version = "([^"]+)"$', (ROOT / "pyproject.toml").read_text(), re.M)
+    assert found
+    return re.sub(r"^(\d+\.\d+\.\d+)rc(\d+)$", r"\1-rc\2", found[1])
+
+
 def released_image(version: str) -> str:
     return f"ghcr.io/aistuartai/googich_takeaway:{version}"
 

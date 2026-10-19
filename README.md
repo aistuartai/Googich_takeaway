@@ -99,7 +99,7 @@ hand, in the folder holding `compose.yaml`:
 # The newest release, from where GitHub's "latest release" page points:
 V=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
   https://github.com/aistuartai/Googich_takeaway/releases/latest | grep -oE '[0-9.]+$')
-[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+|\1$V|" compose.yaml \
+[ -n "$V" ] && sed -i -E "s|(googich_takeaway:)[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?|\1$V|" compose.yaml \
   && docker compose pull && docker compose up -d
 ```
 

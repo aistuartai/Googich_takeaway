@@ -70,6 +70,17 @@ def test_partial_downloads_listed_and_deleted(world: World) -> None:
         cleanup.delete_partial(staging(world), "../../etc/passwd")
 
 
+def test_a_browsers_download_in_progress_is_not_ours(world: World) -> None:
+    """Firefox saves into the folder as <name>.part too: not listed, and never deleted."""
+    staging(world).mkdir(exist_ok=True)
+    browser = staging(world) / "takeout-20261019T010203Z-001.zip.part"
+    browser.write_bytes(b"x" * 10)
+    assert cleanup.partial_downloads(staging(world)) == []
+    with pytest.raises(cleanup.CleanupError):
+        cleanup.delete_partial(staging(world), "takeout-20261019T010203Z-001.zip")
+    assert browser.exists()
+
+
 def test_drive_exports_ready_with_links_and_recheck(world: World) -> None:
     world.pipeline().run()
     labels = {f"gdrive:{s.location}": s.name for s in world.config.sources()}

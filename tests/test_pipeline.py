@@ -705,3 +705,20 @@ def test_starting_afresh_downloads_again_what_cleanup_removed(world: World) -> N
     fresh = world.pipeline().run()
     assert fresh.downloaded == 2  # fetched from Drive again
     assert fresh.uploaded == 13
+
+
+def test_an_upload_whose_reply_was_lost_is_date_checked_next_run(world: World) -> None:
+    """Immich stored the file but the reply never came: next run finds it in Immich. It is
+    this app's upload, so its date is checked like any other, not just adopted."""
+    from googich_takeaway.state import UploadStatus
+
+    world.configure()
+    world.config.save_parallel_uploads("1")
+    world.immich.fail_uploads = 1  # stored, then "lost response"
+    first = world.pipeline().run()
+    [(_, lost_name, _, _)] = first.failed_files
+    world.pipeline().run()  # Retry
+    lost = next(a for a in world.immich.assets.values() if a.filename.endswith(lost_name))
+    record = world.state.get_upload("immich", lost.sha1)
+    assert record is not None
+    assert record.status is not UploadStatus.ADOPTED  # checked: verified, or waiting to be

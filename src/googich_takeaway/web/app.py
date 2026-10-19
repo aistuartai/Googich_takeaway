@@ -229,9 +229,15 @@ def create_app(
     async def guard(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if not proxy_hint_logged and "x-forwarded-proto" in request.headers:
+        if (
+            not proxy_hint_logged
+            and not settings.trusted_proxies
+            and "x-forwarded-proto" in request.headers
+        ):
+            # Only with no trusted proxies set: once set, the proxy middleware has already put
+            # the visitor's address here, and the hint would name the visitor, not the proxy.
             client = request.client.host if request.client else ""
-            if client not in settings.trusted_proxies:
+            if client:
                 proxy_hint_logged.append(True)
                 log.info(
                     "Requests arrive through a reverse proxy at %s. It works as it is; set "

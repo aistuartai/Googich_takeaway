@@ -31,6 +31,7 @@ exit 0
 """,
     "ssh": """#!/bin/bash
 echo "ssh ${*: -6}" >> "$STUB_LOG"
+[ -n "$STUB_SSH_DOWN" ] && exit 255
 case "$*" in *guest.sh*) exit "$STUB_OUTCOME" ;; esac
 exit 0
 """,
@@ -48,7 +49,12 @@ echo private > "$key"; echo public > "$key.pub"
 
 
 def run(
-    tmp_path: Path, *args: str, outcome: int = 0, conf_mode: int = 0o600, conf: str | None = None
+    tmp_path: Path,
+    *args: str,
+    outcome: int = 0,
+    conf_mode: int = 0o600,
+    conf: str | None = None,
+    ssh_down: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str, Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
@@ -73,6 +79,7 @@ def run(
         "STUB_TAKEN": "500",
         "STUB_INTERFACES": INTERFACES,
         "STUB_OUTCOME": str(outcome),
+        "STUB_SSH_DOWN": "1" if ssh_down else "",
         "GOOGICH_REHEARSAL_CONF": str(settings),
         "GOOGICH_REHEARSAL_OWNER": str(os.getuid()),
         "TMPDIR": str(tmp_path),
@@ -137,3 +144,19 @@ def test_refuses_before_touching_anything(
     assert result.returncode == 1
     assert message in result.stderr
     assert "qm" not in log
+
+
+def test_a_vm_that_never_accepts_ssh_fails_and_is_destroyed(tmp_path: Path) -> None:
+    result, log, _ = run(tmp_path, "--to", "0.6.0", ssh_down=True)
+    assert result.returncode == 1
+    assert "the VM never accepted SSH at 203.0.113.7" in result.stderr
+    assert "guest.sh" not in log
+    assert "qm destroy 501" in log
+
+
+def test_keep_after_an_early_failure_still_says_how_to_remove_it(tmp_path: Path) -> None:
+    result, log, _ = run(tmp_path, "--to", "0.6.0", "--keep", ssh_down=True)
+    assert result.returncode == 1
+    assert "qm destroy" not in log
+    assert "VM 501 kept: ssh -i" in result.stdout
+    assert "qm destroy 501 --purge 1" in result.stdout

@@ -64,6 +64,8 @@ class WorkerStatus:
     """The schedule was paused with Pause schedule, not after failed runs."""
     paused_progress: list[dict[str, object]] = field(default_factory=list)
     """How far a paused run got, stage by stage, for the dashboard."""
+    starting: bool = False
+    """A run was asked for and is about to start (the worker has not picked it up yet)."""
 
 
 class Worker:
@@ -143,9 +145,10 @@ class Worker:
             self._thread.join(timeout)
 
     def request_run(self, options: RunOptions | None = None) -> bool:
-        """Ask for a run now. False if one is already running."""
+        """Ask for a run now. False if one is already running, or already asked for (a second
+        press must not replace the first one's options before it starts)."""
         with self._lock:
-            if self._run_started is not None:
+            if self._run_started is not None or self._manual_requested is not None:
                 return False
             self._manual_requested = options or RunOptions()
         self._wake.set()
@@ -239,6 +242,7 @@ class Worker:
                 run_paused=paused_run is not None and not running,
                 paused_by_user=by_user,
                 paused_progress=paused_run.get("progress", []) if paused_run else [],
+                starting=self._manual_requested is not None and not running,
             )
 
     # --- loop ----------------------------------------------------------------------------------

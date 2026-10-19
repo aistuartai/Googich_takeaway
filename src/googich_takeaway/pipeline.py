@@ -562,6 +562,12 @@ class Pipeline:
         # The dashboard's figures update now, while uploading, not only when it is all done.
         self._remember_export(export_id, scan, plan, ImportResult(), pending=True)
         remember_trash_intent(plan, self.state, self.destination, self.clock)
+        earlier = self.state.get_json(FAILURES_SETTING).get(export_id)
+        tried_before = frozenset(
+            str(f.get("path"))
+            for f in (earlier.get("files", []) if isinstance(earlier, dict) else [])
+            if isinstance(f, dict)
+        )
         result = run_import(
             plan,
             client,
@@ -573,6 +579,7 @@ class Pipeline:
             tracker=self.tracker,
             verify_attempts=1,  # one quick pass; verify_pending catches up on later runs
             parallel=self.config.parallel_uploads(),
+            tried_before=tried_before,
         )
         report.exports_imported += 1
         if not result.aborted:
@@ -808,10 +815,13 @@ def pending_failures(state: State) -> list[dict[str, object]]:
 
 
 def _partials(staging: Location) -> list[FileInfo]:
+    """This app's unfinished downloads (with their ``.part.json``), not a browser's ``.part``."""
     try:
-        return [f for f in staging.list() if f.name.endswith(".part")]
+        files = staging.list()
     except LocationError:
         return []
+    names = {f.name for f in files}
+    return [f for f in files if f.name.endswith(".part") and f.name + ".json" in names]
 
 
 def _identity(archive: StoredFile) -> str:

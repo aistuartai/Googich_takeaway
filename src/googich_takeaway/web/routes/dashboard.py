@@ -108,7 +108,7 @@ def register(app: FastAPI, web: Shared) -> None:
     def status_card(request: Request, config: ConfigDep, state: StateDep) -> Response:
         """Polled by the dashboard while a run is going; reloads the page when it ends."""
         current = worker.status()
-        if not current.running:
+        if not current.running and not current.starting:
             # Back to the plain dashboard: a "Pausing…" or "Started" notice in the address
             # would otherwise come back with the reload.
             return Response(status_code=200, headers={"HX-Redirect": "/"})
@@ -183,8 +183,10 @@ def register(app: FastAPI, web: Shared) -> None:
 
     @app.post("/runs/resume")
     def resume_run() -> Response:
-        resumed = worker.resume_paused()
-        return RedirectResponse(f"/?notice={'resumed' if resumed else 'busy'}", status_code=303)
+        if worker.resume_paused():
+            return RedirectResponse("/?notice=resumed", status_code=303)
+        why = "busy" if worker.run_pending_or_going() else "nothing-paused"
+        return RedirectResponse(f"/?notice={why}", status_code=303)
 
     @app.get("/runs/failures/ignore", response_class=HTMLResponse)
     def confirm_ignore_failures(
@@ -203,7 +205,8 @@ def register(app: FastAPI, web: Shared) -> None:
             ignored = ignore_failures(state, export, clock())
         except StoppedEarly:
             return RedirectResponse("/?notice=stopped-early", status_code=303)
-        return RedirectResponse(f"/?notice={'ignored' if ignored else 'idle'}", status_code=303)
+        notice = "ignored" if ignored else "already-handled"
+        return RedirectResponse(f"/?notice={notice}", status_code=303)
 
     @app.post("/runs/discard")
     def discard_run() -> Response:

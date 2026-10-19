@@ -14,6 +14,10 @@ SCRIPT = Path(__file__).parent.parent / "deploy" / "updater" / "googich-updater.
 
 DOCKER = """#!/bin/bash
 echo "docker $*" >> "$STUB_LOG"
+if [ "$1 $2" = "compose pull" ] && [ -n "$STUB_SECOND" ] && [ ! -f "$STUB_SECOND.sent" ]; then
+  touch "$STUB_SECOND.sent"  # the app asks again while this update is going
+  printf '%s' "$(cat "$STUB_SECOND")" > "$GOOGICH_COMPOSE_DIR/data/updater/request.json"
+fi
 if [ "$1 $2" = "compose pull" ] && [ -n "$STUB_HANG" ]; then
   touch "$STUB_HANG"; exec /bin/sleep 30  # a slow download, stopped part way by the test
 fi
@@ -218,6 +222,19 @@ def _session(sid: int) -> list[int]:
             if int(fields[3]) == sid:  # fields after the name: state, ppid, pgrp, session
                 found.append(int(stat.parent.name))
     return found
+
+
+def test_a_request_made_during_an_update_is_handled_after_it(tmp_path: Path) -> None:
+    second = tmp_path / "second"
+    second.write_text('{"version": "0.2.0-rc1", "candidates": true}')
+    status, _, running = run(
+        tmp_path, '{"version": "0.1.2"}', extra_env={"STUB_SECOND": str(second)}
+    )
+    assert status["state"] == "done", status
+    assert status["message"] == "Updated from 0.1.2 to 0.2.0-rc1."  # the second, after the first
+    assert running.strip() == "0.2.0-rc1"
+    pulls = (tmp_path / "log").read_text().count("compose pull")
+    assert pulls == 2
 
 
 def test_rolls_back_when_the_new_version_is_unhealthy(tmp_path: Path) -> None:

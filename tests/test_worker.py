@@ -492,3 +492,15 @@ def test_pause_while_reading_ahead_then_resume(
     _, options = world.worker._due_trigger() or (None, None)
     assert world.worker.run_once(Trigger.MANUAL, options).outcome is Outcome.SUCCESS
     assert len(world.immich.assets) == 13
+
+
+def test_a_run_asked_for_shows_as_starting_and_keeps_its_options(world: World) -> None:
+    """Before the loop picks it up: the dashboard polls, and a second press changes nothing."""
+    from googich_takeaway.pipeline import RunOptions
+
+    assert world.worker.request_run(RunOptions(reimport=True))
+    status = world.worker.status()
+    assert status.starting
+    assert not status.running
+    assert not world.worker.request_run(RunOptions())  # does not replace the first one's
+    assert world.worker._manual_requested == RunOptions(reimport=True)

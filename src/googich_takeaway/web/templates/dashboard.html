@@ -43,8 +43,14 @@
     {% for card in source_cards %}
     <div class="summary-item">
       <p class="summary-name">{{ card.source.name }}</p>
-      <p class="muted">{% if card.source.kind == 'gdrive' %}Google Drive{% if card.folder_name %}, folder “{{ card.folder_name }}”{% endif %}{% else %}Local folder <code>{{ card.source.location }}</code>{% endif %}</p>
+      {% if card.source.kind == 'gdrive' %}
+      <p class="muted">Google Drive{% if card.folder_name %}, folder “{{ card.folder_name }}”{% endif %}</p>
       <p class="summary-figure">{{ '{:,}'.format(card.archives) }} <span>{{ 'archive' if card.archives == 1 else 'archives' }} downloaded{% if card.bytes %}, {{ card.bytes|size }}{% endif %}</span></p>
+      {% else %}
+      <p class="muted">{% if card.source.kind == 'download-folder' %}Archives you save into the download folder{% else %}Folder{% endif %}{% if card.folder %} <code>{{ card.folder }}</code>{% endif %}</p>
+      {% if card.archives is none %}<p class="error">Cannot read the folder right now.</p>
+      {% else %}<p class="summary-figure">{{ '{:,}'.format(card.archives) }} <span>{{ 'archive' if card.archives == 1 else 'archives' }} in the folder{% if card.bytes %}, {{ card.bytes|size }}{% endif %}</span></p>{% endif %}
+      {% endif %}
       {% if card.last %}<p class="muted">Latest on {{ card.last.astimezone(zone).strftime('%d %b %Y') }}</p>{% endif %}
     </div>
     {% endfor %}

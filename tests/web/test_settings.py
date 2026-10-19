@@ -763,6 +763,7 @@ def test_cleanup_asks_before_deleting(world: World) -> None:
     name = "takeout-20261001T010203Z-001.zip"
     (world.tmp / "s" / name).write_bytes(b"z" * 2_500_000)
     (world.tmp / "s" / "takeout-20261001T010203Z-002.zip.part").write_bytes(b"p" * 1000)
+    (world.tmp / "s" / "takeout-20261001T010203Z-002.zip.part.json").write_text("{}")
     with State(world.tmp / "state.db") as state:
         key = cleanup.export_key("20261001T010203Z", [(name, 2_500_000)])
         state.mark_export_complete(key, "20261001T010203Z", "{}", datetime.now(UTC))
@@ -1565,3 +1566,31 @@ def test_an_export_held_back_says_so_on_the_dashboard_with_when(world: World) ->
     assert "Ready to import after <strong>Mon 19 Oct at 01:31</strong>" in page  # UTC here
     assert "-002.zip on Google Drive is not downloaded yet." in page
     assert "The next run tries again" in page
+
+
+def test_resume_and_ignore_say_what_happened(world: World) -> None:
+    _ready(world)
+    assert world.post("/runs/resume").headers["location"] == "/?notice=nothing-paused"
+    assert "No run is paused" in world.client.get("/?notice=nothing-paused").text
+    ignored = world.post("/runs/failures/ignore", data={"export": "20261001T010203Z"})
+    assert ignored.headers["location"] == "/?notice=already-handled"
+    assert "already dealt with" in world.client.get("/?notice=already-handled").text
+
+
+def test_the_sources_card_counts_what_is_in_a_folder(world: World) -> None:
+    _ready(world)
+    folder = world.tmp / "saved-elsewhere"
+    folder.mkdir()
+    for n in (1, 2):
+        (folder / f"takeout-20261001T010203Z-00{n}.zip").write_bytes(b"x" * 1000)
+    with State(world.tmp / "state.db") as state:
+        config = Config(state, SecretBox(b"k" * 32), lambda: datetime.now(UTC))
+        config.add_local_source("Saved elsewhere", str(folder))
+        if not any(s.kind == "download-folder" for s in config.sources()):
+            config.add_download_folder_source("Saved by hand")
+    world.post("/dashboard/items", data={"items": ["sources"]})
+    page = world.client.get("/").text
+    assert f"Folder <code>{folder}</code>" in page
+    assert "2 <span>archives in the folder" in page
+    assert "Archives you save into the download folder" in page
+    assert "download-folder</code>" not in page  # not the internal name

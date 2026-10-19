@@ -20,6 +20,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in the trash when importing. A photo deleted in Immich since still keeps the archive.
 - After **Ignore them**, Cleanup's count of files not imported includes the photos outside the
   date range again, and the message when a delete is refused lists that reason too.
+- Right after **Run now**, the dashboard shows the run as starting and updates by itself, and a
+  second press no longer replaces the first one's options.
+- Resume with nothing paused, and Ignore for files already dealt with, now say so.
+- A browser's download in progress (`.part`) in the download folder is no longer listed under
+  Cleanup as the app's own, offered for deletion, or taken for an unfinished part.
+- The dashboard's Sources card counts what is in a folder source, and names the download folder
+  rather than an internal name.
+- A file whose upload reply was lost, found in Immich on the next run, has its date checked
+  like any other upload before Cleanup offers its export.
+- Update helper version 6: an update requested while another is going is handled after it,
+  instead of being missed.
+- The reverse-proxy hint in the log no longer names a visitor's address once
+  `GOOGICH_TRUSTED_PROXIES` is set; answers from GitHub are size-checked as they arrive.
+- The manual update command in the README works when `compose.yaml` names a release candidate.
 
 ### Changed
 

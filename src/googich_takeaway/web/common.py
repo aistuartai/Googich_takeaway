@@ -40,6 +40,8 @@ NOTICES = {
     "cancelling": "Cancelling at the next safe point.",
     "idle": "No run is going.",
     "resumed": "Resuming the paused run.",
+    "nothing-paused": "No run is paused: it was resumed or set aside already.",
+    "already-handled": "Those failed files were already dealt with: retried, or ignored.",
     "discarded": "The paused run was set aside. The next run starts afresh, skipping what is done.",
     "ignored": "Failed files ignored: that export now counts as done, and Cleanup can offer it.",
     "stopped-early": "That import stopped before trying every file, so it cannot be ignored. "

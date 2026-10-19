@@ -38,6 +38,24 @@ _FEED_TAG = re.compile(
     rf'href="https://github\.com/{re.escape(REPOSITORY)}/releases/tag/(v[^"/?#]+)"'
 )
 FEED_LIMIT = 1_000_000
+API_LIMIT = 512_000
+"""The latest release as JSON: a few kilobytes, its notes included."""
+
+
+class TooLarge(ValueError):
+    """An answer larger than any GitHub sends for this: not read further."""
+
+
+def _read_limited(response: httpx.Response, limit: int) -> bytes:
+    """A streamed answer's body, stopping as soon as it passes ``limit`` bytes."""
+    body = bytearray()
+    for chunk in response.iter_bytes():
+        body += chunk
+        if len(body) > limit:
+            raise TooLarge(f"more than {limit} bytes")
+    return bytes(body)
+
+
 CHECK_EVERY = timedelta(hours=24)
 MANUAL_GAP = timedelta(minutes=1)
 _VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-?rc(\d+))?$")
@@ -223,13 +241,15 @@ def _fetch(
             found = _TAG_PAGE.match(page.headers.get("location", "")) if page.is_redirect else None
             if found and parse_version(found[1]):
                 return _save(state, now, found[1].lstrip("v"), found[0])
-            response = client.get(
+            with client.stream(
+                "GET",
                 LATEST_URL,
                 headers={
                     "Accept": "application/vnd.github+json",
                     "User-Agent": f"googich-takeaway/{__version__}",
                 },
-            )
+            ) as response:
+                body = _read_limited(response, API_LIMIT) if response.status_code == 200 else b""
         if response.status_code == 404:
             _failed(state, now, "no release published yet")
             return None
@@ -238,7 +258,7 @@ def _fetch(
                     "checks an hour from each network is used up")  # fmt: skip
             return None
         response.raise_for_status()
-        data = response.json()
+        data = json.loads(body)
     except httpx.HTTPStatusError as error:
         _failed(state, now, f"GitHub answered HTTP {error.response.status_code}")
         return None
@@ -264,13 +284,13 @@ def _fetch(
 def _newest_in_feed(client: httpx.Client) -> str | None:
     """The newest release or release candidate the releases feed lists; None if it cannot say."""
     try:
-        response = client.get(
-            RELEASES_FEED, headers={"User-Agent": f"googich-takeaway/{__version__}"}
-        )
-        if response.status_code != 200 or len(response.content) > FEED_LIMIT:
-            return None
-        text = response.text
-    except httpx.HTTPError:
+        with client.stream(
+            "GET", RELEASES_FEED, headers={"User-Agent": f"googich-takeaway/{__version__}"}
+        ) as response:
+            if response.status_code != 200:
+                return None
+            text = _read_limited(response, FEED_LIMIT).decode("utf-8", "replace")
+    except (httpx.HTTPError, TooLarge):
         return None
     versions = [tag for tag in _FEED_TAG.findall(text) if parse_version(tag)]
     if not versions:
@@ -318,7 +338,7 @@ def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
 # banner with the manual command.
 
 
-HELPER_VERSION = 5
+HELPER_VERSION = 6
 """The update helper this release ships (``HELPER_VERSION`` in googich-updater.sh)."""
 CANDIDATE_HELPER = 4
 """The first helper version that installs release candidates."""

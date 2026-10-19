@@ -27,7 +27,7 @@ IMAGE="${GOOGICH_IMAGE:-ghcr.io/aistuartai/googich_takeaway}"
 REPOSITORY="${GOOGICH_REPOSITORY:-aistuartai/Googich_takeaway}"
 SERVICE="${GOOGICH_SERVICE:-googich}"
 HEALTH_URL="${GOOGICH_HEALTH_URL:-http://127.0.0.1:8080/healthz}"
-HELPER_VERSION="5"
+HELPER_VERSION="6"
 OWNER_UID="${GOOGICH_UPDATER_OWNER:-0}"   # tests run as an ordinary user
 RUNTIME="${GOOGICH_RUNTIME_DIR:-${RUNTIME_DIRECTORY:-/run/googich-updater}}"
 
@@ -82,114 +82,132 @@ if [ ! -f "$REQUEST" ]; then
   grep -qs "\"helper\": \"$HELPER_VERSION\"" "$STATUS" || status idle "Ready for updates."
   exit 0
 fi
-# The request belongs to the container: read at most 256 bytes, and never through a link.
-body=$(dd if="$REQUEST" iflag=nofollow,nonblock bs=256 count=1 status=none 2>/dev/null \
-  | tr -d '\000' || true)
-version=$(printf '%s' "$body" | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
-  | head -1 | sed -E 's/.*"([^"]*)"$/\1/' || true)
-candidates=no
-printf '%s' "$body" | grep -qE '"candidates"[[:space:]]*:[[:space:]]*true' && candidates=yes
-rm -f "$REQUEST"
-if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-rc[0-9]{1,3})?$ ]]; then
-  status failed "Refused: the requested version was not a plain version number."
-  exit 1
-fi
-base="${version%%-rc*}"
-if [ "$base" != "$version" ] && [ "$candidates" != yes ]; then
-  status failed "Refused: $version is a release candidate, and release candidates are not switched on." "$version"
-  exit 1
-fi
-
-status updating "Checking that $version is a published release." "$version"
-# GitHub's releases pages, not its API: the API allows 60 anonymous requests an hour per network
-# address, shared by everything on the network, and refused updates when others had used them.
-# A version counts as published when GitHub's newest release is at least that version (the
-# newest is never a draft or pre-release), and the release has its helper files attached
-# (drafts' files cannot be downloaded). A release candidate is a pre-release, so it is never the
-# newest: it counts when its files are attached and its final release is not out yet.
-ask() {  # url format -> prints the answer; retried, since GitHub or the network may stumble
-  local out="" attempt
-  for attempt in 1 2 3; do
-    out=$(curl -sS --max-time 20 -o /dev/null -w "$2" "$1" 2>/dev/null || true)
-    case "$out" in 000|5??|429|"") ;; *) printf '%s' "$out"; return ;; esac
-    [ "$attempt" -lt 3 ] && sleep 20
-  done
-  printf '%s' "$out"
-}
-newest_url=$(ask "https://github.com/$REPOSITORY/releases/latest" '%{redirect_url}')
-newest=""
-if [[ "$newest_url" =~ ^https://github\.com/$REPOSITORY/releases/tag/v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})$ ]]; then
-  newest="${BASH_REMATCH[1]}"
-fi
-if [ -z "$newest" ]; then
-  status failed "Could not ask GitHub to confirm $version (offline, or a GitHub problem). Nothing was changed; try again later." "$version"
-  exit 1
-fi
-if [ "$base" != "$version" ]; then
-  if [ "$(printf '%s\n%s\n' "$base" "$newest" | sort -V | tail -1)" != "$base" ] \
-     || [ "$base" = "$newest" ]; then
-    status failed "Refused: $base is already released, so $version is out of date." "$version"
+handle_request() {  # one request; runs in a subshell, so its exits end only this request
+  # The request belongs to the container: read at most 256 bytes, and never through a link.
+  body=$(dd if="$REQUEST" iflag=nofollow,nonblock bs=256 count=1 status=none 2>/dev/null \
+    | tr -d '\000' || true)
+  version=$(printf '%s' "$body" | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]{0,20}"' \
+    | head -1 | sed -E 's/.*"([^"]*)"$/\1/' || true)
+  candidates=no
+  printf '%s' "$body" | grep -qE '"candidates"[[:space:]]*:[[:space:]]*true' && candidates=yes
+  rm -f "$REQUEST"
+  if ! [[ "$version" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-rc[0-9]{1,3})?$ ]]; then
+    status failed "Refused: the requested version was not a plain version number."
     exit 1
   fi
-elif [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -1)" != "$newest" ]; then
-  status failed "Refused: $version is newer than the newest published release ($newest)." "$version"
-  exit 1
-fi
-code=$(ask "https://github.com/$REPOSITORY/releases/download/v$version/SHA256SUMS" '%{http_code}')
-case "$code" in
-  302|200) ;;
-  404) status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
-       exit 1 ;;
-  *) status failed "Could not ask GitHub to confirm $version (HTTP $code). Nothing was changed; try again later." "$version"
-     exit 1 ;;
-esac
-
-current=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$COMPOSE" | head -1 \
-  | sed -E "s|.*$IMAGE:||" | tr -cd 'A-Za-z0-9._-' || true)
-if [ -z "$current" ]; then
-  status failed "Refused: no image line for $IMAGE found in $COMPOSE." "$version"
-  exit 1
-fi
-
-order() {  # version -> a key sort -V orders as releases go: 1.2.3-rc1 < 1.2.3-rc2 < 1.2.3
-  case "$1" in
-    *-rc*) printf '%s.%s\n' "${1%%-rc*}" "${1##*-rc}" ;;
-    *) printf '%s.99999\n' "$1" ;;
-  esac
-}
-if [[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] && [ "${GOOGICH_ALLOW_DOWNGRADE:-}" != 1 ] \
-   && [ "$version" != "$current" ] \
-   && [ "$(printf '%s\n%s\n' "$(order "$version")" "$(order "$current")" | sort -V | tail -1)" = "$(order "$current")" ]; then
-  status failed "Refused: $version is older than $current, which is running. Going back needs GOOGICH_ALLOW_DOWNGRADE=1 on the host." "$version"
-  exit 1
-fi
-
-cp -p "$COMPOSE" "$COMPOSE.before-$version"
-sed -i -E "s|^([[:space:]]*image:[[:space:]]*\"?)$IMAGE:[^\"[:space:]]+|\\1$IMAGE:$version|" "$COMPOSE"
-
-rollback() {
-  trap - TERM INT HUP
-  cp -p "$COMPOSE.before-$version" "$COMPOSE"
-  (cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || true
-  status failed "$1 Rolled back to $current." "$version"
-  exit 1
-}
-# Stopped part way (systemd's time limit, a shutdown): put the old version back, never leave
-# compose.yaml naming a release that is not running.
-trap 'rollback "The update was stopped part way."' TERM INT HUP
-
-# Each step has its own time limit, inside the service's, so the rollback has time to run.
-status updating "Downloading $version." "$version"
-(cd "$COMPOSE_DIR" && timeout 6m docker compose pull "$SERVICE") >/dev/null 2>&1 || rollback "Could not download $version."
-status updating "Restarting with $version." "$version"
-(cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || rollback "Could not start $version."
-
-for _ in $(seq 1 60); do
-  if curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null | grep -q "\"version\":\"$version\""; then
-    trap - TERM INT HUP
-    status done "Updated from $current to $version." "$version"
-    exit 0
+  base="${version%%-rc*}"
+  if [ "$base" != "$version" ] && [ "$candidates" != yes ]; then
+    status failed "Refused: $version is a release candidate, and release candidates are not switched on." "$version"
+    exit 1
   fi
-  sleep 2
+
+  status updating "Checking that $version is a published release." "$version"
+  # GitHub's releases pages, not its API: the API allows 60 anonymous requests an hour per network
+  # address, shared by everything on the network, and refused updates when others had used them.
+  # A version counts as published when GitHub's newest release is at least that version (the
+  # newest is never a draft or pre-release), and the release has its helper files attached
+  # (drafts' files cannot be downloaded). A release candidate is a pre-release, so it is never the
+  # newest: it counts when its files are attached and its final release is not out yet.
+  ask() {  # url format -> prints the answer; retried, since GitHub or the network may stumble
+    local out="" attempt
+    for attempt in 1 2 3; do
+      out=$(curl -sS --max-time 20 -o /dev/null -w "$2" "$1" 2>/dev/null || true)
+      case "$out" in 000|5??|429|"") ;; *) printf '%s' "$out"; return ;; esac
+      [ "$attempt" -lt 3 ] && sleep 20
+    done
+    printf '%s' "$out"
+  }
+  newest_url=$(ask "https://github.com/$REPOSITORY/releases/latest" '%{redirect_url}')
+  newest=""
+  if [[ "$newest_url" =~ ^https://github\.com/$REPOSITORY/releases/tag/v([0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4})$ ]]; then
+    newest="${BASH_REMATCH[1]}"
+  fi
+  if [ -z "$newest" ]; then
+    status failed "Could not ask GitHub to confirm $version (offline, or a GitHub problem). Nothing was changed; try again later." "$version"
+    exit 1
+  fi
+  if [ "$base" != "$version" ]; then
+    if [ "$(printf '%s\n%s\n' "$base" "$newest" | sort -V | tail -1)" != "$base" ] \
+       || [ "$base" = "$newest" ]; then
+      status failed "Refused: $base is already released, so $version is out of date." "$version"
+      exit 1
+    fi
+  elif [ "$(printf '%s\n%s\n' "$version" "$newest" | sort -V | tail -1)" != "$newest" ]; then
+    status failed "Refused: $version is newer than the newest published release ($newest)." "$version"
+    exit 1
+  fi
+  code=$(ask "https://github.com/$REPOSITORY/releases/download/v$version/SHA256SUMS" '%{http_code}')
+  case "$code" in
+    302|200) ;;
+    404) status failed "Refused: $version is not a published release of $REPOSITORY." "$version"
+         exit 1 ;;
+    *) status failed "Could not ask GitHub to confirm $version (HTTP $code). Nothing was changed; try again later." "$version"
+       exit 1 ;;
+  esac
+
+  current=$(grep -E "^[[:space:]]*image:[[:space:]]*\"?$IMAGE:" "$COMPOSE" | head -1 \
+    | sed -E "s|.*$IMAGE:||" | tr -cd 'A-Za-z0-9._-' || true)
+  if [ -z "$current" ]; then
+    status failed "Refused: no image line for $IMAGE found in $COMPOSE." "$version"
+    exit 1
+  fi
+
+  order() {  # version -> a key sort -V orders as releases go: 1.2.3-rc1 < 1.2.3-rc2 < 1.2.3
+    case "$1" in
+      *-rc*) printf '%s.%s\n' "${1%%-rc*}" "${1##*-rc}" ;;
+      *) printf '%s.99999\n' "$1" ;;
+    esac
+  }
+  if [[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] && [ "${GOOGICH_ALLOW_DOWNGRADE:-}" != 1 ] \
+     && [ "$version" != "$current" ] \
+     && [ "$(printf '%s\n%s\n' "$(order "$version")" "$(order "$current")" | sort -V | tail -1)" = "$(order "$current")" ]; then
+    status failed "Refused: $version is older than $current, which is running. Going back needs GOOGICH_ALLOW_DOWNGRADE=1 on the host." "$version"
+    exit 1
+  fi
+
+  cp -p "$COMPOSE" "$COMPOSE.before-$version"
+  sed -i -E "s|^([[:space:]]*image:[[:space:]]*\"?)$IMAGE:[^\"[:space:]]+|\\1$IMAGE:$version|" "$COMPOSE"
+
+  rollback() {
+    trap - TERM INT HUP
+    cp -p "$COMPOSE.before-$version" "$COMPOSE"
+    (cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || true
+    status failed "$1 Rolled back to $current." "$version"
+    exit 1
+  }
+  # Stopped part way (systemd's time limit, a shutdown): put the old version back, never leave
+  # compose.yaml naming a release that is not running.
+  trap 'rollback "The update was stopped part way."' TERM INT HUP
+
+  # Each step has its own time limit, inside the service's, so the rollback has time to run.
+  status updating "Downloading $version." "$version"
+  (cd "$COMPOSE_DIR" && timeout 6m docker compose pull "$SERVICE") >/dev/null 2>&1 || rollback "Could not download $version."
+  status updating "Restarting with $version." "$version"
+  (cd "$COMPOSE_DIR" && timeout 3m docker compose up -d "$SERVICE") >/dev/null 2>&1 || rollback "Could not start $version."
+
+  for _ in $(seq 1 60); do
+    if curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null | grep -q "\"version\":\"$version\""; then
+      trap - TERM INT HUP
+      status done "Updated from $current to $version." "$version"
+      exit 0
+    fi
+    sleep 2
+  done
+  rollback "$version did not become healthy within two minutes."
+}
+
+# A request written while one was being handled changes request.json without starting the
+# service again (it is still running): look for one before stopping, a few times at most.
+code=0
+stopped=no
+# Stopped (systemd's time limit, a shutdown): let the handler running now put the old version
+# back (it has its own trap), then stop; never pick up another request.
+trap 'stopped=yes' TERM INT HUP
+for _ in 1 2 3 4 5; do
+  [ -f "$REQUEST" ] && [ "$stopped" = no ] || break
+  set +e
+  ( set -e; handle_request )   # errexit back on inside: the handler relies on it
+  code=$?
+  set -e
 done
-rollback "$version did not become healthy within two minutes."
+exit "$code"

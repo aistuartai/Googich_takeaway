@@ -15,14 +15,13 @@ import os
 import re
 import subprocess
 import time
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from e2e.conftest import Visitor
-from e2e.stack import Install, health, released_image, wait_for_version
+from e2e.stack import Install, example_of, health, released_image, wait_for_version
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("E2E_REHEARSAL") != "1", reason="only inside a rehearsal machine"
@@ -44,11 +43,7 @@ def _version(name: str) -> str:
     return value
 
 
-def _example(version: str) -> str:
-    """The example compose file as that release shipped it."""
-    url = f"https://raw.githubusercontent.com/aistuartai/Googich_takeaway/v{version}/docker/compose.yaml"
-    with urllib.request.urlopen(url, timeout=30) as answer:
-        return str(answer.read().decode())
+_example = example_of
 
 
 def _running(seconds: float = 180) -> str:

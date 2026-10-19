@@ -63,8 +63,13 @@ work=$(mktemp -d)
 snippet="googich-rehearsal-$vmid.yaml"
 created=no
 
+address=""
 finish() {
   local code=$?
+  if [ "$created" = yes ] && [ "$keep" = yes ]; then  # also when it stopped part way
+    say "VM $vmid kept${address:+: ssh -i $work/key rehearsal@$address}"
+    say "When done: qm stop $vmid && qm destroy $vmid --purge 1; rm -f $SNIPPETS_DIR/$snippet; rm -rf $work"
+  fi
   if [ "$created" = yes ] && [ "$keep" = no ]; then
     say "Destroying VM $vmid"
     qm stop "$vmid" --skiplock 1 >/dev/null 2>&1 || true
@@ -127,6 +132,7 @@ for _ in $(seq 1 30); do
   ssh "${ssh_opts[@]}" "rehearsal@$address" true 2>/dev/null && break
   sleep 5
 done
+ssh "${ssh_opts[@]}" "rehearsal@$address" true 2>/dev/null || die "the VM never accepted SSH at $address"
 
 say "Rehearsing $from to $to in VM $vmid"
 scp -q "${ssh_opts[@]}" "$HERE/guest.sh" "rehearsal@$address:guest.sh"
@@ -145,9 +151,5 @@ if [ "$outcome" = 0 ]; then
   say "PASSED: $from to $to. Result and screenshots in $out"
 else
   say "FAILED: $from to $to. See $out (junit.xml, screenshots, logs)"
-fi
-if [ "$keep" = yes ]; then
-  say "VM $vmid kept: ssh -i $work/key rehearsal@$address"
-  say "When done: qm stop $vmid && qm destroy $vmid --purge 1; rm -f $SNIPPETS_DIR/$snippet; rm -rf $work"
 fi
 exit "$outcome"
