@@ -16,6 +16,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+TRASH_PENDING = "trash-pending"
+"""``organised`` kind: photos from Google's bin, to go to Immich's trash once uploaded (recorded
+before uploading, so a run that stops before that step leaves the intent for the next one)."""
+TRASH_DONE = "trash"
+"""``organised`` kind: photos in Immich's trash because this app put them there, or found them
+there when importing. Never moved again, and not a deletion when Cleanup checks Immich."""
+
 SCHEMA_VERSION = 10
 SESSION_SEEN_EVERY = timedelta(minutes=1)
 

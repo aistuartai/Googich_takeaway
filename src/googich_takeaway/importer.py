@@ -34,7 +34,7 @@ from googich_takeaway.destinations.immich import (
 )
 from googich_takeaway.destinations.xmp import build_xmp
 from googich_takeaway.progress import ItemState, Stage, Tracker, format_size
-from googich_takeaway.state import State, UploadRecord, UploadStatus
+from googich_takeaway.state import TRASH_DONE, State, UploadRecord, UploadStatus
 from googich_takeaway.takeout.archives import ArchiveSource, Readable, iter_entries
 from googich_takeaway.takeout.scan import ExportScan, ScannedItem
 
@@ -268,6 +268,9 @@ def _record_known(
             asset = planned.existing_asset
             record = _record(destination, plan, planned.item, asset, UploadStatus.ADOPTED, now)
             state.record_upload(record)
+    found_trashed = [("", p.item.sha1) for p in known if p.decision is Decision.IN_IMMICH_TRASH]
+    if found_trashed:  # in Immich's trash before this app saw it: not a deletion to report
+        state.mark_organised(destination, TRASH_DONE, found_trashed, now)
 
 
 def _upload(

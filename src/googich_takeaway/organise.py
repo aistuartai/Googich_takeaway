@@ -19,7 +19,7 @@ from googich_takeaway.config import ImportSettings
 from googich_takeaway.destinations.immich import ImmichClient, ImmichError, ImmichNotFoundError
 from googich_takeaway.importer import Decision, ImportPlan, ImportResult
 from googich_takeaway.progress import Stage, Tracker
-from googich_takeaway.state import State
+from googich_takeaway.state import TRASH_DONE, TRASH_PENDING, State
 from googich_takeaway.takeout.scan import ScannedItem
 from googich_takeaway.takeout.stacks import BURST, EDITED, RAW, stack_groups
 
@@ -136,12 +136,6 @@ def organise(
             partial(_trash, to_trash, assets, client, state, destination, clock, done),
         )
     return done
-
-
-TRASH_PENDING = "trash-pending"
-"""Photos from Google's bin, to go to Immich's trash once uploaded (recorded before uploading,
-so a run that stops before this step still leaves the intent for the next one)."""
-TRASH_DONE = "trash"
 
 
 def remember_trash_intent(

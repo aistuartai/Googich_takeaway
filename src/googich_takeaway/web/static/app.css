@@ -686,6 +686,9 @@ pre.command code { background: none; padding: 0; color: var(--ink); white-space:
 /* After a run with failed files: what failed, and Retry or Ignore. */
 .failed-box { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1.25rem 0 .5rem; }
 .failed-box h3 { margin-top: 0; }
+.waiting-box { border-left: 3px solid var(--sky); padding: .2rem 0 .2rem 1rem; margin: 1.25rem 0 .5rem; }
+.waiting-box h3 { margin-top: 0; }
+.waiting-box p { margin: .25rem 0; }
 .failed-files { margin: .5rem 0; padding-left: 1.2rem; }
 .failed-files li { margin: .25rem 0; overflow-wrap: anywhere; }
 .ignored-files { margin-top: .35rem; }

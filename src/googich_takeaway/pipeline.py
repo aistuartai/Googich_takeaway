@@ -57,6 +57,8 @@ FAILED_SHARE = 0.05
 """A run fails when more than this share of the files it tried could not be uploaded; below it,
 it completes with errors."""
 FAILURES_SETTING = "run.failures"
+WAITING_SETTING = "run.waiting"
+"""Exports the last run held back, why, and from when each can import: for the dashboard."""
 """Files that failed, by export, for the dashboard's Retry and Ignore."""
 COPY_SETTLE_TIME = timedelta(minutes=30)
 """An archive saved by hand (not from Drive) is left alone until it has not changed for this
@@ -404,6 +406,15 @@ class Pipeline:
                 or not self.state.is_export_complete(_export_key(export_id, parts))
             ]
             self.tracker.plan(Stage.SCAN, pending)
+        held: dict[str, dict[str, object]] = {}
+
+        def hold(export_id: str, parts: list[StoredFile], why: str, ready: datetime | None) -> None:
+            held[export_id] = {
+                "why": why,
+                "parts": len(parts),
+                "ready_at": ready.isoformat() if ready else None,
+            }
+
         with self.immich_factory(immich.url, key) as client:
             for export_id, parts in exports.items():
                 if export_id in blocked:
@@ -415,16 +426,27 @@ class Pipeline:
                 if export_id in newest and self.clock() - newest[export_id] < SETTLE_TIME:
                     report.waiting.append(export_id)
                     self._skip(export_id, "Takeout is still writing it")
+                    hold(
+                        export_id,
+                        parts,
+                        "Takeout may still be adding parts to it",
+                        newest[export_id] + SETTLE_TIME,
+                    )
                     continue
                 waiting_for = self._missing_from_drive(export_id, parts, on_drive, downloading)
                 if waiting_for:
                     report.incomplete.append((export_id, waiting_for))
                     self._skip(export_id, waiting_for)
+                    hold(export_id, parts, waiting_for, None)
                     continue
-                unfinished = None if export_id in newest else self._unfinished(parts)
+                if export_id in newest:
+                    unfinished, settled = None, None
+                else:
+                    unfinished, settled = self._unfinished(parts)
                 if unfinished:
                     report.incomplete.append((export_id, unfinished))
                     self._skip(export_id, unfinished)
+                    hold(export_id, parts, unfinished, settled)
                     continue
                 export_key = _export_key(export_id, parts)
                 completed = self.state.export_completed_at(export_key)
@@ -446,6 +468,7 @@ class Pipeline:
                         f"Export {export_id} not imported: {type(error).__name__}: {error}"[:300]
                     )
                     self._skip(export_id, "could not be read")
+            self.state.set_json(WAITING_SETTING, held or None, self.clock())
             # Immich processes large imports in the background; catch up on earlier uploads.
             checked = verify_pending(self.state, client, self.destination, self.clock)
             report.verified_later += checked.verified
@@ -471,25 +494,28 @@ class Pipeline:
         named = ", ".join(missing[:3]) + more
         return f"{named} on Google Drive {'is' if len(missing) == 1 else 'are'} not downloaded yet"
 
-    def _unfinished(self, parts: list[StoredFile]) -> str | None:
+    def _unfinished(self, parts: list[StoredFile]) -> tuple[str | None, datetime | None]:
         """Why an export saved by hand looks unfinished, if it does: a part missing between
-        the others, or a part changed in the last half hour (still downloading or copying)."""
+        the others, or a part changed in the last half hour (still downloading or copying),
+        and then from when it can import."""
         numbers = sorted(n for p in parts if (n := part_number(p.name)) is not None)
         if numbers:
             missing = sorted(set(range(1, numbers[-1] + 1)) - set(numbers))
             if missing:
                 listed = ", ".join(f"{n:03d}" for n in missing[:5])
-                return (
-                    f"part {listed} is missing"
-                    if len(missing) == 1
-                    else f"parts {listed} are missing"
-                )
+                if len(missing) == 1:
+                    return f"part {listed} is missing", None
+                return f"parts {listed} are missing", None
         now = self.clock()
         # Within half an hour either way: a server whose clock runs ahead (an SMB share) shows
         # times in the future, which must not hold an export back for good.
-        if any(p.modified and abs(now - p.modified) < COPY_SETTLE_TIME for p in parts):
-            return "a part was saved less than 30 minutes ago; waiting in case more are coming"
-        return None
+        recent = [
+            p.modified for p in parts if p.modified and abs(now - p.modified) < COPY_SETTLE_TIME
+        ]
+        if recent:
+            why = "a part was saved less than 30 minutes ago; waiting in case more are coming"
+            return why, max(recent) + COPY_SETTLE_TIME
+        return None, None
 
     def _import(
         self,
@@ -621,6 +647,7 @@ class Pipeline:
                 "uploaded": len(result.uploaded),
                 "no_date": len(plan.with_decision(Decision.NO_DATE)),
                 "unsupported": len(plan.with_decision(Decision.UNSUPPORTED)),
+                "out_of_range": len(plan.with_decision(Decision.OUT_OF_RANGE)),
                 "files": [
                     {
                         "path": item.path,
@@ -742,6 +769,7 @@ def ignore_failures(state: State, export_id: str, at: datetime) -> int:
         "verified": 0,
         "no_date": record.get("no_date", 0),
         "unsupported": record.get("unsupported", 0),
+        "out_of_range": record.get("out_of_range", 0),
         "ignored": [{"name": f.get("name"), "reason": f.get("reason")} for f in files],
         "parts": record.get("parts", []),
     }
@@ -750,6 +778,26 @@ def ignore_failures(state: State, export_id: str, at: datetime) -> int:
     state.set_json(FAILURES_SETTING, stored or None, at)
     log.warning("Export %s marked complete; %d failed files ignored", export_id, len(files))
     return len(files)
+
+
+def held_back(state: State) -> list[dict[str, object]]:
+    """Exports the last run held back, newest first, with why and from when each can import
+    (``ready_at``, None when it waits for something to arrive). One imported since is left out."""
+    stored = state.get_json(WAITING_SETTING)
+    found = []
+    for export_id, record in stored.items():
+        if not isinstance(record, dict) or state.export_id_completed(export_id):
+            continue
+        ready = record.get("ready_at")
+        found.append(
+            {
+                "export_id": export_id,
+                "why": str(record.get("why", "")),
+                "parts": int(record.get("parts", 0) or 0),
+                "ready_at": datetime.fromisoformat(ready) if isinstance(ready, str) else None,
+            }
+        )
+    return sorted(found, key=lambda r: str(r["export_id"]), reverse=True)
 
 
 def pending_failures(state: State) -> list[dict[str, object]]:

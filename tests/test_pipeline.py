@@ -232,6 +232,12 @@ def test_export_still_being_written_waits(world: World) -> None:
     assert report.waiting == ["20261001T010203Z"]
     assert not world.immich.assets
     assert "still being written" in report.message().body
+    from googich_takeaway.pipeline import held_back
+
+    [held] = held_back(world.state)  # for the dashboard: which, why, and from when
+    assert held["export_id"] == "20261001T010203Z"
+    assert held["parts"] == 2
+    assert held["ready_at"] == datetime(2026, 10, 1, 0, 30, tzinfo=UTC)  # newest part + 1 hour
 
     later = Pipeline(
         world.config,
@@ -242,6 +248,7 @@ def test_export_still_being_written_waits(world: World) -> None:
         drive_factory=lambda folder, info: GoogleDriveSource(FOLDER, info, world.drive.transport()),
     )
     assert later.run().uploaded == 13
+    assert held_back(world.state) == []  # imported: no longer waiting
 
 
 def test_download_folder_that_is_also_a_local_source_is_not_listed_twice(world: World) -> None:

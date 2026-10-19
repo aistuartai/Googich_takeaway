@@ -1535,3 +1535,33 @@ def test_a_paused_schedule_can_be_resumed_with_the_schedule_card_off(world: Worl
     assert ">Resume schedule</button>" in schedule
     world.post("/schedule/resume")
     assert "Paused by you" not in world.client.get("/").text
+
+
+def test_an_export_held_back_says_so_on_the_dashboard_with_when(world: World) -> None:
+    from googich_takeaway.pipeline import WAITING_SETTING
+
+    _ready(world)
+    ready = datetime(2026, 10, 19, 1, 31, tzinfo=UTC)
+    with State(world.tmp / "state.db") as state:
+        state.set_json(
+            WAITING_SETTING,
+            {
+                "20261018T235243Z": {
+                    "why": "Takeout may still be adding parts to it",
+                    "parts": 4,
+                    "ready_at": ready.isoformat(),
+                },
+                "20261001T010203Z": {
+                    "why": "takeout-20261001T010203Z-002.zip on Google Drive is not downloaded yet",
+                    "parts": 1,
+                    "ready_at": None,
+                },
+            },
+            datetime.now(UTC),
+        )
+    page = world.client.get("/").text
+    assert "Waiting: export 18 Oct 2026 (4 archives)" in page
+    assert "Not imported yet: Takeout may still be adding parts to it." in page
+    assert "Ready to import after <strong>Mon 19 Oct at 01:31</strong>" in page  # UTC here
+    assert "-002.zip on Google Drive is not downloaded yet." in page
+    assert "The next run tries again" in page

@@ -78,6 +78,19 @@
     </div>
     {% if imports and not status.running and not status.run_paused %}{% include "_imports.html" %}{% endif %}
 
+    {% if held_exports and not status.running and not status.run_paused %}
+    {% for record in held_exports %}
+    <div class="waiting-box" role="status">
+      <h3>Waiting: export {{ record.export_id[:8]|export_date }}{% if record.parts %} ({{ record.parts }} {{ 'archive' if record.parts == 1 else 'archives' }}){% endif %}</h3>
+      <p>Not imported yet: {{ record.why }}.</p>
+      {% if record.ready_at %}
+      <p class="muted">Ready to import after <strong>{{ record.ready_at.astimezone(zone).strftime('%a %d %b at %H:%M') }}</strong>{% if status.next_run and not status.paused %}; the next run ({{ status.next_run.astimezone(zone).strftime('%a %H:%M') }}) imports it{% endif %}, or press <strong>Run now</strong> then.</p>
+      {% else %}
+      <p class="muted">The next run tries again{% if status.next_run and not status.paused %} ({{ status.next_run.astimezone(zone).strftime('%a %H:%M') }}){% endif %}; or press <strong>Run now</strong> once it is all there.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
     {% if failed_exports and not status.running and not status.run_paused %}
     {% for record in failed_exports %}
     <div class="failed-box">

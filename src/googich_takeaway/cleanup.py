@@ -27,7 +27,7 @@ from googich_takeaway.locations import (
     StoredFile,
     archives,
 )
-from googich_takeaway.state import State, UploadStatus
+from googich_takeaway.state import TRASH_DONE, State, UploadStatus
 from googich_takeaway.takeout.archives import group_exports
 from googich_takeaway.takeout.scan_cache import known_keys
 
@@ -210,6 +210,9 @@ class Recheck:
     checked: int
     missing: int
     trashed: int
+    """In Immich's trash though this app did not put them there: deleted in Immich since."""
+    binned: int = 0
+    """In Immich's trash as chosen: from Google Photos' bin, or found in the trash already."""
 
     @property
     def ok(self) -> bool:
@@ -217,12 +220,19 @@ class Recheck:
 
 
 def recheck(state: State, client: ImmichClient, destination: str, export_id: str) -> Recheck:
-    """Ask Immich now whether every file uploaded from this export is still there."""
+    """Ask Immich now whether every file uploaded from this export is still there.
+
+    A file in Immich's trash counts as missing, unless it is there because this app put it
+    there (it was in Google Photos' bin) or found it there when importing."""
     hashes = state.uploaded_hashes_for_export(destination, export_id)
     results = client.check_existing((h, h) for h in hashes)
+    expected = {sha1 for _, sha1 in state.organised(destination, TRASH_DONE, results)}
     missing = sum(1 for r in results.values() if r.action is CheckAction.ACCEPT)
-    trashed = sum(1 for r in results.values() if r.is_trashed)
-    return Recheck(checked=len(hashes), missing=missing, trashed=trashed)
+    in_trash = [sha1 for sha1, r in results.items() if r.is_trashed]
+    binned = sum(1 for sha1 in in_trash if sha1 in expected)
+    return Recheck(
+        checked=len(hashes), missing=missing, trashed=len(in_trash) - binned, binned=binned
+    )
 
 
 class CleanupError(Exception):
@@ -252,9 +262,9 @@ def delete_staged_export(
         raise CleanupError(f"Not yet: {copy.reason} Nothing deleted.")
     if copy.needs_confirmation and not confirmed_not_imported:
         raise CleanupError(
-            f"{copy.not_imported} files from this export were not imported (no date, refused by "
-            "Immich, or failed and ignored). Tick the box to confirm you want to delete the "
-            "archives anyway."
+            f"{copy.not_imported} files from this export were not imported (no date, rejected by "
+            "Immich, outside the date range, or failed and ignored). Tick the box to confirm you "
+            "want to delete the archives anyway."
         )
     freed = 0
     for part in copy.parts:

@@ -244,8 +244,15 @@ def register(app: FastAPI, web: Shared) -> None:
         if found.checked == 0:
             return result(request, False, "No uploads are recorded for this export.")
         if found.ok:
+            binned = (
+                f" ({found.binned} of them in Immich's trash from Google's bin, as chosen)"
+                if found.binned
+                else ""
+            )
             return result(
-                request, True, f"All {found.checked} files are in Immich now. Safe to remove."
+                request,
+                True,
+                f"All {found.checked} files are in Immich now{binned}. Safe to remove.",
             )
         problems = []
         if found.missing:

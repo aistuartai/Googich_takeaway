@@ -10,7 +10,13 @@ from googich_takeaway.config import (
     DASHBOARD_ITEMS,
     ConfigError,
 )
-from googich_takeaway.pipeline import RunOptions, StoppedEarly, ignore_failures, pending_failures
+from googich_takeaway.pipeline import (
+    RunOptions,
+    StoppedEarly,
+    held_back,
+    ignore_failures,
+    pending_failures,
+)
 from googich_takeaway.web import demo
 from googich_takeaway.web.common import (
     _zone,
@@ -59,6 +65,7 @@ def register(app: FastAPI, web: Shared) -> None:
             runs=state.recent_runs(15) if "runs" in items else [],
             last_run=next(iter(state.recent_runs(1)), None),
             failed_exports=pending_failures(state),
+            held_exports=held_back(state),
             imports=config.import_settings(),
             notice=dashboard_notice(request.query_params.get("notice", "")),
             reminders=reminders.takeout_reminders(config, state, clock()),

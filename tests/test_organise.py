@@ -166,3 +166,40 @@ def test_a_photo_from_googles_bin_is_trashed_even_if_its_run_stopped_first(
     binned.trashed = False  # restored in Immich by the user
     replace(world.pipeline(), options=RunOptions(include_trashed=True, reimport=True)).run()
     assert not binned.trashed  # not moved again
+
+
+def test_photos_put_in_immichs_trash_on_purpose_do_not_block_cleanup(world: World) -> None:
+    """Check Immich now: a photo moved from Google's bin to Immich's trash is where it should
+    be; one the user deleted in Immich since still keeps the archive."""
+    from googich_takeaway import cleanup
+    from googich_takeaway.destinations.immich import ImmichClient
+    from tests.fake_immich import KEY
+
+    replace(world.pipeline(), options=RunOptions(include_trashed=True)).run()
+    binned = next(a for a in world.immich.assets.values() if a.filename == "binned.jpg")
+    assert binned.trashed
+    [copy] = cleanup.staged_exports(world.tmp / "manual", world.state)
+    with ImmichClient("http://immich.test", KEY, world.immich.transport()) as client:
+        found = cleanup.recheck(world.state, client, "immich", copy.export_id)
+        assert found.ok, found
+        assert found.binned == 1
+        other = next(a for a in world.immich.assets.values() if a.filename == "IMG_1.jpg")
+        other.trashed = True  # deleted in Immich by the user since
+        found = cleanup.recheck(world.state, client, "immich", copy.export_id)
+    assert not found.ok
+    assert found.trashed == 1
+
+
+def test_ignoring_failed_files_keeps_the_photos_outside_the_date_range_counted(
+    world: World,
+) -> None:
+    from googich_takeaway import cleanup
+    from googich_takeaway.pipeline import ignore_failures, pending_failures
+
+    world.config.save_import_settings(replace(ImportSettings(), taken_from=date(2010, 1, 1)))
+    world.immich.refuse_names = frozenset({"IMG_1.jpg"})
+    world.pipeline().run()
+    [record] = pending_failures(world.state)
+    assert ignore_failures(world.state, str(record["export_id"]), NOW) == 1
+    [copy] = cleanup.staged_exports(world.tmp / "manual", world.state)
+    assert copy.not_imported == 2  # the ignored file, and old.jpg outside the date range
