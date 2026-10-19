@@ -12,7 +12,8 @@
 - **Google access** is read-only, limited to the folder you share with the service account.
 - **Immich access** is only what the API key allows. Give it the permissions listed under
   [Immich and the download folder](destinations.md#immich) and no more; the app never needs an
-  admin key.
+  admin key. `asset.delete` lets the app move photos to Immich's trash: grant it only if you
+  include photos from Google's bin.
 - **Logs** pass through a filter that removes keys, tokens and passwords before anything is
   written.
 - **The web interface** refuses requests from other sites, sends a strict Content Security Policy,
@@ -45,7 +46,9 @@ believed. In `compose.yaml`:
 ## Backups
 
 Back up the **`data` folder**: it holds the database (what was downloaded and uploaded, your
-settings and encrypted credentials) and the logs.
+settings and encrypted credentials) and the logs. If the download folder is `/data/staging`
+with no disk of its own mounted there, `data/staging` holds the downloaded archives too: leave
+it out of backups, as they are copies.
 
 > [!IMPORTANT]
 > Keep **`secrets/master.key`** somewhere separate and safe. Without it the stored credentials
@@ -65,10 +68,12 @@ container stopped (123 and `/opt/googich` are examples):
 ```bash
 CT=123
 install -d -m 700 /srv/googich-secrets
-pct pull $CT /opt/googich/secrets/master.key /srv/googich-secrets/master.key
+pct mount $CT   # the stopped container's files, under /var/lib/lxc/$CT/rootfs
+cp /var/lib/lxc/$CT/rootfs/opt/googich/secrets/master.key /srv/googich-secrets/master.key
+rm /var/lib/lxc/$CT/rootfs/opt/googich/secrets/master.key
+pct unmount $CT
 # The container's uid 10001 is uid 110001 on the host in an unprivileged container.
 chown -R 110001:110001 /srv/googich-secrets && chmod 600 /srv/googich-secrets/master.key
-pct exec $CT -- rm /opt/googich/secrets/master.key
 pct set $CT -mp0 /srv/googich-secrets,mp=/opt/googich/secrets
 pct start $CT
 ```

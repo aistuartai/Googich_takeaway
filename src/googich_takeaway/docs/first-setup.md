@@ -9,8 +9,8 @@ No Immich yet? Start with [What is Immich?](what-is-immich.md) and
 
 Open **Configuration → Destinations**.
 
-1. Enter the address this app uses to reach Immich, for example `http://immich:2283` or
-   `http://192.168.1.20:2283`.
+1. Enter the address this app uses to reach Immich, for example `http://192.168.1.20:2283`, or
+   `http://immich-server:2283` if both containers share a Docker network.
 2. In Immich, open *Account Settings → API Keys*, create a key with the `asset.upload` and
    `asset.read` permissions, plus those for albums and stacks (listed under
    [Immich and the download folder](destinations.md#immich)), and paste it in.
@@ -36,9 +36,9 @@ the same choice.
 
 1. Set up a scheduled Google Takeout export to Google Drive:
    [Setting up Google Takeout](takeout.md).
-2. Create a service account and its key, add the Drive folder under **Configuration → Sources**,
-   then share the folder with the address the Sources page shows. Press **Test**. Step by step:
-   [Connecting Google Drive](google-drive.md).
+2. Create a service account and its key, share the Drive folder with the service account's
+   address (as Viewer), add the folder under **Configuration → Sources**, and press **Test**.
+   Step by step: [Connecting Google Drive](google-drive.md).
 
 **Downloading the exports yourself.** No Google Cloud: Takeout emails you a link, and you save
 the archives into the download folder (or a folder of your own). See
@@ -48,9 +48,12 @@ the archives into the download folder (or a folder of your own). See
 
 All under the **Configuration** menu:
 
-- **Settings → Time zone:** used for photos that carry no time zone of their own.
-- **Schedule:** when to run. **Follow my Takeout schedule** checks on each day an export is
-  expected; **Weekly** is a simple alternative.
+- **Settings → Time zone:** used for photos that carry no time zone of their own. It is UTC
+  until you choose one; the container's `TZ` setting does not change it.
+- **Schedule:** when to run. It is **Off** until you choose one: only **Run now** runs.
+  **Follow my Takeout schedule** checks on each day an export is expected: first fill in
+  **Google Takeout schedule** at the top of the page (the day you set it up, and how often).
+  **Weekly** is a simple alternative.
 - **Settings → What to import:** albums, stacks, tags, and which photos to leave out (see
   [What gets imported](what-gets-imported.md)). The defaults suit most libraries.
 - **Settings → Speed:** how many files go to Immich at once (three unless you change it), and

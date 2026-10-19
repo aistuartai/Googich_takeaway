@@ -20,8 +20,10 @@ beside it. Googich Takeaway fetches those exports, works out the right date for 
 adds anything Immich does not have yet. The result is a complete, private copy of your Google
 Photos library in Immich, kept up to date on a schedule.
 
-Googich Takeaway only adds to Immich. It never deletes or changes anything there, and never
-changes anything in your Google account.
+Googich Takeaway adds photos to Immich, and arranges them into albums, stacks, tags and the
+Archive as you choose. It never removes anything from your library, with one exception you
+choose yourself: photos from Google Photos' bin can go into Immich's trash, where you can
+restore them. It never changes anything in your Google account.
 
 ## Things to know
 

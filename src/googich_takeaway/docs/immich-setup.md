@@ -52,8 +52,10 @@ docker compose up -d
 
 1. In Immich, sign in as the user who should own the photos, open *Account Settings → API Keys*,
    and create a key with the `asset.upload` and `asset.read` permissions, plus `album.read`,
-   `album.create`, `albumAsset.create` and `stack.create` for albums and stacks (see
-   [Immich and the download folder](destinations.md#immich) for the full list). Copy it: Immich
+   `album.create`, `albumAsset.create` and `stack.create` for albums and stacks. Optional:
+   `tag.create` and `tag.asset` for tags, `asset.delete` for photos from Google's bin, and
+   `asset.statistics` for the dashboard's count (see
+   [Immich and the download folder](destinations.md#immich)). Copy it: Immich
    shows it only once.
 2. In Googich Takeaway, open **Configuration → Destinations** and enter:
    - **Immich address:** how this app reaches Immich, for example `http://192.168.1.20:2283`.

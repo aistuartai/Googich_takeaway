@@ -29,7 +29,8 @@ date and time zone, and adds to Immich only what it does not have yet, on a sche
   of an export, and sends the date, time zone and location with each upload, then reads it back
   to check.
 - **Never twice.** Archives are not downloaded again, photos already in Immich are skipped, and
-  photos you delete in Immich stay deleted. Move to another Immich library and it starts afresh.
+  photos you delete in Immich stay deleted, even after its trash is emptied, unless you choose
+  **Re-import**. Move to another Immich library and it starts afresh.
 - **Quick and resumable.** Each archive is read while the next one downloads, and several photos
   upload at once. Pause, resume or cancel at any time, even across an update.
 - **Clear at a glance.** Live progress with time estimates, history, logs, and a built-in guide
@@ -79,8 +80,8 @@ The same guide is built into the app under **Help → Guide**, with search.
 
 | Getting started | Running it | Reference |
 |---|---|---|
-| [How it works](src/googich_takeaway/docs/how-it-works.md) | [What gets imported](src/googich_takeaway/docs/what-gets-imported.md) and [schedule](src/googich_takeaway/docs/schedule.md) | [Dates and time zones](src/googich_takeaway/docs/dates.md) |
-| [Setting up Immich](src/googich_takeaway/docs/immich-setup.md) | [Cleanup](src/googich_takeaway/docs/cleanup.md) | [Security and backups](src/googich_takeaway/docs/security.md) |
+| [What is Immich?](src/googich_takeaway/docs/what-is-immich.md) and [how it works](src/googich_takeaway/docs/how-it-works.md) | [What gets imported](src/googich_takeaway/docs/what-gets-imported.md) and [schedule](src/googich_takeaway/docs/schedule.md) | [Dates and time zones](src/googich_takeaway/docs/dates.md) |
+| [Setting up Immich](src/googich_takeaway/docs/immich-setup.md) and [connecting it](src/googich_takeaway/docs/destinations.md) | [Cleanup](src/googich_takeaway/docs/cleanup.md) | [Security and backups](src/googich_takeaway/docs/security.md) |
 | [First-time setup](src/googich_takeaway/docs/first-setup.md) | [Updates and one-click updates](src/googich_takeaway/docs/updates.md) | [Command-line tools](src/googich_takeaway/docs/command-line.md) |
 | [Google Takeout](src/googich_takeaway/docs/takeout.md) and [Google Drive](src/googich_takeaway/docs/google-drive.md) | [Backing up an Android phone](src/googich_takeaway/docs/android-backup.md) | [Troubleshooting](src/googich_takeaway/docs/troubleshooting.md) |
 | [Downloading exports yourself](src/googich_takeaway/docs/manual-downloads.md) | [Reverse proxy and HTTPS](src/googich_takeaway/docs/security.md#reaching-it-from-outside-your-network) | [All topics](src/googich_takeaway/docs/README.md) |
@@ -90,7 +91,9 @@ The same guide is built into the app under **Help → Guide**, with search.
 The app tells you when a new release is out, and never updates itself. With the optional
 [update helper](src/googich_takeaway/docs/updates.md#installing-the-update-helper) (one command
 to install on the Docker host), **Update now** installs it in one click, pausing a running run
-first. Or by hand, in the folder holding `compose.yaml`:
+first. Help → Updates shows **What's new** before you install, and the full **Change log**;
+you can also opt in to release candidates there, to test the next release early. Or update by
+hand, in the folder holding `compose.yaml`:
 
 ```bash
 # The newest release, from where GitHub's "latest release" page points:

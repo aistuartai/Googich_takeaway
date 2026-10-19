@@ -48,7 +48,10 @@ A run starts on the schedule you choose, or when you press **Run now**.
 2. **Wait for the export to be complete.** An export whose newest archive in Drive is less than an
    hour old is left for the next run, because Takeout may still be writing it. Archives you save
    yourself wait until no part is missing and none changed for half an hour (see
-   [Downloading exports yourself](manual-downloads.md#4-let-the-app-import-it)).
+   [Downloading exports yourself](manual-downloads.md#4-let-the-app-import-it)). An export
+   from Google Drive also waits while any part Drive listed is not downloaded yet, even if
+   Drive cannot be reached this time, and is not imported if a part failed to download. The
+   dashboard's run box shows each export held back, why, and from when it can import.
 3. **Read.** The archives of each export are read without unpacking them to disk. Every photo and
    video is paired with Takeout's metadata file, and its capture date is worked out (see
    [Dates and time zones](dates.md)). What is found is saved as it goes, so a paused or
@@ -100,12 +103,13 @@ way. An update pressed during a run pauses the run first and resumes it afterwar
 
 ### When files fail
 
-A run that cannot send a few files ends **Completed with errors**. The run box then lists them,
-with the reason, and offers:
+A run that cannot send a few files ends **Completed with errors** (or **Run failed**, if too many
+failed). Either way the run box lists them, with the reason, and offers:
 
 - **Retry these files:** a run that tries just those again; everything else is done, so it goes
   straight to them. Where Immich refused a file (for example "Unsupported file type"), the list
-  says *Retrying won't help: Immich refused it.*
+  says *Retrying won't help: Immich refused it.* If Immich refused every one, only **Ignore
+  them** is offered.
 - **Ignore them:** after asking, counts the export as done, so Cleanup can offer its archives. It
   asks again before deleting, as these files are not in Immich. The files stay listed under
   the export on the Cleanup page, and **Re-import files missing from Immich** can bring them in
@@ -119,7 +123,8 @@ Until you choose, the export counts as unfinished, and every run tries those fil
 - **Export:** one Takeout export, made of one or more archives that share an ID such as
   `20261001T010203Z` (the date and time Takeout started it).
 - **Imported completely:** every file of the export is in Immich, or was deliberately left out
-  (no date, a type Immich does not accept, or failed files you chose to ignore).
+  (no date, a type Immich does not accept, in Google Photos' bin, outside the date range,
+  partner photos you chose to leave out, or failed files you chose to ignore).
 - **Verified:** Immich shows the date the app sent.
 - **Safe to remove:** imported completely and verified, so the archives are no longer needed (see
   [Cleanup](cleanup.md)).
@@ -128,6 +133,7 @@ Until you choose, the export counts as unfinished, and every run tries those fil
 
 The app keeps a small database in its `data` folder: which archives were downloaded, which files
 were uploaded, which albums, stacks and tags it made, and your settings. That is why archives are
-not downloaded twice, and why photos you delete in Immich, or take out of an album there, are not
-brought back by the next export. **Re-import files missing from Immich**
-(under **Options**, beside Run now) brings them back on purpose.
+not downloaded twice, and why photos you delete in Immich (including ones still in Immich's
+trash, so also after it is emptied), or take out of an album there, are not brought back by the
+next export. **Re-import files missing from Immich** (under **Options**, beside Run now) brings
+back on purpose the ones gone from Immich; restore trashed ones in Immich itself.

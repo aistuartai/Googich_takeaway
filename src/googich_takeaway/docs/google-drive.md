@@ -41,13 +41,20 @@ service account's address (it ends in `iam.gserviceaccount.com`).
 2. Add the service account's address as **Viewer**, and untick *Notify people*.
 3. Keep *General access* set to **Restricted**.
 
-Back in the app, press **Test** on the source. It shows the folder's name and how many archives it
-can see. The folder's name is also shown on the Sources page from then on.
+Back in the app, press **Test** on the source. It shows the folder's name, how many archives it
+can see, and their total size. The folder's name is also shown on the Sources page from then on.
 
 ## Replacing the key
 
 To rotate the key, create a new one on the service account's Keys tab, upload it with **Replace
 key** on the Sources page, then delete the old key in the Google Cloud console.
+
+## Removing the source
+
+**Remove** on the Sources page asks first. Removing a Drive source stops runs fetching from that
+folder and deletes its key from this app; nothing in Google Drive changes. The archives it
+already downloaded stay listed under Cleanup → Google Drive, as from a removed source, until you
+remove them from Drive. To add the folder again later, you need the key file again.
 
 ## Several Google accounts
 

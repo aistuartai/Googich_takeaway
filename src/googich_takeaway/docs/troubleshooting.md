@@ -52,10 +52,22 @@ Give the account change (write) permission on the share and the folder.
 
 ## Runs
 
-**An export is "waiting: Takeout is still writing it"**
-Its newest archive in Google Drive is less than an hour old. The next run imports it. For
+**"Export … is still being written by Takeout; next run."**
+Its newest archive in Google Drive is less than an hour old. The dashboard's run box shows it
+as *Waiting*, with the time it is ready to import. The next run imports it, or press **Run
+now** after that time. For
 archives you save yourself, see
 [Downloading exports yourself](manual-downloads.md#4-let-the-app-import-it).
+
+**"Export … is not imported yet: …" or "a part failed to download"**
+An export is held back until every part is here, so no photo gets a fallback date from a
+missing part. The reason says which: a part *on Google Drive is not downloaded yet* (even when
+Drive could not be reached this run), *a part has not finished downloading*, *part 002 is
+missing*, or *a part was saved less than 30 minutes ago*. The next run carries on.
+
+**"Cannot read the download folder right now" or "Cannot read …"**
+The folder or share is not mounted, or its permissions changed. Check it is there and readable
+by the app's user (uid 10001 in the container). Other sources still import.
 
 **"files have no date and need review"**
 These had no date anywhere (see [Dates and time zones](dates.md)). They were not uploaded and stay
@@ -70,7 +82,7 @@ archives.
 **The schedule paused**
 Several scheduled runs failed in a row (see
 [Schedule and notifications](schedule.md#when-runs-fail)). Read the latest run's summary on the
-dashboard, fix the problem, then press **Resume the schedule**.
+dashboard, fix the problem, then press **Resume schedule**.
 
 **Photos deleted in Immich come back**
 They do not: the app remembers what it uploaded. Only **Re-import files missing from Immich**
@@ -96,6 +108,11 @@ imported earlier (see [What gets imported](what-gets-imported.md)).
 A few files could not be uploaded. The run box on the dashboard lists them, with Retry and
 Ignore: see [How it works](how-it-works.md#when-files-fail).
 
+**"The import stopped early"**
+Immich failed file after file, so the run stopped before trying the rest. Fix Immich, then
+press **Retry these files**. Ignore is not offered: it would also give up on the files never
+tried.
+
 ## The web interface
 
 **"Cross-site request refused"**
@@ -116,8 +133,21 @@ credentials are kept.
 
 **Updates: "Could not get the latest release from GitHub"**
 The message ends with the reason: GitHub could not be reached (a network or DNS problem from the
-container), it did not answer in time, or, rarely, its limit of 60 checks an hour from each
-network address was used up. Try again later.
+container), it did not answer in time, it answered with an error (*GitHub answered HTTP …*), its
+answer could not be read, there is no release yet, or, rarely, its limit of 60 checks an hour
+from each network address was used up. Try again later.
+
+**Updates: "Update to … failed"**
+The banner gives the update helper's reason, and the app keeps running the version it had:
+
+- *Refused: … is older than …, which is running*: the helper does not go back to an older
+  release; see [One-click updates](updates.md#one-click-updates) to allow it on purpose.
+- *… Rolled back to …*: the new version could not be downloaded or did not start in time, or
+  the update was stopped part way (*The update was stopped part way*). Try again later.
+- *Could not ask GitHub to confirm …*: GitHub could not be reached from the Docker host.
+- *The update helper on this host is too old to install release candidates*: upgrade it with
+  the command under Help → Updates
+  (see [Installing the update helper](updates.md#installing-the-update-helper)).
 
 ## Known limitations
 

@@ -2,7 +2,8 @@
 
 ## Supported versions
 
-Only the latest release receives security fixes.
+Only the latest final release receives security fixes. Release candidates (`X.Y.Z-rcN`) are
+for testing only.
 
 ## Reporting a vulnerability
 

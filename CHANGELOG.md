@@ -7,6 +7,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Waiting** on the dashboard: an export the last run held back (its newest archive in Drive
+  under an hour old, or a part not here yet) is shown in the run box, with why and from when
+  it can import. Before, it was only in the run's History entry.
+
+### Fixed
+
+- **Check Immich now** under Cleanup → Google Drive no longer keeps an export that included
+  photos from Google's bin: those are in Immich's trash on purpose, as are photos the app found
+  in the trash when importing. A photo deleted in Immich since still keeps the archive.
+- After **Ignore them**, Cleanup's count of files not imported includes the photos outside the
+  date range again, and the message when a delete is refused lists that reason too.
+
+### Changed
+
+- The guide is brought up to date with the app: how to add a permission to an Immich key in
+  use (choose **Same library**), what Start afresh and removing a source keep, the update
+  helper's refusals and how to allow going back, the messages runs now give when an export is
+  held back or a folder cannot be read, and what Re-import leaves alone. The dashboard button
+  is now **Resume schedule** everywhere.
+
 ## [0.6.1] - 2026-10-19
 
 ### Fixed

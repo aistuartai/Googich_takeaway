@@ -16,7 +16,7 @@
   <form method="post" action="/destinations/immich">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
     <label>Immich address
-      <input name="url" value="{{ di.get('url', immich.url or '') }}" placeholder="http://immich:2283" required>
+      <input name="url" value="{{ di.get('url', immich.url or '') }}" placeholder="http://192.168.1.20:2283" required>
       <small>The address this app uses to reach Immich. A local network address is fine.</small>
     </label>
     <label>Public address (optional)

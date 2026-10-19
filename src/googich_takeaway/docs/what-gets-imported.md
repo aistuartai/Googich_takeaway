@@ -19,7 +19,7 @@ Choices apply to the next exports imported. To bring albums, stacks and tags to 
 before, run once with **Re-import files missing from Immich** (under **Options**, beside **Run
 now**). That reads each export again, which is quick if it was read in the last 90 days, and
 organises the photos Immich already has. Re-import also uploads again any photo you deleted in
-Immich since, so check for those first.
+Immich since, so check for those first. Photos still in Immich's trash are left alone.
 
 ## Changes you make in Immich stay
 
@@ -65,7 +65,9 @@ found, each from file names in the same folder:
 - **Google Photos' bin.** Photos you deleted in Google Photos can still be in the export. They
   are left out. To bring them across anyway, tick **Include photos in Google's bin** under
   **Options** before **Run now**: they go into Immich's trash, where you can restore the ones to
-  keep. Immich empties its trash after 30 days unless set otherwise.
+  keep. Immich empties its trash after 30 days unless set otherwise. If the run is paused or
+  stopped before moving them, the next run moves them; one you restore in Immich stays
+  restored.
 
 ## Date range
 

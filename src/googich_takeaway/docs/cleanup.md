@@ -11,8 +11,8 @@ All of these must be true:
 
 - The export was **imported completely**: every file is in Immich, or was deliberately left out.
 - Immich has **finished processing** the uploads, and their dates were **checked**. Runs check
-  them; **Check now** beside the export lists the files still waiting and checks them straight
-  away. If Immich still has no date for a file a day after its upload, it may never read one
+  them; **Check now** beside the export lists the files still waiting, and **Check Immich now**
+  there checks them straight away. If Immich still has no date for a file a day after its upload, it may never read one
   (from a damaged file, say): **Stop waiting** lets the export go ahead without that check.
 - No file shows a **different date** in Immich than the one sent, or you chose to keep Immich's
   dates: **Review dates** beside such an export lists the files and what differs, and
@@ -24,13 +24,15 @@ Files with **no date**, types Immich does not accept, failed files you ignored, 
 taken **outside the date range** in Settings are not in Immich. They exist only in the archive
 and in Google Photos, so removing such an export asks you to confirm first. Photos left out
 because they were in Google Photos' bin, or saved from a partner's library when you chose to
-leave those out, do not count: leaving them out was the choice.
+leave those out, do not count: leaving them out was the choice. Each export lists the failed
+files you ignored, by name.
 
 ## The download folder
 
 The app deletes these archives itself when you press **Delete**, but only for exports that are
 safe to remove, and only after checking the files on disk are still the ones that were imported.
-The app remembers them, so they are not downloaded again.
+The app remembers them, so they are not downloaded again, unless you tick **Download archives
+again** under Options, or start afresh with a different Immich library.
 
 **Partial downloads** are downloads that were interrupted; the next run resumes them. Delete one
 only if you do not want it to resume.
@@ -42,8 +44,8 @@ Deleting is paused while a run is going.
 The app **never deletes anything in Google Drive**: its access is read-only. It lists the archives
 it downloaded, and links to each one once its export is safe to remove. To free the space:
 
-1. Press **Check Immich now** on the export. It asks Immich whether every file is still there, in
-   case something was deleted since the import.
+1. Press **Check Immich now** on the export. It asks Immich whether every file is still there
+   and not in Immich's trash, in case something was deleted since the import.
 2. Open each archive's link and delete it in Drive.
 3. **Empty Drive's trash.** Deleted files keep using your Google storage until the trash is
    emptied, or for 30 days.

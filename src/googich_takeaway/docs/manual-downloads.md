@@ -53,11 +53,14 @@ The links stop working after about a week, so download within a few days.
 
 The next run, scheduled or **Run now**, imports the export once it looks complete:
 
-- **No part is missing between the others.** If parts 001 and 003 are there but 002 is not, the
-  run says *part 002 is missing* and waits.
+- **No part is missing up to the last one here.** If parts 001 and 003 are there but 002 is
+  not, the run says *part 002 is missing* and waits; a missing 001 is noticed the same way.
 - **No part changed in the last half hour**, so an export whose parts are still downloading or
   copying is not imported half-done. Browsers save unfinished downloads under another name
   (`.crdownload`, `.part`), which the app ignores.
+
+If the app cannot read a folder (its permissions changed, say), the run says so and still
+imports from the other sources.
 
 > [!NOTE]
 > The app cannot tell that the **last** part is missing, because Takeout's file names do not say
@@ -72,5 +75,5 @@ checks a day or two after each export is due.
 ## 5. Tidy up
 
 Once an export is fully in Immich, **Cleanup** shows its archives as safe to delete, and frees
-the space for you if they are in the download folder. Archives in a folder of your own are left
-for you to delete.
+the space for you if they are in the download folder. Archives in another folder of your own
+are not listed under Cleanup: delete them yourself once History shows the export imported.

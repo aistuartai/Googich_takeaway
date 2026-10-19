@@ -39,15 +39,17 @@ weekly runs continue (if switched on), and the app reminds you to set up a new T
 
 ### Pausing the schedule
 
-The dashboard's **Schedule** box shows what the schedule is set to and when it runs next. **Pause
-schedule** stops scheduled runs until you press **Resume schedule**; Run now still works.
+The dashboard's **Schedule** card shows what the schedule is set to and when it runs next. Its
+**Pause schedule** stops scheduled runs until you press **Resume schedule**, which also appears
+under *Coming up* on the Schedule page, and in the run box when the Schedule card is switched
+off. Run now still works.
 
 ### When runs fail
 
 A failed run never retries in a loop. It ends, records why, and notifies you. The next scheduled
 run tries again. If several scheduled runs fail in a row (three, unless you change it), the
-schedule **pauses**: the dashboard says so, and you press **Resume the schedule** once the problem
-is fixed.
+schedule **pauses**: the dashboard says so, and you press **Resume schedule** there (or on the
+Schedule page) once the problem is fixed.
 
 - Runs you start yourself do not count towards the pause.
 - A run that **completed with errors** (a few files failed) does not count either; see

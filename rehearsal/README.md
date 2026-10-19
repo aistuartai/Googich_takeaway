@@ -26,11 +26,17 @@ RESULTS=/root/googich-rehearsals    # where results are kept
 
 ## Running it
 
-Copy this folder to the node (or clone the repository there), then as root:
+First release the candidate: `scripts/release.sh X.Y.Z-rcN`, then `git push origin vX.Y.Z-rcN`,
+wait for its Release run to go green (the image and helper files must be published), and only
+then `git push origin main`.
+
+Copy this folder to the node (or download the candidate tag's tarball there), then as root:
 
 ```sh
-bash rehearsal/proxmox.sh --from 0.6.0 --to 0.6.1-rc1
+bash rehearsal/proxmox.sh --from <last final release> --to X.Y.Z-rcN
 ```
+
+`<last final release>` is the version `docker/compose.yaml` names, such as `0.6.1`.
 
 `--from` is the published release installed first and `--to` the one updated to; both must be
 published on GitHub. Leave out `--from` to rehearse a fresh install of `--to` only. `--keep`

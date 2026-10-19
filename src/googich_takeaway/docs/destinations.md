@@ -29,16 +29,32 @@ still uploads; the run's summary says what was skipped.
 
 **Test connection** shows the Immich version and any missing permission. The key is encrypted
 before it is stored, and never shown again; leave the field empty to keep the saved key. If
-you change the Immich address, enter the key again: a saved key is only ever sent to the
-address it was entered for. The same goes for the SMB password when the server or user
+you change the server (host or port) in the Immich address, enter the key again: a saved key is
+only ever sent to the server it was entered for. The same goes for the SMB password when the server or user
 changes.
+
+**Adding a permission later.** Immich may not let you change an existing key's permissions. If
+it does not, create a new key for the same Immich user with every permission you want (or
+**All**), paste it here and press **Save**. When asked *Is this the same Immich library?*,
+choose **Same library**, not *Different library: start afresh*: it is the same user's library.
+Then press **Test connection**, and delete the old key in Immich.
+
+Photos imported while a permission was missing do not get their albums, stacks or tags on the
+next run, as their export already counts as imported. They get them when a later Takeout
+export with the same photos is imported, or straight away by running once with **Re-import
+files missing from Immich** (under **Options**, beside **Run now**). Re-import also uploads
+again any photo this app uploaded that you have since deleted in Immich, so check for those
+first.
 
 **Switching to a different library.** The app remembers what it uploaded, so a photo you delete
 in Immich is not uploaded again. Those records belong to one library. When you change the
 address or the key, the app asks whether this is the same library. If it is a different one,
 on another server or for another Immich user, choose **Different library: start afresh**: the
 next run imports everything the new library does not have. The same choice is under the Immich
-form, as **Start afresh with this library**, if you switched without it.
+form, as **Start afresh with this library**, if you switched without it. Starting afresh keeps
+the archives still in the download folder, downloads again from Google Drive those Cleanup
+already removed (if they are still there), and needs exports you added by hand added again.
+It waits until no run is going.
 
 ## Download folder
 

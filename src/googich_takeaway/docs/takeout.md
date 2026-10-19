@@ -85,7 +85,8 @@ Drive, after `/folders/`.
 - **The schedule ends after a year.** Create a new scheduled export when it ends. The app warns you
   on the dashboard, and by notification, when no new export has arrived for 10 days longer than
   expected (40 days for monthly exports, 70 for every two months), and three weeks before the
-  schedule you noted on the Schedule page ends.
+  schedule you noted on the Schedule page ends. The *no new export* warning needs a Google
+  Drive source: it counts what arrives from Drive.
 - **Each export is a complete copy.** The app imports only what Immich does not already have, so
   later exports are quick.
 - **Export links expire.** Takeout's download links last about a week, but archives added to

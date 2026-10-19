@@ -23,7 +23,7 @@
   <p>They stopped after {{ failures }} failed run{{ '' if failures == 1 else 's' }} in a row. Check the latest run below, fix the problem, then resume.</p>
   <form method="post" action="/schedule/resume">
     <input type="hidden" name="csrf_token" value="{{ request.state.csrf }}">
-    <button type="submit">Resume the schedule</button>
+    <button type="submit">Resume schedule</button>
   </form>
 </section>
 {% endif %}

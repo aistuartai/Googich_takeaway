@@ -13,8 +13,18 @@ uv run googich fetch --drive-folder FOLDER_ID --service-account key.json \
   --staging /path/to/downloads                                               # from Drive
 ```
 
-`--staging` is the download folder. Key files must be readable only by you (`chmod 600`). Keys are never accepted on the command
-line, so they stay out of your shell history.
+`--staging` is the download folder. Key files must be readable only by you (`chmod 600`;
+Docker secrets are accepted as they are). Keys are never accepted on the command line, so they
+stay out of your shell history.
+
+Run `uv run googich <command> --help` for every option, such as `import --reimport` (which also
+uploads files deleted in Immich since), `import --yes`, `scan --json` or `fetch --list-only`.
+`--immich-url` and `--key-file` can come from `GOOGICH_IMMICH_URL` and
+`GOOGICH_IMMICH_KEY_FILE`; `--timezone` defaults to `$TZ`, else UTC.
+
+`import` and `fetch` keep their records in `~/.local/share/googich/state.db` (or `--state`, or
+`$GOOGICH_STATE`), separate from the web interface's: what they upload is not known to the web
+interface unless both use the same file.
 
 `import` uploads photos and videos with their dates, and leaves out photos in Google Photos' bin.
 It does not make albums, stacks or tags, and does not apply the date range or partner choice:

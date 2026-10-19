@@ -65,12 +65,14 @@ and Help → Updates offers **Update to X.Y.Z**. The app itself never gets acces
 writes the version it found into `data/updater/request.json`. The helper, a shell script started by systemd outside the
 container, then:
 
-1. accepts nothing but a plain version number such as `0.3.8`,
+1. accepts nothing but a plain version number such as `0.6.1`, or a release candidate such as
+   `0.6.2-rc1` when release candidates are switched on,
 2. checks it is a published release of this project, on GitHub's releases pages, that has its
    helper files attached (so it installs 0.3.5 or later),
 3. refuses a release older than the one running, so nothing can take the app back to a
-   version with bugs fixed since (helper version 5 and later; to go back on purpose, set
-   `Environment=GOOGICH_ALLOW_DOWNGRADE=1` in the `googich-updater.service` unit),
+   version with bugs fixed since (helper version 5 and later; to go back on purpose, run
+   `systemctl edit googich-updater.service` and add `[Service]` and
+   `Environment=GOOGICH_ALLOW_DOWNGRADE=1`, which survives upgrading the helper),
 4. sets that version in `compose.yaml`, keeping a copy of the old file,
 5. pulls the image, restarts the container, and waits for it to report the new version,
 6. restores the previous version automatically if anything fails, or if the update is stopped
@@ -105,8 +107,9 @@ downloads against the release's published checksums, and installs nothing if one
 match.
 
 **The same command upgrades it.** Help → Updates and Help → About show the installed helper's
-version (3 at present). When a release brings a newer one, Help → Updates says *The update helper
-can be upgraded* (as does the *Update complete* banner); run the command again.
+version (5 at present). When a release brings a newer one, Help → Updates says *The update helper
+can be upgraded*, and the *Update complete* banner links to it (*Upgrade the update helper*);
+run the command again.
 
 What it does, as root:
 
@@ -120,4 +123,5 @@ What it does, as root:
 
 Read the script first if you like: it is short. To remove the helper, run
 `systemctl disable --now googich-updater.path` and delete
-`/usr/local/lib/googich-updater` and the two `googich-updater` files in `/etc/systemd/system`.
+`/usr/local/lib/googich-updater`, the two `googich-updater` files in `/etc/systemd/system`, and
+`/etc/systemd/system/googich-updater.service.d` if you made one.
