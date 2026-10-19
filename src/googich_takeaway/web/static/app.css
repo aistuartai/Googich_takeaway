@@ -680,7 +680,10 @@ ol.steps li { margin: .35rem 0; }
 /* Commands to copy, such as installing the update helper. */
 pre.command { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: .75rem .9rem; overflow-x: auto; margin: .5rem 0 .3rem; }
 pre.command code { background: none; padding: 0; color: var(--ink); white-space: pre; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .8125rem; }
-.helper-upgrade { border-left: 3px solid var(--warn); padding: .2rem 0 .2rem 1rem; margin: 1rem 0; }
+.helper-upgrade { padding: .2rem 0 .2rem 1rem; margin: 1rem 0; }
+.helper-upgrade.required { border-left: 3px solid var(--error); }
+.helper-upgrade.optional { border-left: 3px solid var(--line); }
+.helper-upgrade.optional summary { cursor: pointer; color: var(--muted); }
 .station-pending { color: var(--ink); margin-top: .2rem; }
 .stage-detail { margin: -.9rem 0 .6rem; font-weight: 600; color: var(--ink); }
 /* After a run with failed files: what failed, and Retry or Ignore. */

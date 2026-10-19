@@ -338,10 +338,19 @@ def _save(state: State, now: datetime, latest: str, url: str) -> UpdateInfo:
 # banner with the manual command.
 
 
-HELPER_VERSION = 6
+HELPER_VERSION = 5
 """The update helper this release ships (``HELPER_VERSION`` in googich-updater.sh)."""
+HELPER_REQUIRED = 1
+"""The oldest helper this release works with. Raised only when the app asks the helper for
+something older ones cannot do; below it, upgrading is required, above it only optional."""
 CANDIDATE_HELPER = 4
 """The first helper version that installs release candidates."""
+HELPER_ADDS = {
+    4: "installs release candidates, if you switch them on",
+    5: "refuses to go back to an older release, and puts the old version back if an update is "
+    "stopped part way",
+}
+"""What each helper version brought, for an optional upgrade's note."""
 
 
 @dataclass(frozen=True)
@@ -356,7 +365,19 @@ class HelperStatus:
 
     @property
     def outdated(self) -> bool:
+        """A newer helper is available (upgrading may still be only optional)."""
         return self.helper < HELPER_VERSION
+
+    @property
+    def upgrade_required(self) -> bool:
+        """This release needs a newer helper for one-click updates to work."""
+        return self.helper < HELPER_REQUIRED
+
+    @property
+    def upgrade_adds(self) -> list[str]:
+        """What upgrading to this release's helper would bring, oldest first."""
+        newer = sorted(v for v in HELPER_ADDS if self.helper < v <= HELPER_VERSION)
+        return [HELPER_ADDS[v] for v in newer]
 
     @property
     def installs_candidates(self) -> bool:

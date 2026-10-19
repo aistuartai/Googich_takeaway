@@ -53,12 +53,22 @@
     <small>To install it, change the version in <code>compose.yaml</code> to <code>{{ update_available.latest }}</code>, then run <code>docker compose pull &amp;&amp; docker compose up -d</code>.</small>
     {% endif %}
     {% if helper %}
-    <p class="muted">One-click updates are on: update helper version {{ helper.helper or 'unknown' }}{% if helper.outdated %} (this release comes with version {{ helper_expected }}){% endif %}. It last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.astimezone(zone).strftime('%d %b %H:%M') }}){% endif %}</p>
-    {% if helper.outdated %}
-    <div class="helper-upgrade" id="helper-upgrade">
-      <p><strong>The update helper can be upgraded.</strong> This release has a safer one. It keeps working as it is until then, but upgrade it soon. On the Docker host, run:</p>
+    <p class="muted">One-click updates are on: update helper version {{ helper.helper or 'unknown' }}. It last reported: {{ helper.message }}{% if helper.at %} ({{ helper.at.astimezone(zone).strftime('%d %b %H:%M') }}){% endif %}</p>
+    {% set needed_for_candidates = candidates and not helper.installs_candidates %}
+    {% if helper.upgrade_required or needed_for_candidates %}
+    <div class="helper-upgrade required" id="helper-upgrade" role="alert">
+      <p><strong>Upgrade required.</strong> {% if helper.upgrade_required %}This release needs update helper version {{ helper_required }} or later for one-click updates; this host has version {{ helper.helper or 'unknown' }}.{% else %}Release candidates need update helper version {{ candidate_helper }} or later; this host has version {{ helper.helper or 'unknown' }}.{% endif %} On the Docker host, run:</p>
       {% include "_helper_install.html" %}
     </div>
+    {% elif helper.outdated %}
+    <details class="helper-upgrade optional" id="helper-upgrade">
+      <summary><strong>Optional:</strong> update helper version {{ helper_expected }} is available. Yours keeps working as it is.</summary>
+      {% if helper.upgrade_adds %}<p>Version {{ helper_expected }} {{ helper.upgrade_adds|join('; it ') }}.</p>{% endif %}
+      <p>To upgrade, whenever suits you, run this on the Docker host:</p>
+      {% include "_helper_install.html" %}
+    </details>
+    {% else %}
+    <p class="muted ok-text" id="helper-upgrade">The update helper is up to date.</p>
     {% endif %}
     {% else %}
     <p class="muted">One-click updates are off: the optional update helper is not installed on the host. To turn them on, run this once on the Docker host (<a href="/help/updates#installing-the-update-helper">what it does</a>):</p>

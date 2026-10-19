@@ -107,9 +107,17 @@ downloads against the release's published checksums, and installs nothing if one
 match.
 
 **The same command upgrades it.** Help → Updates and Help → About show the installed helper's
-version (6 at present). When a release brings a newer one, Help → Updates says *The update helper
-can be upgraded*, and the *Update complete* banner links to it (*Upgrade the update helper*);
-run the command again.
+version (5 at present), and say plainly whether upgrading is needed:
+
+- **Upgrade required**: this release, or release candidates if you switched them on, needs a
+  newer helper for one-click updates. The *Update complete* banner says so too. Run the
+  command shown.
+- **Optional**: a newer helper is available and says what it adds, but yours keeps working as
+  it is. Upgrade whenever suits you, or not at all.
+- **Up to date**: nothing to do.
+
+The helper changes rarely: an older one keeps working with newer releases unless a release
+says it needs more.
 
 What it does, as root:
 

@@ -1051,25 +1051,52 @@ def test_choose_how_exports_arrive(world: World) -> None:
     assert '<div class="station station-drive station-off">' in dashboard
 
 
-def test_an_old_update_helper_is_offered_a_one_command_upgrade(world: World) -> None:
+def test_an_old_update_helper_is_offered_an_optional_upgrade(world: World) -> None:
+    """A helper this release still works with: offered, but plainly optional, no nagging."""
     from googich_takeaway import __version__
+    from googich_takeaway.updates import HELPER_VERSION
 
-    _helper(world)  # reports helper version 1
+    folder = _helper(world)  # reports helper version 1
     page = world.client.get("/updates").text
-    assert "The update helper can be upgraded." in page
+    assert "<strong>Optional:</strong> update helper version" in page
+    assert "Yours keeps working as it is." in page
+    assert "Upgrade required" not in page
+    assert "installs release candidates" in page  # what the newer one adds
     assert (
         f"github.com/aistuartai/Googich_takeaway/releases/download/v{__version__}/"
         "install-updater.sh" in page
     )
     assert "sudo bash install-updater.sh /opt/googich" in page
-    folder = world.tmp / "updater"
-    from googich_takeaway.updates import HELPER_VERSION
-
+    assert "optional</a>" in world.client.get("/about").text
     (folder / "status.json").write_text(
         f'{{"helper": "{HELPER_VERSION}", "state": "idle", "message": "Ready for updates.", '
         '"version": "", "at": ""}'
     )
-    assert "can be upgraded" not in world.client.get("/updates").text
+    page = world.client.get("/updates").text
+    assert "Optional:" not in page
+    assert "The update helper is up to date." in page
+
+
+def test_an_upgrade_is_required_below_what_this_release_needs(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from googich_takeaway import updates
+
+    monkeypatch.setattr(updates, "HELPER_REQUIRED", 3)  # as a future release might need
+    _helper(world)  # version 1
+    page = world.client.get("/updates").text
+    assert "<strong>Upgrade required.</strong>" in page
+    assert "Optional:" not in page
+    assert "upgrade required</a>" in world.client.get("/about").text
+
+
+def test_release_candidates_say_the_helper_upgrade_is_required_for_them(world: World) -> None:
+    folder = _helper(world)  # version 1: works, but cannot install candidates
+    world.post("/updates/candidates", {"on": "1"})
+    page = world.client.get("/updates").text
+    assert "Release candidates need update helper version 4 or later" in page
+    assert "<strong>Upgrade required.</strong>" in page
+    assert folder.exists()
 
 
 def test_without_the_helper_the_install_command_is_shown(world: World) -> None:
@@ -1118,9 +1145,9 @@ def test_updates_and_about_show_the_helper_version(world: World) -> None:
 
     _helper(world)  # reports version 1
     page = world.client.get("/updates").text
-    assert "update helper version 1 (this release comes with version" in page
+    assert "update helper version 1." in page
     about = world.client.get("/about").text
-    assert f"Update helper version 1, older than this release's {HELPER_VERSION}" in about
+    assert f"Update helper version 1 (version {HELPER_VERSION} is available" in about
 
 
 def test_a_failed_check_says_why(world: World) -> None:

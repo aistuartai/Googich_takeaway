@@ -29,14 +29,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than an internal name.
 - A file whose upload reply was lost, found in Immich on the next run, has its date checked
   like any other upload before Cleanup offers its export.
-- Update helper version 6: an update requested while another is going is handled after it,
-  instead of being missed.
 - The reverse-proxy hint in the log no longer names a visitor's address once
   `GOOGICH_TRUSTED_PROXIES` is set; answers from GitHub are size-checked as they arrive.
 - The manual update command in the README works when `compose.yaml` names a release candidate.
 
 ### Changed
 
+- Help → Updates and Help → About say whether upgrading the update helper is **required** (this
+  release, or release candidates, need a newer one) or **optional** (a newer one is available
+  and says what it adds; yours keeps working). Only a required upgrade is mentioned in the
+  *Update complete* banner. This release keeps update helper version 5: nothing to run.
 - The guide is brought up to date with the app: how to add a permission to an Immich key in
   use (choose **Same library**), what Start afresh and removing a source keep, the update
   helper's refusals and how to allow going back, the messages runs now give when an export is
