@@ -16,6 +16,12 @@ Times are in the time zone set under Configuration → Settings. Takeout exports
 or two, so **Follow my Takeout schedule** suits most people; **weekly** is a simple alternative,
 as a run that finds nothing new takes seconds.
 
+If the app was not running at a run's time, the run starts as soon as the app is back, as long as
+that is within a day; otherwise it waits for the next one. A run due while another run is going
+is skipped and noted in the log, and so is one due while the schedule is paused. Changing when
+runs happen never makes up a time that has already passed. Every few hours counts from the last
+scheduled run, so the first one starts as soon as you save.
+
 ### Following the Takeout schedule
 
 Takeout's scheduled export runs for a year from the day it was set up, every month or every two

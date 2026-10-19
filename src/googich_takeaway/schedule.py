@@ -23,6 +23,8 @@ DEFAULT_RETRY_DAYS = 1
 TAKEOUT_FREQUENCIES = {1: "Every month", 2: "Every 2 months"}
 """Takeout's scheduled export choices, in months. Both run for one year."""
 DEFAULT_TAKEOUT_MONTHS = 2
+CATCH_UP = timedelta(hours=24)
+"""A scheduled run missed by less than this (the app was down) still happens once it is back."""
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
@@ -166,6 +168,29 @@ def next_run(
         if candidate > now and (last_start is None or candidate > last_start):
             return candidate
     return None  # following Takeout with no exports left and no weekly runs
+
+
+def due_run(
+    schedule: Schedule,
+    now: datetime,
+    zone: ZoneInfo,
+    last_start: datetime | None,
+    not_before: datetime | None,
+) -> datetime | None:
+    """UTC time the worker should start the next scheduled run; at or before ``now`` means now.
+
+    Unlike ``next_run``, a run whose time has passed stays due, so a worker checking every so
+    often still catches it, and a run missed while the app was down happens once it is back,
+    if that is less than ``CATCH_UP`` ago. Nothing before ``not_before`` counts.
+    """
+    floor = latest(last_start, not_before)
+    start = now - CATCH_UP if floor is None else max(now - CATCH_UP, floor)
+    return next_run(schedule, min(start, now), zone, last_start)
+
+
+def latest(*moments: datetime | None) -> datetime | None:
+    """The latest of these times, ignoring None; None if there are none."""
+    return max((m for m in moments if m is not None), default=None)
 
 
 def parse_time(value: str) -> time:

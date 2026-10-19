@@ -39,6 +39,7 @@ from googich_takeaway.schedule import (
     DEFAULT_TAKEOUT_MONTHS,
     Mode,
     Schedule,
+    latest,
     parse_time,
 )
 from googich_takeaway.state import SourceRecord, State, StateError
@@ -560,8 +561,16 @@ class Config:
 
     def _update_schedule(self, **values: object) -> None:
         data = self._state.get_json("schedule")
+        before = dict(data)
         data.update(values)
         self._state.set_json("schedule", data, self._clock())
+        if any(before.get(name) != data.get(name) for name in data if name != "pause_after"):
+            self._schedule_retimed()
+
+    def _schedule_retimed(self) -> None:
+        """When runs happen changed: a time that has already passed does not count."""
+        now = self._clock()
+        self._state.set_setting("schedule.changed", now.isoformat(), now)
 
     def schedule_paused(self) -> bool:
         return self._state.get_setting("schedule.paused") is not None
@@ -575,6 +584,15 @@ class Config:
         self._state.set_setting("schedule.paused", value, now)
         if not paused:
             self._state.set_setting("schedule.failures", None, now)
+            self._state.set_setting("schedule.resumed", now.isoformat(), now)
+
+    def schedule_not_before(self) -> datetime | None:
+        """No scheduled run is due before this: runs due before the schedule last changed or was
+        resumed, or while another run was going, are skipped, not made up."""
+        stored = [self._state.get_setting(n) for n in ("schedule.changed", "schedule.resumed")]
+        return latest(
+            *(datetime.fromisoformat(s) for s in stored if s), self._state.last_run_finished()
+        )
 
     def scheduled_failures(self) -> int:
         return int(self._state.get_setting("schedule.failures") or 0)
@@ -790,7 +808,9 @@ class Config:
         if every_months not in ("1", "2"):
             raise ConfigError("Choose how often Takeout exports.")
         self.save_takeout_schedule_started(started)
-        self._state.set_setting("takeout.every_months", every_months, self._clock())
+        if int(every_months) != self.takeout_months():
+            self._state.set_setting("takeout.every_months", every_months, self._clock())
+            self._schedule_retimed()
 
     def save_takeout_schedule_started(self, value: str) -> None:
         """``value`` is YYYY-MM-DD, or empty to forget it."""
@@ -804,7 +824,9 @@ class Config:
             raise ConfigError("Enter the date as year-month-day, for example 2026-10-01.") from None
         if started > self._clock().date() or started.year < 2010:
             raise ConfigError("That date is not possible for a Takeout schedule.")
-        self._state.set_setting("takeout.schedule_started", started.isoformat(), self._clock())
+        if started != self.takeout_schedule_started():
+            self._state.set_setting("takeout.schedule_started", started.isoformat(), self._clock())
+            self._schedule_retimed()
 
     # --- dashboard -------------------------------------------------------------------------------
 

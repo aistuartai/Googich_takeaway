@@ -797,6 +797,13 @@ class State:
         ).fetchone()
         return _from_text(row[0]) if row and row[0] else None
 
+    def last_run_finished(self) -> datetime | None:
+        """When the last run of any kind ended, not counting one the app stopping cut short."""
+        row = self._db.execute(
+            "SELECT max(finished_at) FROM runs WHERE status IS NOT 'interrupted'"
+        ).fetchone()
+        return _from_text(row[0]) if row and row[0] else None
+
     def abandon_unfinished_runs(self, at: datetime) -> int:
         """Runs left open by a crash or restart are closed as interrupted."""
         cursor = self._db.execute(

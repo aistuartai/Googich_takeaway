@@ -1,6 +1,6 @@
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,12 +11,13 @@ from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Message, Notifier, Outcome
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
-from googich_takeaway.worker import Trigger, Worker
+from googich_takeaway.worker import IDLE_CHECK_SECONDS, Trigger, Worker
 from tests.fake_drive import FOLDER, FakeDrive
 from tests.fake_github import FakeGitHub
 from tests.fake_immich import KEY, FakeImmichServer
 from tests.fixtures.takeout import quirks_export
 from tests.test_config import key_file
+from tests.test_schedule import MEL
 
 NOW = datetime(2026, 10, 1, tzinfo=UTC)
 BOX = SecretBox(b"k" * 32)
@@ -48,8 +49,8 @@ class World:
             github_transport=self.github.transport(),
         )
 
-    def config(self) -> Config:
-        return Config(State(self.path), BOX, lambda: NOW)
+    def config(self, at: datetime = NOW) -> Config:
+        return Config(State(self.path), BOX, lambda: at)
 
     def configure(self) -> None:
         config = self.config()
@@ -504,3 +505,125 @@ def test_a_run_asked_for_shows_as_starting_and_keeps_its_options(world: World) -
     assert not status.running
     assert not world.worker.request_run(RunOptions())  # does not replace the first one's
     assert world.worker._manual_requested == RunOptions(reimport=True)
+
+
+# --- the schedule, as the worker loop sees it -------------------------------------------------
+
+
+def _at(hour: int, minute: int = 0, day: int = 1) -> datetime:
+    """A Melbourne time in October 2026, in which NOW is 10:00 on the 1st."""
+    return datetime(2026, 10, day, hour, minute, tzinfo=MEL).astimezone(UTC)
+
+
+def _set_schedule(
+    world: World, when: datetime, mode: str, at: str = "03:00", hours: str = "24"
+) -> None:
+    world.configure()
+    world.config(when).save_schedule(mode, at, "6", hours, "3")
+
+
+def _record_run(world: World, trigger: Trigger, started: datetime, finished: datetime) -> None:
+    with State(world.path) as state:
+        run_id = state.start_run(trigger.value, started)
+        state.finish_run(run_id, "success", "Done", "", finished)
+
+
+def _checks(world: World, start: datetime, end: datetime) -> list[datetime]:
+    """Step the worker's clock from ``start`` to ``end`` as its idle loop does, recording each
+    scheduled run it starts (instantly, without running the pipeline)."""
+    started: list[datetime] = []
+    clock = [start]
+    world.worker._clock = lambda: clock[0]
+    moment = start
+    while moment <= end:
+        clock[0] = moment
+        due = world.worker._due_trigger()
+        if due is not None:
+            assert due[0] is Trigger.SCHEDULE
+            started.append(moment)
+            _record_run(world, Trigger.SCHEDULE, moment, moment)
+        moment += timedelta(seconds=IDLE_CHECK_SECONDS)
+    return started
+
+
+def test_a_daily_run_starts_once_its_time_passes(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    assert _checks(world, _at(10), _at(9, 0, day=3)) == [_at(23), _at(23, day=2)]
+
+
+def test_a_weekly_run_starts_on_its_day(world: World) -> None:
+    _set_schedule(world, _at(10), "weekly", "06:30")  # Sundays; the 4th is a Sunday
+    assert _checks(world, _at(10), _at(12, day=4)) == [_at(6, 30, day=4)]
+
+
+def test_every_24_hours_starts_at_once_then_a_day_later(world: World) -> None:
+    _set_schedule(world, _at(10), "hourly", hours="24")
+    assert _checks(world, _at(10), _at(11, day=2)) == [_at(10), _at(10, day=2)]
+
+
+def test_following_takeout_starts_on_the_export_day_and_retries(world: World) -> None:
+    world.configure()
+    world.config(_at(10)).save_takeout_schedule("2026-09-03", "1")  # next export on the 3rd
+    world.config(_at(10)).save_schedule("takeout", "09:00", "6", "24", "3")
+    world.config(_at(10)).save_follow_options("1", "2", False, "6")  # the 3rd and 4th
+    assert _checks(world, _at(10), _at(12, day=5)) == [_at(9, day=3), _at(9, day=4)]
+
+
+def test_a_time_already_past_today_waits_for_tomorrow(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "06:30")
+    assert _checks(world, _at(10), _at(7, day=2)) == [_at(6, 30, day=2)]
+
+
+def test_a_run_missed_while_the_app_was_down_starts_when_it_is_back(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    assert _checks(world, _at(1, day=2), _at(1, 1, day=2)) == [_at(1, day=2)]
+
+
+def test_a_run_missed_by_more_than_a_day_waits_for_the_next(world: World) -> None:
+    _set_schedule(world, _at(10), "weekly", "06:30")  # Sundays: the 4th, then the 11th
+    assert _checks(world, _at(7, day=5), _at(7, day=11)) == [_at(6, 30, day=11)]
+
+
+def test_saving_only_the_pause_limit_keeps_a_missed_run(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    world.config(_at(0, 30, day=2)).save_schedule("daily", "23:00", "6", "24", "5")
+    assert _checks(world, _at(1, day=2), _at(1, 1, day=2)) == [_at(1, day=2)]
+
+
+def test_changing_when_runs_happen_drops_a_missed_run(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    world.config(_at(0, 30, day=2)).save_schedule("daily", "23:30", "6", "24", "3")
+    assert _checks(world, _at(1, day=2), _at(23, 31, day=2)) == [_at(23, 30, day=2)]
+
+
+def test_runs_missed_while_paused_stay_missed(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    world.config(_at(22)).set_schedule_paused(True, by_user=True)
+    assert _checks(world, _at(22), _at(1, day=2)) == []
+    world.config(_at(1, day=2)).set_schedule_paused(False)
+    assert _checks(world, _at(1, day=2), _at(23, 1, day=2)) == [_at(23, day=2)]
+
+
+def test_a_run_due_during_another_run_is_skipped(world: World) -> None:
+    _set_schedule(world, _at(10), "daily", "23:00")
+    _record_run(world, Trigger.MANUAL, _at(22, 30), _at(23, 30))
+    assert _checks(world, _at(23, 30), _at(23, 1, day=2)) == [_at(23, day=2)]
+
+
+def test_a_skipped_run_is_logged_and_not_shown_as_next(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    _set_schedule(world, _at(10), "daily", "10:30")
+    clock = [_at(10, 40)]
+    world.worker._clock = lambda: clock[0]
+    with world.worker._lock:
+        world.worker._run_started = _at(10, 20)  # a run going since before 10:30
+    assert world.worker.status().next_run == _at(10, 30, day=2)
+    with world.worker._lock:
+        world.worker._run_started = None
+    times = iter([_at(10, 20)])  # the run starts at 10:20; every later reading is 10:45
+    world.worker._clock = lambda: next(times, _at(10, 45))
+    with caplog.at_level("INFO", logger="googich.worker"):
+        world.worker.run_once(Trigger.MANUAL)
+    assert "Scheduled run due at 2026-10-01 10:30 skipped" in caplog.text
+    assert _checks(world, _at(10, 45), _at(10, 31, day=2)) == [_at(10, 30, day=2)]

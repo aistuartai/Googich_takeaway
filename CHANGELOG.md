@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Daily, weekly and Follow my Takeout schedule runs now start.** The worker looked for the
+  next run time after the moment it checked, so once a run's time had passed it already saw the
+  next day's, and a scheduled run never started. Every few hours was not affected.
+- A scheduled run missed because the app was not running (an update, a restart) starts once the
+  app is back, if that is within a day. Runs due while the schedule was paused, or while another
+  run was going, are still skipped, and a skipped run is now noted in the log.
+- The dashboard's next run no longer shows a run that falls during the one going now, which
+  is skipped.
+
 ## [0.6.2] - 2026-10-19
 
 ### Added

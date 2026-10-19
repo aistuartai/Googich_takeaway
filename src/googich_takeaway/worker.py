@@ -27,7 +27,7 @@ from googich_takeaway.destinations.immich import ImmichClient
 from googich_takeaway.notify import Message, Outcome
 from googich_takeaway.pipeline import DriveFactory, ImmichFactory, Pipeline, RunOptions
 from googich_takeaway.progress import RunStopped, Snapshot, Stage, Tracker
-from googich_takeaway.schedule import next_run
+from googich_takeaway.schedule import Mode, due_run, latest, next_run
 from googich_takeaway.sources.gdrive import GoogleDriveSource
 from googich_takeaway.state import State
 
@@ -221,10 +221,12 @@ class Worker:
             return self._run_started is not None or self._manual_requested is not None
 
     def status(self) -> WorkerStatus:
+        with self._lock:
+            going = self._run_started is not None
         with State(self._state_path) as state:
             config = self._config(state)
             try:
-                due = self._next_due(state, config)
+                due = self._next_due(state, config, running=going)
             except Exception:
                 log.exception("Could not work out the next scheduled run")
                 due = None
@@ -336,11 +338,29 @@ class Worker:
         if files:
             log.info("Deleted %d log file(s) older than %s", len(files), cutoff.date().isoformat())
 
-    def _next_due(self, state: State, config: Config) -> datetime | None:
+    def _next_due(self, state: State, config: Config, running: bool = False) -> datetime | None:
+        """``running``: a run is going, so a run due before now is skipped, not next."""
         schedule = config.schedule()
         last = state.last_run_started(Trigger.SCHEDULE.value)  # however many manual runs since
         zone = ZoneInfo(config.general().timezone)
-        return next_run(schedule, self._clock(), zone, last)
+        now = self._clock()
+        not_before = latest(config.schedule_not_before(), now if running else None)
+        return due_run(schedule, now, zone, last, not_before)
+
+    def _log_skipped(self, state: State, config: Config, started: datetime) -> None:
+        """Say so when a scheduled run fell due while the run that started at ``started`` was
+        going: it is skipped, not run afterwards."""
+        schedule = config.schedule()
+        if schedule.mode is Mode.HOURLY:
+            return  # counted from the last scheduled run, so it simply starts next
+        zone = ZoneInfo(config.general().timezone)
+        last = state.last_run_started(Trigger.SCHEDULE.value)
+        skipped = next_run(schedule, started, zone, last)
+        if skipped is not None and skipped <= self._clock():
+            log.info(
+                "Scheduled run due at %s skipped: another run was going",
+                f"{skipped.astimezone(zone):%Y-%m-%d %H:%M}",
+            )
 
     def run_once(self, trigger: Trigger, options: RunOptions | None = None) -> Message:
         """Run the pipeline now, record it and notify. Used by the loop and by tests."""
@@ -381,6 +401,7 @@ class Worker:
                     run_id, message.outcome.value, message.title, message.body, self._clock()
                 )
                 log.info("Run %d finished: %s", run_id, message.title)
+                self._log_skipped(state, config, now)
                 state.set_setting(PAUSED_RUN, None, self._clock())  # nothing left to resume
                 notifier = config.notifier()
                 notifier.send(message)
